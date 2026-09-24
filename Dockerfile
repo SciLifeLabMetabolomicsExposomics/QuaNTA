@@ -4,8 +4,8 @@ LABEL description="QuaNTA docker build for SciLifeLab Serve"
 
 # Set the working directory
 WORKDIR /proj
-COPY SumExp_0.2.1.tar.gz /tmp/SumExp_0.2.1.tar.gz
-COPY Lato/ /usr/local/share/fonts/Lato/
+COPY /app/envs/SumExp_0.2.1.tar.gz /tmp/SumExp_0.2.1.tar.gz
+COPY /app/envs/Lato/ /usr/local/share/fonts/Lato/
 
 # General updates
 RUN apt-get update && \
