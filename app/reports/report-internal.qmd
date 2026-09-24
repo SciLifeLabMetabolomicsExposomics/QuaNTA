@@ -1,0 +1,152 @@
+---
+params:
+  norm_method: "loess_norm"
+  log_calibration: false
+  interactive_plot: false
+  project_title: "Test"        # No need here but needed by `report-external.qmd`
+title: "Data quality evaluation"
+format:
+  html: 
+    fig-width : 10
+    fig-height: 6
+    fig-align: "default"
+knitr:
+  opts_chunk:
+    out.width: "100%"
+---
+
+```{r}
+#| purl: true
+#| file: "app/reports/chapters/_internal-shared_setup_chunk.R"
+# The code in this chunk is NOT evaluated here when knitting this file directly.
+# It is included for DEBUGGING purposes only. 
+params <- list(
+  norm_method = "loess_norm", 
+  log_calibration = FALSE,
+  project_title = "Test"
+) 
+source("app/reports/chapters/_internal-shared_setup_chunk.R")
+```
+
+```{r}
+#| purl: true
+set.seed(7579)
+```
+
+# Settings used for processing
+
+```{r}
+#| child: app/reports/chapters/process-internal-settings.qmd
+```
+
+--------------------------------------------
+
+# Data input
+
+{{< include chapters/_read-msdial.qmd >}}
+
+# Normalization by internal standards (IS)
+
+## Internal standards (ISs) 
+
+```{r}
+#| child: app/reports/chapters/process-internal-stds.qmd
+```
+
+## Normalization by ISs
+
+The dataset is normalized using the provided ISs. The user can opt to choose between 2 normalization methods: 
+- "Closest RT" method, whereby the peak area intensity of each feature/chemical is corrected with that of the closest IS in RT. Target classes of compounds can be specified.
+- "LOESS" method, whereby the peak area intensity of each feature/chemical is corrected by a LOESS model curve built using all the IS spanning across the entire chromatographic RT.
+
+```{r}
+#| purl: true
+# Find the range of RT values
+all_rts <- util$retention_time(pre_norm_se)
+overall_rt_range <- range(all_rts)
+targetted_rt_range <- range(all_rts[util$is_targeted_feature(pre_norm_se)])
+rt <- range(all_rts[util$is_internal_std(pre_norm_se)])
+```
+
+The retention time (RT) range of the dataset is between `r overall_rt_range[1]` and `r overall_rt_range[2]` min.
+The RT range of the targeted chemicals to be quantified is from `r targetted_rt_range[1]` to `r targetted_rt_range[2]` min.
+The RT range of the internal standards is from `r range(rt)[1]` to `r range(rt)[2]` min.
+
+```{r}
+#| purl: true
+norm_se <- to_report[["normalized"]]
+```
+
+### Closest RT (IS) normalization
+
+```{r}
+#| child: app/reports/chapters/process-norm-closest.qmd
+```
+
+### LOESS (IS) normalization
+
+```{r}
+#| child: app/reports/chapters/process-norm-loess.qmd
+```
+
+### Comparison of normalization methods
+
+{{< include chapters/_process-norm-comparison.qmd >}}
+
+```{r}
+#| label: blank-filtering
+if (to_report$blank_filter) {
+  cat("
+
+### Blank filtering
+
+Features are filtered based on the blank samples after normalization and before blank subtraction.
+A feature is kept if:
+    
+*   The maximum peak area in the samples is greater than",
+    to_report$blank_filter_factor, "times the average peak area in the blanks, OR
+*   The average peak area in the samples is greater than", 
+    to_report$blank_filter_factor, "times the average peak area in the blanks.
+\n\n")
+
+  se_before_blank_filter <- to_report[["normalized"]]
+  se_after_blank_filter <- to_report[["after blank filtering"]]
+  before_n <- nrow(se_before_blank_filter)
+  after_n <- sum(SumExp::row_df(se_after_blank_filter)[["blank_filtered"]])
+  removed_n <- before_n - after_n
+
+  cat("
+Number of features filtered based on blank:
+
+*   Number of features before filtering:", before_n, "
+*   Number of features removed:", removed_n, "
+*   Number of features remaining:", after_n, "\n")
+}
+```
+
+### Blank subtraction
+
+After data normalization, peak areas are blank corrected by subtracting the corresponding feature average peak area detected in the blanks (negative values set to zero).
+Blank subtraction is applied to all samples in the dataset except for the calibration standards per batch.
+
+```{r}
+#| label: target_mode
+if (IS_TARGET_MODE) {
+  cat("\n\n# Calibration\n\n")
+  cat("\nThe calibration is performed per batch.\n\n")
+  qmd <- "process-calibration-llox_from_llox_signal.qmd"
+  cat(knitr::knit_child(file.path("app/reports/chapters", qmd), quiet = TRUE))
+  # Stop here if the calibration is not performed
+  if (all(sapply(lst_proc, is.null))) {
+    cat("\n\n# No calibration\n\n")
+    cat("Because it is not possible to perform calibration with the provided data.\n\n")
+  } else {
+    qmd <- "process-calibration-curves.qmd"
+    cat(knitr::knit_child(file.path("app/reports/chapters", qmd), quiet = TRUE))
+    cat("\n\n# Concentration\n\n")
+    cat(knitr::knit_child("app/reports/chapters/_process-concentration.qmd", quiet = TRUE))
+  }
+}
+```
+
+# References

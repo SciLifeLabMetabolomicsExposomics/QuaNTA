@@ -1,0 +1,34 @@
+---
+title: "_external-llox_from_llox_signal"
+---
+
+```{r}
+cat(switch(
+  to_report$params$llox_method,
+  "pt_signal_mean" = paste(
+    "LOD and LLOQ were defined as the lowest concentrations at which the mean signal exceeded 3×",
+    "or 10× the mean signal of the blank (zero concentration point) respectively.",
+    "DF (Detection Frequency) is defined as the percentage of samples where the signal exceeds 3×", 
+    "the mean signal of the blank (zero concentration point)."
+  ),
+  "pt_signal_mean_plus_sd" = paste(
+    "LOD and LLOQ were defined as the lowest concentrations at which the mean signal exceeded the",
+    "mean signal of the blank (zero concentration point) plus 3× or 10× its standard deviation,",
+    "respectively.",
+    "DF (Detection Frequency) is defined as the percentage of samples where the signal exceeds", 
+    "the mean signal of the blank (zero concentration point) by at least 3 standard deviations."
+  )
+))
+if (to_report$params$use_rsd20) {
+  cat(" Additionally, LLOQ required a signal RSD ≤ 20%.")
+}
+```
+
+In order to fit a calibration curve to a meaningful range of concentration, the fitting range is adjusted.
+The lower-limit of the range is chosen as the LLOQ.
+Concentration points below the limit are excluded from the calibration curve.
+
+As quite a few concentration points in the calibration curve samples of a chemical can be too far from the range observed in the samples for quantification (non-`CalCurve` and non-`QC` sample categories), the upper-limit of the calibration range is set. 
+When there are sufficient number (≥ 3) of calibration points, that the points that produce signal after normalization exceeding the **highest** signal of the quantification samples are excluded except the lowest one.
+
+If the lower-limit is set so high that fewer than three concentration points remain, that chemical is excluded from the calibration curve, because the curve cannot be fitted properly.

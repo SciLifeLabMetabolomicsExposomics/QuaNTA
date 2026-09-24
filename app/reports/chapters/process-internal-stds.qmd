@@ -1,0 +1,250 @@
+---
+title: Internal Standard (IS) Normalization
+params:
+  norm_method: "closest_norm"        # No need here but needed by `_internal-shared_setup_chunk.R`
+---
+
+```{r}
+#| purl: true
+#| file: "app/reports/chapters/_internal-shared_setup_chunk.R"
+#| eval: !expr '!knitr::opts_knit$get("child")'
+# The code in this chunk is NOT evaluated here when knitting this file directly.
+# It is included for DEBUGGING purposes only. 
+params <- list(norm_method = "closest_norm") 
+source("app/reports/chapters/_internal-shared_setup_chunk.R")
+```
+
+```{r}
+#| purl: true
+internal_std_se <- to_report[["internal std. before qc"]]
+box::use(projlib/proc[count_zeros_per_feature])
+```
+
+There are `r nrow(internal_std_se)` internal standard (IS) features in the data.
+Those features are listed below, in the order of average retention time.
+
+```{r}
+#| purl: true
+SumExp::row_df(internal_std_se) <- SumExp::row_df(internal_std_se) |> 
+  dplyr::mutate(
+    num_zeros = count_zeros_per_feature(internal_std_se[["raw"]]),
+    rsd = show$compute_rsd_per_feature(internal_std_se[["raw"]]),
+  )
+# Table of internal standard features
+kable_internal_std <- function(se) {
+  df <- SumExp::row_df(se) |> 
+    dplyr::select(feature_name, .rt, mz, rsd, num_zeros) |> 
+    dplyr::mutate(
+      num_zeros = ifelse(num_zeros == 0, "", num_zeros) |> 
+        labelled::copy_labels_from(num_zeros)
+    )
+  knitr::kable(
+    df, 
+    row.names = FALSE,
+    col.names = labelled::get_variable_labels(df),
+    align = "lrrrr"
+  ) |> 
+    kableExtra::kable_styling(full_width = FALSE)
+}
+```
+
+```{r}
+kable_internal_std(internal_std_se)
+```
+
+### Failed internal standards
+
+Internal standard (IS) features that satisfy the following conditions were considered as failed IS:
+
+* More than 10% samples have zero values.
+
+```{r}
+box::use(patchwork)           # Combine ggplot objects. `+`
+
+is_failed_istd <- to_report[["is failed internal std."]]
+
+box_scatter_plot_of_one_feature <- function(se, ii, widths) {
+  feature_name <- SumExp::row_df(se)$feature_name[ii]
+  se_tbl <- SumExp::as_tibble(se[ii, ])
+  # Box plot
+  p1 <- ggplot(se_tbl) +
+    geom_boxplot(aes(x = Class, y = raw, fill = Class)) +
+    scale_fill_manual(values = COLORS_OF_CLASSES) + 
+    labs(title = feature_name, y = "Peak area") +
+    theme(legend.position = "none") +   # No legend for fill
+    # Rotate x-axis labels
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+    scale_y_log10()
+  # Scatter plot across injection order
+  p2 <- ggplot(se_tbl) +
+    geom_point(aes(x = injection_order, y = raw, color = Class)) +
+    scale_color_manual(values = COLORS_OF_CLASSES) + 
+    labs(title = "",  y = "", x = "Injection order") +
+    theme(legend.position = "none") +   # No legend for fill
+    # No y-axis labels
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
+    scale_y_log10()
+  # Requires patchwork package
+  p1 + p2 + patchwork::plot_layout(widths = widths)
+}
+
+if (any(is_failed_istd)) {
+  cat("The following internal standard features were identified as failed IS,",
+      "which were removed.\n\n")
+  failed_istd <- internal_std_se[is_failed_istd, ]
+  # Table of failed internal standard features
+  print(kable_internal_std(failed_istd))
+  # Box and scatter plots of the failed internal standard features 
+  for (ii in seq_len(nrow(failed_istd))) {
+    print(box_scatter_plot_of_one_feature(failed_istd, ii, widths = c(0.3, 0.7)))
+  }
+  # Remove the failed internal standard features
+  internal_std_se <- internal_std_se[!is_failed_istd, ]
+} else {
+  cat("No failed internal standard features were identified.\n")
+}
+```
+
+Any remaining zero values in an internal standard feature are imputed with the average of the feature values across all samples of the same sample type (i.e. `Sample`, `Standard`, `QC` and `Blank`).
+
+```{r}
+#| label: 'outlier-removal'
+is_outlier <- to_report[["is outlier sample"]]
+# The following is added only when the outlier removal step has been set to perform
+if (! is.null(is_outlier)) {
+  cat(
+    "### Outlier samples\n\n",
+    "Each internal standard (IS) is expected to have consistent values across all samples.\n",
+    "After applying a log-transformation ($log(1 + x)$),", 
+    "the mean and standard deviation for each IS are calculated.\n",
+    "A sample is flagged as an outlier for a given IS", 
+    "if its value deviates by more than 3 standard deviations from the IS mean.\n",
+    "If more than 20% of IS features in a sample are flagged this way,", 
+    "the sample itself is classified as an outlier.\n",
+    "The outlier samples are then removed from the data.\n\n"
+  )
+  # Number of outlying internal standard features per sample
+  n_out_istd <- to_report[["number of outlier internal std. per sample"]]
+  
+  if (all(! is_outlier)) {
+    cat("No outliers were identified.\n")
+  } else {
+    cat("The following samples were identified as outliers and excluded.\n\n")
+    stopifnot(identical(names(is_outlier), names(n_out_istd)))
+    # To retrieve the sample_name, Class, sample_type
+    tb <- tibble::as_tibble(SumExp::col_df(internal_std_se), rownames = "sample_id")
+    show_tb <- tibble::as_tibble(n_out_istd, rownames = "sample_id") |> 
+      dplyr::mutate(is_outlier = is_outlier) |>
+      labelled::set_variable_labels(
+        "value" = "Number of Outlying IS",
+        "sample_id" = "Sample ID"
+      ) |>
+      # Retrieve the sample_name, Class, sample_type
+      dplyr::left_join(tb, by = "sample_id") |> 
+      dplyr::filter(is_outlier) |> 
+      dplyr::select(sample_name, Class, sample_type, value)
+    knitr::kable(
+      show_tb,
+      col.names = labelled::get_variable_labels(show_tb),
+      align = "lccr"
+    ) |> 
+      kableExtra::kable_classic(full_width = FALSE) |>
+      print()
+    
+    # Remove the outlier samples  
+    internal_std_se <- internal_std_se[, !is_outlier]
+  }
+}
+```
+
+```{r}
+if (any(is_failed_istd) || any(is_outlier)) {      # any(NULL) == FALSE
+  SumExp::row_df(internal_std_se) <- SumExp::row_df(internal_std_se) |> 
+    dplyr::mutate(
+      num_zeros = count_zeros_per_feature(internal_std_se[["raw"]]),
+      rsd = show$compute_rsd_per_feature(internal_std_se[["raw"]]),
+    )
+  # Update the table of internal standard features
+  cat("\n\nAfter excluding failed internal standards", 
+      if (is.null(is_outlier)) "" else " and outliers samples",
+      ", the table of internal standard features is as follows.\n\n",
+      sep = "")
+  kable_internal_std(internal_std_se)
+}
+```
+
+### Distribution of the values of individual IS features
+
+```{r}
+#| label: 'distribution-values-internal-standards'
+#| fig-width: 13
+#| fig-height: 4
+# Internal standard features to show
+se_show <- internal_std_se
+for (ii in seq_len(nrow(se_show))) {
+  print(box_scatter_plot_of_one_feature(se_show, ii, widths = c(0.3, 0.7)))
+}
+```
+
+### Raw RSD%
+
+The relative standard deviation (RSD%) of the raw values of the internal standard features are calculated.
+
+#### `QC` samples
+
+As these `QC` samples are technical replicates, the RSD% values of the samples are expected to be low.
+
+```{r}
+#| label: 'rsd-internal-standards-by-qc-samples'
+# Divide the internal standard features by quality control sample
+# Calculate RSD% per internal standard feature and per quality control sample
+m_rsd <- show$extract_qc_samples_to_list(internal_std_se) |> 
+  lapply(function(se) {
+    apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
+  }) |>
+  do.call(cbind, args = _)     # Make sure the result is a matrix even if there is only one value
+# The `rownames` are syntactically valid names, not the original feature names
+stopifnot(identical(rownames(m_rsd), rownames(internal_std_se)))
+rownames(m_rsd) <- SumExp::row_df(internal_std_se)$feature_name
+knitr::kable(m_rsd, caption = "RSD% of internal standard features by quality control sample") |> 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+#### By sample classes
+
+```{r}
+se <- util$exclude_ctrl_smpl_cat(internal_std_se, "QC")
+m_rsd <- setNames(nm = unique(SumExp::col_df(se)$Class)) |>
+  lapply(function(cls) {
+    se <- se[, SumExp::col_df(se)$Class == cls]
+    apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
+  }) |>
+  do.call(cbind, args = _)     # Make sure the result is a matrix even if there is only a vector
+stopifnot(identical(rownames(m_rsd), rownames(se)))
+rownames(m_rsd) <- SumExp::row_df(se)$feature_name
+knitr::kable(m_rsd, caption = "RSD% of internal standard features by sample classes") |> 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+#### By sample types
+
+```{r}
+#| label: 'rsd-internal-standards-by-sample-type'
+# Calculate RSD% per internal standard feature and per sample type
+m_rsd <- setNames(nm = c("Sample", "QC", "Standard", "Blank")) |>
+  lapply(function(st) {
+    se <- internal_std_se[, SumExp::col_df(internal_std_se)$sample_type == st]
+    # If no samples of this type, return NA
+    if (ncol(se) == 0) return(rep(NA_real_, nrow(internal_std_se)))
+    apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
+  }) |>
+  do.call(cbind, args = _)
+# Rename columns to match the user's request labels (Sample, QCs, Standard, Blanks)
+colnames(m_rsd) <- c("Sample", "QCs", "Standard", "Blanks")
+
+stopifnot(identical(rownames(m_rsd), rownames(internal_std_se)))
+rownames(m_rsd) <- SumExp::row_df(internal_std_se)$feature_name
+knitr::kable(m_rsd, caption = "RSD% of internal standard features by sample types") |> 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+

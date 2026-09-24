@@ -1,0 +1,8 @@
+# Apptainer images
+*.sif
+/sandbox/
+
+# Scripts used during development period
+naiss_env.sh
+proj_envs.sh
+

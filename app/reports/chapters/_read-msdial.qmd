@@ -1,0 +1,185 @@
+
+Given file: `` `r SumExp::metadata(raw_se)$file_name` `` 
+
+The given file contains data of `r nrow(raw_se)` features and `r ncol(raw_se)` samples.
+
+## Samples
+
+### By category/class
+
+```{r}
+#| purl: true
+# Category and class of samples
+catg <- util$ctrl_smpl_cat(raw_se)
+catg[catg == ""] <- "Sample"      # Samples were not assigned to any special categories
+```
+
+There are `r length(table(catg))` categories and 
+`r dplyr::n_distinct(SumExp::col_df(raw_se)$Class)` classes of samples in the data.
+The number of samples for each class except `CalCurve` and `QC` is as follows:
+
+```{r}
+catg_cl <- tibble::tibble(
+  Category = catg,
+  Class = SumExp::col_df(raw_se)$Class,
+) |>
+  dplyr::mutate(Class = ifelse(Category %in% c("CalCurve", "QC"), "", Class)) |>
+  tidyr::unite("catg_cl", c(Category, Class), sep = ":", remove = FALSE)
+tb <- janitor::tabyl(catg_cl, catg_cl) |>
+  janitor::adorn_pct_formatting() |>
+  dplyr::right_join(dplyr::distinct(catg_cl), y = _, by = "catg_cl") |>
+  dplyr::arrange(Category, Class)
+stopifnot(anyDuplicated(tb$catg_cl) == 0)   # Ensure no duplicated category-class combinations
+
+tb |>
+  dplyr::select(-catg_cl) |>
+  knitr::kable(
+    row.names = FALSE,          # To avoid excluded row numbers
+    col.names = c("Category", "Class", "Number of Samples", "Percent"),
+    align = "llrr"
+  ) |>
+  kableExtra::kable_styling(full_width = FALSE) |>
+  kableExtra::collapse_rows(columns = 1, valign = "top")
+```
+
+### Calibration curve samples
+
+The samples for the calibration curve are identified by the sample type `Standard`.
+The concentration is extracted from the provided sample ID.
+The IDs are in the format `Cal[[:digit:]-]+` with optional numbers and/or characters before and after of it. 
+Concentration is extracted from the numeric part in the format after the replacement of `-` with `.`.
+
+```{r}
+#| purl: true
+df_show <- if (IS_TARGET_MODE) {
+  # Present the sample IDs for the calibration curve
+  SumExp::col_df(raw_se) |> 
+    dplyr::filter(util$ctrl_smpl_cat(raw_se) == "CalCurve") |> 
+    dplyr::arrange(c_conc) |> 
+    dplyr::select(sample_name, c_conc)
+} else {
+  tibble::tibble(
+    sample_name = character(0),
+    c_conc = numeric(0)
+  )
+}
+```
+
+#### Sample IDs
+
+```{r}
+df_show |> 
+  knitr::kable(
+    row.names = FALSE,
+    col.names = labelled::get_variable_labels(df_show),
+    format.args = list(scientific = FALSE)
+  ) |> 
+  kableExtra::kable_classic(full_width = FALSE) |> 
+  kableExtra::scroll_box(height = "160px")
+```
+
+#### The number of samples per concentration
+
+```{r}
+#| label: 'calcurve-samples-summary'
+# Present the number of samples in the calibration curve
+v <- df_show$c_conc
+table(v) |> 
+  knitr::kable(
+    col.names = c(labelled::get_label_attribute(v), "Number of Samples"), 
+    align = "rr"
+  ) |> 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+### Quality control samples
+
+Aliquots of some samples were measured as technical replicates for quality control.
+The number of the replicates were as below.
+
+```{r}
+show$extract_qc_samples_to_list(raw_se) |> 
+  sapply(ncol) |> 
+  knitr::kable(col.names = c("Class", "Number of Replicates")) |> 
+  kableExtra::kable_styling(full_width = FALSE)
+```
+
+## Features
+
+The data contained `r nrow(raw_se)` features.
+Among them, `r sum(util$std_type(raw_se) != "")` features were targeted. 
+The rest were not targeted.
+
+For those targeted features, the standard type was specified.
+The number of features for each type is as follows:
+
+```{r}
+v <- util$std_type(raw_se)
+replace(v, v == "", "Not targeted") |>
+  show$kable_number_of(what = "Features")
+```
+
+The distribution of the features across m/z and retention time is shown below.
+
+```{r}
+#| label: 'distribution-features'
+#| fig-width: 16
+#| fig-height: 10
+colors <- local({
+  x <- unique(util$std_type(raw_se))
+  n_non_target <- sum(x == "")
+  col <- scales::hue_pal()(length(x) - n_non_target)
+  col <- rlang::set_names(col, x[x != ""])
+  if (n_non_target > 0) {
+    c(col, "grey")     # grey for non-targeted
+  } else {
+    col
+  }
+})
+df1 <- SumExp::row_df(raw_se)
+ggplot(df1) +
+  geom_point(aes(x = .rt, y = mz, color = .std_type), 
+             alpha = ifelse(df1$.std_type == "", 0.1, 1)) +
+  labs(
+    x = show$label_if_has(df1$.rt), 
+    y = show$label_if_has(df1$mz),
+    color = show$label_if_has(df1$.std_type),
+  ) +
+  scale_color_manual(values = colors)
+```
+
+The distribution of m/z of the features is shown below.
+The bin width is set to 0.5.
+
+```{r}
+#| label: 'distribution-mz'
+#| fig-width: 16
+#| fig-height: 8
+df1 <- SumExp::row_df(raw_se)
+ggplot(df1) +
+  geom_histogram(aes(x = mz), binwidth = 0.5) +
+  labs(
+    x = show$label_if_has(df1$mz), 
+    y = "Number of features"
+  )
+```
+
+## Distribution of the values
+
+* Overall samples and targeted features
+
+As shown below, the values are distributed in a skewed manner.
+
+```{r}
+#| label: 'distribution-values-overall-linear'
+#| fig-width: 16 
+#| fig-height: 6
+
+p <- SumExp::ggplot(raw_se) +
+  geom_histogram(aes(x = raw), bins = 50)
+gridExtra::grid.arrange(   # Two ggplots next to each other
+  p + labs(title = "Linear scale", x = "Values"),
+  p + scale_x_log10() + labs(title = "Logarithmic scale", x = "Values"),
+  ncol = 2
+)
+```

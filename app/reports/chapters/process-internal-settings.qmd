@@ -1,0 +1,23 @@
+---
+title: Processing settings
+---
+
+```{r}
+#| purl: true
+#| file: "app/reports/chapters/_internal-shared_setup_chunk.R"
+#| eval: !expr '!knitr::opts_knit$get("child")'
+# The code in this chunk is NOT evaluated here when knitting this file directly.
+# It is included for DEBUGGING purposes only. 
+params <- list(norm_method = "loess_norm") 
+source("app/reports/chapters/_internal-shared_setup_chunk.R")
+```
+
+These were the settings used to process this report
+
+```{r}
+#| purl: true
+
+knitr::kable(unlist(to_report$params)[-length(unlist(to_report$params))],
+             col.names=c("Parameter", "Value"))
+
+```

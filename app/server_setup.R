@@ -1,0 +1,78 @@
+# ------------------------------------------------------------------------------------------- #
+# Server-side setup: shared reactives that load results of the child processes.
+#
+# IMPORTANT: this file is sourced INSIDE `server()` (source(..., local = TRUE)), after
+#   `ws`, `data_info`, `read_done` and `proc_done` have been created. It must NOT live in `R/`
+#   (that folder is auto-sourced globally at app start-up).
+#
+# Design: the child processes write .rds files into the session workspace. Each file is read
+# ONCE per run into a cached reactive; `read_done` / `proc_done` invalidate the cache when a new
+# run has finished. All outputs share the cached objects instead of re-reading the files.
+# ------------------------------------------------------------------------------------------- #
+
+box::use(
+  SumExp, # Light SummarizedExperiment, to use `[`
+  util = projlib / msdial_utils, # Utility functions for MS-Dial data
+  projlib / msdial, # Handle MS-Dial files
+  projlib / show, # Functions to present data
+  ggplot2[...], # Too long to write and usually specific enough
+  io = projlib / check_io_exist, # Check input/output files
+)
+
+# To keep constants consistent across reports
+constants_yml <- yaml::read_yaml("constants.yml")
+COLORS <- lapply(constants_yml$COLORS, unlist) # Lists to named vectors
+
+# What `msdial$get_raw_data_file_name()` / `read_parsed_msdial_data()` need (absolute paths)
+current_inputs <- shiny::reactive({
+  list(input_file = data_info[["input_file"]], intermediate_dir = ws$intermediate)
+})
+rds_file <- function(suffix) msdial$get_raw_data_file_name(current_inputs(), suffix = suffix)
+
+# Parsed data (output of read-msdial.R)
+raw_se_r <- shiny::reactive({
+  read_done()
+  shiny::req(nzchar(data_info[["input_file"]]))
+  shiny::req(file.exists(rds_file("")))
+  msdial$read_parsed_msdial_data(current_inputs())
+})
+
+# For consistency throughout the report
+colors_of_classes <- shiny::reactive({
+  show$get_colors_of_classes(raw_se_r(), COLORS$.ctrl_cat)
+})
+
+# Conversion tables between IDs (syntactically acceptable) and names (human-readable)
+sample_id_name_tbl <- shiny::reactive({
+  SumExp::col_df(raw_se_r()) |>
+    tibble::rownames_to_column("sample_id") |>
+    dplyr::select(sample_id, sample_name)
+})
+feature_id_name_tbl <- shiny::reactive({
+  SumExp::row_df(raw_se_r()) |>
+    tibble::rownames_to_column("feature_id") |>
+    dplyr::select(feature_id, feature_name)
+})
+
+# Intermediate data of the quality-control steps (output of process.R), read once per run
+to_report_r <- shiny::reactive({
+  proc_done()
+  shiny::req(nzchar(data_info[["input_file"]]))
+  path <- rds_file("to_report")
+  shiny::req(file.exists(path))
+  to_report <- readRDS(path)
+  shiny::req(isTRUE(to_report[["Completed"]]))
+  to_report
+})
+# Slices of the cached list, no extra file reading
+pre_norm_se_r <- shiny::reactive(to_report_r()[["before normalization"]])
+internal_std_se_r <- shiny::reactive(to_report_r()[["internal std. before qc"]])
+
+# Calibrated data (output of process.R, target mode only)
+proc_r <- shiny::reactive({
+  proc_done()
+  shiny::req(nzchar(data_info[["input_file"]]))
+  path <- rds_file("proc")
+  shiny::req(file.exists(path))
+  readRDS(path)
+})

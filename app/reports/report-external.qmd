@@ -1,0 +1,379 @@
+---
+params:
+  norm_method: "loess_norm"
+  log_calibration: false
+  interactive_plot: false      # No need here but needed by `report-internal.qmd`
+  project_title: "Test"
+title: "Report on `r params$project_title`"
+format:
+  pdf:
+    echo: false 
+    fig-align: center  # Assure line breaks between figures
+    documentclass: report
+    classoption: landscape
+    papersize: a4
+    geometry:
+      - margin=20mm
+      - heightrounded
+    mainfont: Lato
+---
+
+```{r}
+#| label: 'debug-only-report-external'
+#| eval: false
+if (!exists("params")) params <- list(norm_method = "closest_norm", log_calibration = FALSE)
+```
+
+```{r}
+#| label: 'setup'
+#| purl: true
+# Load packages and project local libraries
+options(box.path = "app/") # Path to project local libraries
+box::use(
+  SumExp, # Light SummarizedExperiment, `[`
+  projlib/msdial, # Handle MS-Dial files
+  util = projlib/msdial_utils, # Utility functions for MS-Dial data
+  projlib/show, # Functions to present data
+  io = projlib/check_io_exist, # Check input/output files
+  patchwork, # Combine ggplot objects. `+`
+  ggplot2[...], # Too long to write and usually specific enough
+  ggfortify, # PCA plot (autoplot)
+)
+# The ID of the matrix after blank subtraction.
+MAT_ID_BLANK_SUBT <- util$mat_id_of_blank_subtracted(params$norm_method)
+# The matrix ID of processed data used for calibration.
+MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)
+
+# Get the input file name provided by the user
+user_inputs <- msdial$get_user_input()
+# To keep constants consistent across reports
+constants_yml <- yaml::read_yaml("app/constants.yml")
+COLORS <- lapply(constants_yml$COLORS, unlist) # Lists to named vectors
+raw_se <- msdial$read_parsed_msdial_data(user_inputs)
+# For consistency throughout the report
+COLORS_OF_CLASSES <- show$get_colors_of_classes(raw_se, COLORS$.ctrl_cat)
+
+if (SumExp::metadata(raw_se)$is_non_target_mode) {
+  stop("This report is only for targeted analysis mode.")
+}
+
+# Input files
+FILE <- list(
+  i = rlang::list2(
+    # Processed data
+    proc = msdial$get_raw_data_file_name(user_inputs, suffix = "proc"),
+    # Intermediate status of the data
+    to_rep = msdial$get_raw_data_file_name(user_inputs, suffix = "to_report"),
+  )
+)
+# Check if input files and output directories exist
+io$check_io_exist(FILE)
+
+# Load the intermediate data during QC
+to_report <- readRDS(FILE$i$to_rep)
+stopifnot("Processing NOT completed." = to_report[["Completed"]])
+
+log_scale <- to_report[["params"]][["log_calibration"]]
+
+# Load the processed data using the specified normalization method
+lst_proc <- readRDS(FILE$i$proc)[[MAT_ID_BLANK_SUBT]] |>
+  lapply(\(per_batch) {
+    has_ex <- SumExp::row_df(per_batch$concn)$to_export
+    lapply(per_batch[c("concn", "calcurve")], \(se) se[has_ex, ]) # Remove features without values
+  })
+concn_lst <- lapply(lst_proc, \(ea) {
+  se <- ea$concn
+  # Exclude control samples
+  util$exclude_ctrl_smpl_cat(se, c("QC"))
+})
+calib_lst <- lapply(lst_proc, \(x) x$calcurve)
+
+# Consistancy throughout this report ----------
+# To keep the same format
+summary_tbl <- lapply(concn_lst, msdial$tbl_chemical_summary) |>
+  purrr::list_rbind(names_to = "Batch") |>
+  dplyr::mutate( # Tidy up the table
+    chem_name = stringr::str_trunc(chem_name, 40),
+    perc_detf = round(100 * n_det / n_samples, 1),
+    model_r2 = round(model_r2, 3),
+    dplyr::across(
+      c(median, mean, min, max),
+      ~ round(.x, 4)
+    ),
+    dplyr::across(
+      c(median, mean, min, max, lod, lloq),
+      ~ as.character(.x)
+    )
+  )
+```
+
+# Project Information
+
+* User: `r user_inputs$user`
+* University: `r user_inputs$university`
+* Project: `r user_inputs$project_title`
+
+`r user_inputs$free_text`
+
+{{< pagebreak >}}
+
+# General overview
+
+```{r}
+for (batch_id in names(concn_lst)) {
+  se <- concn_lst[[batch_id]]
+  cat("\n\n## Batch", batch_id, "\n")
+  cat("\n* Number of samples: ", ncol(se), "\n")
+  cat("\n* Number of targeted chemicals: ", nrow(se), "\n")
+  print(show$kable_number_of(SumExp::col_df(se)$Class))
+}
+```
+
+{{< pagebreak >}}
+
+## Blank filtering
+
+Features were filtered based on blank samples.
+A feature was kept if its maximum peak area in the samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area, OR if its average peak area in samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area.
+
+```{r}
+removed_n <- if (is.null(to_report[["before blank filtering"]])) {
+  0
+} else {
+  nrow(to_report[["before blank filtering"]]) - nrow(to_report[["before normalization"]])
+}
+```
+
+A total of `r removed_n` features were removed in this step.
+
+## PCA
+
+```{r}
+#| label: 'pca'
+#| fig-width: 8
+#| fig-height: 4
+plot_pca <- function(se, mat_id) {
+  mat <- t(se[[mat_id]])
+  # Scale is not possible with all zeros
+  mat <- mat[, colSums(mat, na.rm = TRUE) > 0, drop = FALSE]
+  # Remove constant rows
+  mat <- mat[, apply(mat, 2, var, na.rm = TRUE) > 0, drop = FALSE]
+  # If there are no features, return an empty plot
+  if (ncol(mat) <= 1) {
+    return(ggplot() +
+      ggtitle("No features for PCA"))
+  }
+  pca_res <- stats::prcomp(mat, scale. = TRUE)
+
+  se_df <- SumExp::col_df(se) # `data` in ggplot2::autoplot
+  # Plot
+  ggplot2::autoplot(pca_res, data = se_df, colour = "Class")
+}
+both_se_lst <- lapply(to_report[["normalized - blank"]], \(se) {
+  se <- util$exclude_ctrl_smpl_cat(se, c("QC", "CalCurve", "Blank"))
+  se[!util$is_targeted_feature(se), ] # Only `Quant` targeted chemicals
+})
+for (batch_id in names(both_se_lst)) {
+  cat("\n\n### Batch ", batch_id, "\n")
+  both_se <- both_se_lst[[batch_id]]
+  concn_se <- concn_lst[[batch_id]]
+  p1 <- plot_pca(both_se, MAT_ID_BLANK_SUBT) + ggtitle("Target + Non-target")
+  p2 <- plot_pca(concn_se, MAT_ID_IN_CALIB) + ggtitle("Target")
+  print(p1 + p2 + patchwork::plot_layout(guides = "collect"))
+}
+```
+
+{{< pagebreak >}}
+
+## Chemical summary
+
+```{r}
+#| purl: true
+df_desc <- switch(
+  to_report$params$llox_method,
+  "pt_signal_mean" = paste(
+    "DF: Detection Frequency, defined as the percentage of samples where the signal exceeds 3×", 
+    "the mean signal of the blank (zero concentration point)."
+  ),
+  "pt_signal_mean_plus_sd" = paste(
+    "DF: Detection Frequency, defined as the percentage of samples where the signal exceeds", 
+    "the mean signal of the blank (zero concentration point) by at least 3 standard deviations."
+  )
+)
+```
+
+```{r}
+#| label: 'chemicals-summary'
+
+# Summary table
+summary_tbl |>
+  dplyr::select(
+    "Batch" = Batch,
+    "Chemical" = chem_name,
+    "DF%" = perc_detf,
+    "N of sampl." = n_det,
+    "LOD" = lod,
+    "LLOQ" = lloq,
+    "Median" = median,
+    "Average" = mean,
+    "Min" = min,
+    "Max" = max,
+    "R2" = model_r2,
+    "Model" = best_model,
+    "N of points" = n_conc,
+  ) |>
+  knitr::kable(caption = "Summary of Targets") |>
+  kableExtra::kable_styling(
+    latex_options = "striped",
+    full_width = FALSE,
+    repeat_header_continued = TRUE,
+  )
+```
+
+**Note**
+
+The unit of concentration is `r user_inputs$concentration_unit`.
+
+```{r}
+#| label: 'lod-lloq-limits-text'
+qmd <- "_external-llox_from_llox_signal.qmd"
+cat(knitr::knit_child(file.path("app/reports/chapters", qmd), quiet = TRUE))
+```
+
+```{r}
+#| label: 'calibration-curve-steps-txt'
+lod_signal_txt <- switch(to_report$params$llox_method,
+  "pt_signal_mean" = "3× the mean signal of the blank (zero concentration point)",
+  "pt_signal_mean_plus_sd" = 
+    "mean signal of the blank (zero concentration point) plus 3× its standard deviation"
+)
+```
+
+After the computation of concentration, the following steps are applied to the data:
+
+  * Any calibrated concentration between the LOD and LLOQ is adjusted to the 1/2 of LLOQ.
+  * Any calibrated concentration below the LOD is adjusted to the 1/4 of LLOQ.
+  * Any calibrated concentration below LLOQ while peak signal > the average signal of LLOQ is adjusted to LLOQ.
+  * Any calibrated concentration whose signal is below the average signal of LLOQ is adjusted to the 1/2 of LLOQ.
+  * Any calibrated concentration whose signal is below the LOD signal threshold (`r lod_signal_txt`) is adjusted to 1/4 of LLOQ.
+  * Any chemical with values below LLOQ in all samples is removed from the quantification report.
+
+{{< pagebreak >}}
+
+# Invidual chemicals
+
+```{r}
+#| label: 'individual-chemicals'
+#| fig-width: 12
+#| fig-height: 6
+#' Text box to describe a calibration curve model
+textbox_of_a_width <- function(txt, width) {
+  ggplot() +
+    ggtext::geom_textbox(
+      aes(x = 0, y = 0.9, label = txt),
+      box.color = "black",
+      width = width,
+      fill = NA,
+      hjust = 0,
+      vjust = 1,
+      size = 4
+    ) +
+    scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
+    scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
+    theme_void()
+}
+
+for (batch_id in names(concn_lst)) {
+  cat("\n\n## Batch ", batch_id, "\n")
+  cat("\n\n{{< pagebreak >}}\n\n")
+  concn_se <- concn_lst[[batch_id]]
+  calib_se <- calib_lst[[batch_id]]
+
+  c_concs <- util$spiked_conc_pts(calib_se)
+  lowest_c <- min(c_concs[c_concs > 0])
+
+  stopifnot(identical(rownames(concn_se), summary_tbl$chem_id[summary_tbl$Batch == batch_id]))
+
+  for (i_chem in rownames(concn_se)) { # For each chemical
+    x_se <- concn_se[i_chem, ]
+    chem_name <- SumExp::row_df(x_se)$feature_name
+    cat("\n\n### ", chem_name, "\n")
+
+    # Calibration curves
+    p1 <- show$ggplot_calcurve_samples(x_se,
+      calib_se,
+      mat_id = MAT_ID_IN_CALIB,
+      COLORS_OF_CLASSES,
+      log_scale = log_scale
+    ) +
+      labs(
+        title = "Full range",
+        y = "Peak area (Normalized)"
+      )
+    if (!log_scale) {
+      p2 <- p1 +
+        show$coord_zoom_in_by_cc(n_cc = 3, mat_id = MAT_ID_IN_CALIB) +
+        labs(title = "Zoom-in (3 cal. pts.)")
+    }
+    # Distribution of the concentration by class
+    x_df <- SumExp::as_tibble(x_se)
+    p3 <- ggplot(x_df) +
+      geom_boxplot(aes(x = Class, y = conc, color = Class, fill = Class)) +
+      labs(
+        x = show$label_if_has(x_df$Class, "Class"),
+        y = show$label_if_has(x_df$conc, "Concentration"),
+      ) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) + # Vertical x-axis
+      theme(legend.position = "none") + # No legend
+      scale_y_log10() +
+      scale_color_manual(values = COLORS_OF_CLASSES) +
+      scale_fill_manual(values = COLORS_OF_CLASSES)
+
+    # Text in the box
+    text1 <- local(
+      envir = as.list(summary_tbl[summary_tbl$chem_id == i_chem & summary_tbl$Batch == batch_id, ]),
+      {
+        paste0(
+          "Best model: ", best_model, "  \n",
+          "R2: ", model_r2, "  \n",
+          "N of points: ", n_conc, "  \n",
+          "DF: ", perc_detf, " (", n_det, "/", n_samples, ")", "  \n",
+          "LOD: ", lod, "  \n",
+          "LLOQ: ", lloq, "  \n",
+          "" # For trailing comma
+        ) |>
+          textbox_of_a_width(width = unit(7, "cm"))
+      }
+    )
+
+    txt_legend <- paste0(
+      "The gray areas in the calibration curve represent the regions below LOD and LLOQ.  \n",
+      paste(df_desc, "  \n"),
+      "LOD: Limit of detection.  \n", # "  \n" is for line break
+      "LLOQ: Lower limit of quantification  \n",
+      "The details of LOD and LLOQ are described in the text of the chemical summary table.  \n",
+      "" # For trailing comma
+    ) |>
+      textbox_of_a_width(width = unit(16, "cm"))
+
+    # Plot
+    if (log_scale) {
+      design <- "
+        111222
+        111222
+        334444
+      "
+      print(p1 + p3 + text1 + txt_legend +
+        patchwork::plot_layout(design = design, guides = "collect"))
+    } else {
+      design <- "
+        112233
+        112233
+        445555
+      "
+      print(p1 + p2 + p3 + text1 + txt_legend +
+        patchwork::plot_layout(design = design, guides = "collect"))
+    }
+  }
+}
+```

@@ -1,0 +1,71 @@
+
+The RSD% of the quantification standard samples is calculated for the raw data and the normalized data.
+
+```{r}
+#| label: 'norm-method-comparison'
+#| out.width: '80%'
+
+labs <- SumExp::name_labs(norm_se)
+names(labs) <- gsub(" .*", "", names(labs))    # First word only
+df_to_show <- show$extract_quant_qc(norm_se) |> 
+  show$calc_rsd_qstd(labs) |> 
+  dplyr::mutate(
+    sign = ifelse(loess_norm <= closest_norm, "↓ LOESS", "↓ Closest"),
+    sign = ifelse(is.na(sign), "All 0s", sign),
+    sign = factor(sign, levels = c("↓ LOESS", "↓ Closest", "All 0s"))
+  ) 
+show$ggplot_rsdp_metab(df_to_show, labs) +
+  aes(color = sign) +
+  scale_color_manual(values = c("#00BFC4", "#F8766D", "#7f7f7f")) +
+  facet_grid(~ QC)
+```
+
+The number of features with lower RSD after each normalization is counted below.
+
+```{r}
+#| label: 'rsd-comparison-count'
+#| results: 'markup'
+# Count the number of features with lower RSD
+df_to_show |> 
+  janitor::tabyl(QC, sign)
+```
+
+The number of compounds above or below 20 RSD% is counted below.
+
+```{r}
+#| label: 'rsd-comparison-count-20'
+n_cols <- ncol(df_to_show) - 3
+df_to_show |> 
+  dplyr::summarize(
+    dplyr::across(
+      dplyr::all_of(unname(labs)), 
+      ~ sum(.x > 20, na.rm = TRUE), 
+      .names = "{.col}_gt_20"
+    ),
+    dplyr::across(
+      dplyr::all_of(unname(labs)), 
+      ~ sum(.x <= 20, na.rm = TRUE), 
+      .names = "{.col}_eq_lt_20"
+    ),
+    .by = QC
+  ) |>  
+  knitr::kable(
+    caption = "Number of features with RSD% above or below 20", 
+    col.names = c("QC", rep(names(labs), 2))
+  ) |>
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE) |> 
+  kableExtra::add_header_above(c(" " = 1, "RSD > 20%" = n_cols, "RSD ≤ 20%" = n_cols)) 
+```
+
+The RSD% values are presented in the table below.
+
+```{r}
+#| label: 'rsd-comparison-table'
+df_to_show |> 
+  dplyr::left_join(feature_id_name_tbl, by = "feature_id") |>   # Add feature names
+  dplyr::select(QC, feature_name, dplyr::all_of(unname(labs))) |> 
+  dplyr::rename(all_of(labs), `Feature` = feature_name) |> 
+  knitr::kable(caption = "RSD% of the quantification standard samples", digits = 2) |> 
+  kableExtra::kable_classic(lightable_options = "striped", full_width = FALSE) |>
+  kableExtra::scroll_box(height = "300px")
+```
