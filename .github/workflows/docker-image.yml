@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    if: github.repository == 'parasitetwin/quanta'
+    if: github.repository == 'Exposomics-SciLifeLab/quanta'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
