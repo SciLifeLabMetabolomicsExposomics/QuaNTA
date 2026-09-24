@@ -1,11 +1,15 @@
 # Base image
-FROM rocker/shiny:4.4.1
+FROM rocker/shiny:4.5
 LABEL description="QuaNTA docker build for SciLifeLab Serve"
+
+# Set by Docker buildx for each target platform (e.g. amd64, arm64);
+# matches Quarto's linux-<arch>.deb naming
+ARG TARGETARCH
 
 # Set the working directory
 WORKDIR /proj
-COPY SumExp_0.2.1.tar.gz /tmp/SumExp_0.2.1.tar.gz
-COPY Lato/ /usr/local/share/fonts/Lato/
+COPY /app/envs/SumExp_0.2.1.tar.gz /tmp/SumExp_0.2.1.tar.gz
+COPY /app/envs/Lato/ /usr/local/share/fonts/Lato/
 
 # General updates
 RUN apt-get update && \
