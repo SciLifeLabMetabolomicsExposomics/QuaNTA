@@ -974,45 +974,6 @@
       "Author": "Roger Koenker [cre, aut], Pin Tian Ng [ctb] (Contributions to Sparse QR code), Yousef Saad [ctb] (author of sparskit2), Ben Shaby [ctb] (author of chol2csr), Martin Maechler [ctb] (chol() tweaks; S4, <https://orcid.org/0000-0002-8685-9910>)",
       "Repository": "CRAN"
     },
-    "SumExp": {
-      "Package": "SumExp",
-      "Version": "0.2.1",
-      "Source": "Local",
-      "Type": "Package",
-      "Title": "A light package similar to SummarizedExperiment",
-      "Date": "2025-09-26",
-      "Author": "Mun-Gwan Hong",
-      "Maintainer": "Mun-Gwan Hong <mungwan.hong@nbis.se>",
-      "Description": "This package has functions to handle a class that has a structure similar to SummarizedExperiment in Bioconductor. Unlike SummarizedExperiment, this package cope with tibble and labelled classes.",
-      "License": "MIT + file LICENSE",
-      "Encoding": "UTF-8",
-      "LazyData": "true",
-      "Roxygen": "list(markdown = TRUE)",
-      "RoxygenNote": "7.3.2",
-      "Config/testthat/edition": "3",
-      "Collate": "'list-method.R' 'ListMatrix-class.R' 'SumExp-class.R' 'Extract.R' 'SummarizedExperiment.R' 'cbind.R' 'data.R' 'labelled.R' 'replace.R' 'split.R' 'tidyverse.R'",
-      "Imports": [
-        "dplyr",
-        "labelled",
-        "methods",
-        "rlang",
-        "tibble",
-        "tidyr"
-      ],
-      "Suggests": [
-        "testthat (>= 3.0.0)",
-        "ggplot2",
-        "SummarizedExperiment",
-        "S4Vectors"
-      ],
-      "Depends": [
-        "R (>= 2.10)"
-      ],
-      "NeedsCompilation": "no",
-      "RemoteType": "local",
-      "RemotePkgRef": "local::~/R/QuaNTA/app/envs/SumExp_0.2.1.tar.gz",
-      "RemoteUrl": "C:/Users/antonri/Documents/R/QuaNTA/app/envs/SumExp_0.2.1.tar.gz"
-    },
     "SummarizedExperiment": {
       "Package": "SummarizedExperiment",
       "Version": "1.39.2",
