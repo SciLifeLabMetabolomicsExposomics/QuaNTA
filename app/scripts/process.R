@@ -77,7 +77,7 @@ cat(
 
 #  -----  LIBRARIES AND FILES  -------------------------------------------------
 # Load packages and project local libraries
-options(box.path = "app/") # Path to project local libraries
+box.path = Sys.getenv("R_BOX_PATH", "app/") # Path to project local libraries
 box::use(
   SumExp, # Light SummarizedExperiment, `[`
   projlib / msdial, # Handle MS-Dial files

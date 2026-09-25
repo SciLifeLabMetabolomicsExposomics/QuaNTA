@@ -31,7 +31,7 @@ cat(
 )
 
 # Load packages and project local libraries
-options(box.path = "app/")           # Path to project local libraries
+box.path = Sys.getenv("R_BOX_PATH", "app/")          # Path to project local libraries
 box::use(
   projlib/msdial,   # Handle MS-Dial files
   io = projlib/check_io_exist,       # Check input/output files

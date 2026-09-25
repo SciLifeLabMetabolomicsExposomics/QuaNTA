@@ -5,7 +5,7 @@
 # ------------------------------------------------------------------------------------------- #
 
 # Load packages and project local libraries
-options(box.path = "app/") # Path to project local libraries
+options(box.path = Sys.getenv("R_BOX_PATH", "app/")) # Path to project local libraries
 box::use(
   SumExp, # Light SummarizedExperiment, to use `[`
   util = projlib / msdial_utils, # Utility functions for MS-Dial data

@@ -28,7 +28,7 @@ if (!exists("params")) params <- list(norm_method = "closest_norm", log_calibrat
 #| label: 'setup'
 #| purl: true
 # Load packages and project local libraries
-options(box.path = "app/") # Path to project local libraries
+options(box.path = Sys.getenv("R_BOX_PATH", "app/")) # Path to project local libraries
 box::use(
   SumExp, # Light SummarizedExperiment, `[`
   projlib/msdial, # Handle MS-Dial files
