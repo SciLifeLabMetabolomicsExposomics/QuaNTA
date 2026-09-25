@@ -603,34 +603,34 @@ ui <-
           )
         ),
         quanta_card("Extract data",
-                    shiny::radioButtons(
-                      inputId = "norm_method_2",
-                      label = "Normalization method",
-                      choices = c(
-                        "LOESS" = "loess_norm",
-                        "Closest RT" = "closest_norm",
-                        "Without normalization" = "raw"
-                      ),
-                      selected = "loess_norm"
-                    ),
-                    shiny::checkboxInput(
-                      inputId = "blk_substraction",
-                      label = "The output is blank substracted",
-                      value = FALSE,
-                    ),
-                    shiny::checkboxInput(
-                      inputId = "blk_filtering2",
-                      label = "The output is blank filtered",
-                      value = FALSE,
-                      width = "100%"
-                    ),
-                    numericInput(
-                      inputId = "blank_filtering_factor2",
-                      label = "Blank filtering factor (> 1):",
-                      value = 1,
-                      min = 1,
-                      width = "100%"
-                    ),
+                    # shiny::radioButtons(
+                    #   inputId = "norm_method_2",
+                    #   label = "Normalization method",
+                    #   choices = c(
+                    #     "LOESS" = "loess_norm",
+                    #     "Closest RT" = "closest_norm",
+                    #     "Without normalization" = "raw"
+                    #   ),
+                    #   selected = "loess_norm"
+                    # ),
+                    # shiny::checkboxInput(
+                    #   inputId = "blk_substraction",
+                    #   label = "The output is blank substracted",
+                    #   value = FALSE,
+                    # ),
+                    # shiny::checkboxInput(
+                    #   inputId = "blk_filtering2",
+                    #   label = "The output is blank filtered",
+                    #   value = FALSE,
+                    #   width = "100%"
+                    # ),
+                    # numericInput(
+                    #   inputId = "blank_filtering_factor2",
+                    #   label = "Blank filtering factor (> 1):",
+                    #   value = 1,
+                    #   min = 1,
+                    #   width = "100%"
+                    # ),
                     
                     
                     ##  the selected thinsg needs to be injected in to the runScriptUI() in the runScript.R
