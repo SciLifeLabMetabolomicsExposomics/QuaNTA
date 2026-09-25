@@ -6,7 +6,7 @@
 
 # Load packages and project local libraries
 app_root <- Sys.getenv("APP_ROOT", "app")
-setup_file <- file.path(app_root, "reports", "chapters", "_internal-shared_setup_chunk.R_internal-shared_setup_chunk.R")
+setup_file <- file.path(app_root, "reports", "chapters", "_internal-shared_setup_chunk.R")
 options(box.path = Sys.getenv("R_BOX_PATH", "app/")) # Path to project local libraries
 box::use(
   SumExp, # Light SummarizedExperiment, to use `[`
