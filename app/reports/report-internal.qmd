@@ -17,7 +17,7 @@ knitr:
 
 ```{r}
 #| purl: true
-#| file: "app/reports/chapters/_internal-shared_setup_chunk.R"
+#| file: setup_file
 # The code in this chunk is NOT evaluated here when knitting this file directly.
 # It is included for DEBUGGING purposes only. 
 params <- list(
@@ -25,7 +25,7 @@ params <- list(
   log_calibration = FALSE,
   project_title = "Test"
 ) 
-source("app/reports/chapters/_internal-shared_setup_chunk.R")
+source(setup_file)
 ```
 
 ```{r}

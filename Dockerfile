@@ -3,7 +3,8 @@ FROM rocker/shiny:4.6.1
 LABEL description="QuaNTA docker build for SciLifeLab Serve"
 
 # Setting up shiny-server pathing
-RUN echo "R_BOX_PATH=/srv/shiny-server" >> /usr/local/lib/R/etc/Renviron.site
+RUN echo "APP_ROOT=/srv/shiny-server" >> /usr/local/lib/R/etc/Renviron.site && \
+    echo "R_BOX_PATH=/srv/shiny-server" >> /usr/local/lib/R/etc/Renviron.site
 
 # Set by Docker buildx for each target platform (e.g. amd64, arm64);
 # matches Quarto's linux-<arch>.deb naming. Defaults to amd64 (what Serve runs on)

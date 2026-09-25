@@ -6,10 +6,10 @@ params:
 
 ```{r}
 #| purl: true
-#| file: "app/reports/chapters/_internal-shared_setup_chunk.R"
+#| file: setup_file
 #| eval: !expr '!knitr::opts_knit$get("child")'
 params <- list(norm_method = "closest_norm", project_title = "Test")
-source("app/reports/chapters/_internal-shared_setup_chunk.R") # For "Run Cell" functionality
+source(setup_file) # For "Run Cell" functionality
 ```
 
 ```{r}
