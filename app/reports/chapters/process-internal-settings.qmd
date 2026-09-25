@@ -4,7 +4,7 @@ title: Processing settings
 
 ```{r}
 #| purl: true
-#| file: setup_file
+#| file: !expr setup_file
 #| eval: !expr '!knitr::opts_knit$get("child")'
 # The code in this chunk is NOT evaluated here when knitting this file directly.
 # It is included for DEBUGGING purposes only. 

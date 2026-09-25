@@ -5,8 +5,6 @@
 # ------------------------------------------------------------------------------------------- #
 
 # Load packages and project local libraries
-app_root <- Sys.getenv("APP_ROOT", "app")
-setup_file <- file.path(app_root, "reports", "chapters", "_internal-shared_setup_chunk.R")
 options(box.path = Sys.getenv("R_BOX_PATH", "app/")) # Path to project local libraries
 box::use(
   SumExp, # Light SummarizedExperiment, to use `[`
@@ -25,7 +23,7 @@ MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)
 # Get the input file name provided by the user
 user_inputs <- msdial$get_user_input()
 # To keep constants consistent across reports
-constants_yml <- yaml::read_yaml(paste0(app_root, "/constants.yml"))
+constants_yml <- yaml::read_yaml(file.path(app_root, "constants.yml"))
 COLORS <- lapply(constants_yml$COLORS, unlist) # Lists to named vectors
 raw_se <- msdial$read_parsed_msdial_data(user_inputs)
 IS_TARGET_MODE <- !SumExp::metadata(raw_se)$is_non_target_mode

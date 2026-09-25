@@ -16,16 +16,23 @@ knitr:
 ---
 
 ```{r}
+#| include: false
+app_root <- Sys.getenv("APP_ROOT", "app")
+chapters_dir <- file.path(app_root, "reports", "chapters")
+setup_file <- file.path(chapters_dir, "_internal-shared_setup_chunk.R")
+```
+
+```{r}
 #| purl: true
-#| file: setup_file
+#| file: !expr setup_file
 # The code in this chunk is NOT evaluated here when knitting this file directly.
-# It is included for DEBUGGING purposes only. 
+# It is included for DEBUGGING purposes only.
 params <- list(
   norm_method = "loess_norm", 
   log_calibration = FALSE,
   project_title = "Test"
 ) 
-source(setup_file)
+source(file.path(Sys.getenv("APP_ROOT", "app"), "reports", "chapters", "_internal-shared_setup_chunk.R"))
 ```
 
 ```{r}
@@ -36,7 +43,7 @@ set.seed(7579)
 # Settings used for processing
 
 ```{r}
-#| child: app/reports/chapters/process-internal-settings.qmd
+#| child: !expr file.path(chapters_dir, "process-internal-settings.qmd")
 ```
 
 --------------------------------------------
@@ -50,7 +57,7 @@ set.seed(7579)
 ## Internal standards (ISs) 
 
 ```{r}
-#| child: app/reports/chapters/process-internal-stds.qmd
+#| child: !expr file.path(chapters_dir, "process-internal-stds.qmd")
 ```
 
 ## Normalization by ISs
@@ -80,13 +87,13 @@ norm_se <- to_report[["normalized"]]
 ### Closest RT (IS) normalization
 
 ```{r}
-#| child: app/reports/chapters/process-norm-closest.qmd
+#| child: !expr file.path(chapters_dir, "process-norm-closest.qmd")
 ```
 
 ### LOESS (IS) normalization
 
 ```{r}
-#| child: app/reports/chapters/process-norm-loess.qmd
+#| child: !expr file.path(chapters_dir, "process-norm-loess.qmd")
 ```
 
 ### Comparison of normalization methods
@@ -135,16 +142,16 @@ if (IS_TARGET_MODE) {
   cat("\n\n# Calibration\n\n")
   cat("\nThe calibration is performed per batch.\n\n")
   qmd <- "process-calibration-llox_from_llox_signal.qmd"
-  cat(knitr::knit_child(file.path("app/reports/chapters", qmd), quiet = TRUE))
+  cat(knitr::knit_child(file.path(chapters_dir, qmd), quiet = TRUE))
   # Stop here if the calibration is not performed
   if (all(sapply(lst_proc, is.null))) {
     cat("\n\n# No calibration\n\n")
     cat("Because it is not possible to perform calibration with the provided data.\n\n")
   } else {
     qmd <- "process-calibration-curves.qmd"
-    cat(knitr::knit_child(file.path("app/reports/chapters", qmd), quiet = TRUE))
+    cat(knitr::knit_child(file.path(chapters_dir, qmd), quiet = TRUE))
     cat("\n\n# Concentration\n\n")
-    cat(knitr::knit_child("app/reports/chapters/_process-concentration.qmd", quiet = TRUE))
+    cat(knitr::knit_child(file.path(chapters_dir, "_process-concentration.qmd"), quiet = TRUE))
   }
 }
 ```
