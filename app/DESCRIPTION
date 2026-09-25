@@ -1,6 +1,6 @@
-Package: SMS-7579-23-exposome
+Package: QuaNTA
 Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: 
     person("Papazian", "Stefano", , "first.last@example.com", role = c("aut", "cre"),
            comment = c(ORCID = "YOUR-ORCID-ID"))

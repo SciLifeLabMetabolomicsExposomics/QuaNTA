@@ -1,5 +1,5 @@
 # Base image: match this to your local R version (R.version.string)
-FROM rocker/shiny:4.5
+FROM rocker/shiny:4.6.1
 LABEL description="QuaNTA docker build for SciLifeLab Serve"
 
 # Set by Docker buildx for each target platform (e.g. amd64, arm64);
