@@ -1,35 +1,44 @@
-# Base image
+# Base image: match this to your local R version (R.version.string)
 FROM rocker/shiny:4.5
 LABEL description="QuaNTA docker build for SciLifeLab Serve"
 
 # Set by Docker buildx for each target platform (e.g. amd64, arm64);
-# matches Quarto's linux-<arch>.deb naming
-ARG TARGETARCH
+# matches Quarto's linux-<arch>.deb naming. Defaults to amd64 (what Serve runs on)
+# in case the build doesn't set it.
+ARG TARGETARCH=amd64
 
 # Set the working directory
 WORKDIR /proj
 COPY /app/envs/SumExp_0.2.1.tar.gz /tmp/SumExp_0.2.1.tar.gz
 COPY /app/envs/Lato/ /usr/local/share/fonts/Lato/
 
-# General updates
+# General updates (curl and cmake added: curl for renv downloads, cmake for nloptr)
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y git libxml2-dev libmagick++-dev libssl-dev libharfbuzz-dev libfribidi-dev && \
+    apt-get install -y git curl cmake libxml2-dev libmagick++-dev libssl-dev libharfbuzz-dev libfribidi-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Quarto
+# Refresh the font cache so the Lato fonts are found
+RUN fc-cache -f
+
+# Install Quarto (apt-get instead of gdebi, in case gdebi isn't in the base image)
 RUN wget -O quarto-linux.deb https://quarto.org/download/latest/quarto-linux-${TARGETARCH}.deb && \
-    gdebi --non-interactive quarto-linux.deb && \
-    rm quarto-linux.deb
+    apt-get update && \
+    apt-get install -y ./quarto-linux.deb && \
+    rm quarto-linux.deb && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN quarto install tinytex
 
 # Install the required packages
-# Recreate the R environment using renv package
+# Recreate the R environment using renv package, skipping the local SumExp package
 RUN Rscript -e 'install.packages(c("renv"))'
 COPY /renv.lock /srv/shiny-server/renv.lock
-RUN Rscript -e 'setwd("/srv/shiny-server/");renv::restore();'
+RUN Rscript -e 'setwd("/srv/shiny-server/"); renv::restore(exclude = "SumExp")'
+
+# Install the local SumExp package after its dependencies are in place
+RUN Rscript -e 'install.packages("/tmp/SumExp_0.2.1.tar.gz", repos = NULL, type = "source")'
 
 # Copy the app files (scripts, data, etc.)
 RUN rm -rf /srv/shiny-server/*
