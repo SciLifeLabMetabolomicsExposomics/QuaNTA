@@ -53,7 +53,9 @@ runScriptUI <- function(uiId, label, download=FALSE) {
         if (!is.null(extra_args)) args <- c(args, extra_args())
 
         # 3. Child process with its own environment
-        env <- c(unlist(as.list(Sys.getenv())), QUANTA_PARAMS_FILE = params_file)
+        env <- c(unlist(as.list(Sys.getenv())),
+                 QUANTA_PARAMS_FILE = params_file,
+                 R_BOX_PATH = find_box_root())
         env <- env[!duplicated(names(env), fromLast = TRUE)]
         p <- processx::process$new(
           command = "Rscript",
@@ -120,6 +122,20 @@ runScriptUI <- function(uiId, label, download=FALSE) {
   })
 }
 
+#' Locate the folder that contains `projlib/msdial.R` (and `SumExp`), whatever it is called
+#' (`code/`, `app/`, ...). Passed to the child processes as an absolute path so it does not
+#' depend on their working directory.
+#' @export
+find_box_root <- function() {
+  cands <- c(".", "..", "code", "../code", "app", "../app")
+  hit <- cands[file.exists(file.path(cands, "projlib", "msdial.R"))]
+  if (length(hit) == 0) {
+    stop("Could not find `projlib/msdial.R` in any of: ", paste(cands, collapse = ", "),
+         " (relative to ", getwd(), ").", call. = FALSE)
+  }
+  normalizePath(hit[1], winslash = "/", mustWork = TRUE)
+}
+
 #' A Shiny server module to run a script and display the output
 #'
 #' @param serverId A string that identifies the server module.
@@ -136,29 +152,29 @@ runScriptServer <- function(serverId, script_path, what, param_ids = NULL, data_
   .runScriptCore(serverId, script_path, what, param_ids, data_info, ws, extra_args = NULL)
 }
 
-#' Same as [runScriptServer()] for the export script, with two extra arguments and a zip download
+#' Same as [runScriptServer()] for the export script, with the normalization method and a zip download
 #'
 #' @inheritParams runScriptServer
-#' @param input1 A reactive with the normalization method
-#' @param input2 A reactive: blank subtracted or not
+#' @param norm_method A reactive with the matrix ID of the normalization method to export
+#'   (e.g. `"loess_norm"`), or `"auto"` for the best one determined by `process.R`
 #' @export
 runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data_info, ws,
-                             input1 = NULL, input2 = NULL) {
-  extra_args <- function() {
-    c(
-      if (!is.null(input1)) paste0("--input1=", input1()),
-      if (!is.null(input2)) paste0("--input2=", input2())
-    )
-  }
+                             norm_method) {
+  extra_args <- function() paste0("--norm_method=", shiny::isolate(norm_method()))
   done_at <- .runScriptCore(serverId, script_path, what, param_ids, data_info, ws, extra_args)
 
   # Second module server with the same ID: the outputs share the namespace of the UI
   shiny::moduleServer(serverId, function(input, output, session) {
     output$download_tables <- shiny::downloadHandler(
-      filename = function() paste0("QuaNTA_tables_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip"),
+      filename = function() {
+        paste0("QuaNTA_tables_", norm_method(), "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip")
+      },
       content = function(file) {
-        files <- list.files(ws$tables, pattern = "\\.xlsx$", full.names = TRUE)
-        if (length(files) == 0) stop("No exported tables yet. Run the export first.")
+        # Only the tables of the selected method: "(base name).(method).(norm|norm_blk|conc).xlsx"
+        method <- sub("_norm$", "", norm_method())
+        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc)\\.xlsx$")
+        files <- list.files(ws$tables, pattern = pattern, full.names = TRUE)
+        if (length(files) == 0) stop("No exported tables of this method yet. Run the export first.")
         zip::zip(zipfile = file, files = files, mode = "cherry-pick")
       }
     )

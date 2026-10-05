@@ -99,7 +99,9 @@ get_colors_of_classes <- function(sumexp, color_cat) {
   # Use ggplot2 default colors excluding the first red, which is similar to 'red'
   ggcolor <- grDevices::hcl(seq(15, 375, length.out = n + 2), 100, 65)[2:(n + 1)]
   names(ggcolor) <- rest
-  c(color_given, ggcolor)
+  # A named character vector (`purrr::flatten()` gives a list, which ggplot2's manual scales
+  # do not accept as colors)
+  unlist(c(color_given, ggcolor))
 }
 
 #  -----  QC SAMPLES  ----------------------------------------------------------
@@ -107,25 +109,41 @@ get_colors_of_classes <- function(sumexp, color_cat) {
 #' Extract QC samples into list
 #'
 #' @param se A [`SumExp::SumExp`] object
+#' @param min_n The minimum number of samples of a QC class to be included. RSD% needs >= 2.
 #'
-#' @returns A list of SumExp objects divided by QC Classes
+#' @returns A list of SumExp objects divided by QC Classes. An empty list without QC samples.
 #' @md
 #' @export
-extract_qc_samples_to_list <- function(se) {
+extract_qc_samples_to_list <- function(se, min_n = 1) {
   se <- util$extract_ctrl_smpl_cat(se, "QC")
   qc_id <- SumExp::col_df(se)$Class
+  qc_ids <- names(which(table(qc_id) >= min_n))
   # Column-wise split
-  lapply(stats::setNames(nm = unique(qc_id)), \(ii) se[, qc_id == ii])
+  lapply(stats::setNames(nm = intersect(unique(qc_id), qc_ids)), \(ii) se[, qc_id == ii])
 }
+
+#' Whether there are enough QC samples to evaluate RSD%
+#'
+#' @param se A [`SumExp::SumExp`] object
+#' @returns `TRUE` if at least one QC class has two or more samples
+#' @export
+has_enough_qc <- function(se) {
+  length(extract_qc_samples_to_list(se, min_n = 2)) > 0
+}
+
+#' Message shown instead of QC-based figures and tables
+#' @export
+not_enough_qc_msg <- "Not enough QCs to evaluate (at least two QC samples of the same class are needed)."
 
 #' Extract quantitative standards in QC samples
 #'
 #' @param sumexp A [`SumExp::SumExp`] object
-#' @returns A list of SumExp objects with quantitative standards in QC samples
+#' @returns A list of SumExp objects with quantitative standards in QC samples. Only QC classes
+#'   with two or more samples, as RSD% cannot be computed otherwise.
 #' @md
 #' @export
 extract_quant_qc <- function(sumexp) {
-  se_lst <- extract_qc_samples_to_list(sumexp)
+  se_lst <- extract_qc_samples_to_list(sumexp, min_n = 2)
   lapply(se_lst, \(se) {
     se[util$is_targeted_feature(se), ]
   })
@@ -152,6 +170,31 @@ calc_rsd_qstd <- function(qc_se_lst, mat_ids) {
     out[[ii]] <- labelled::copy_labels(qc_se_lst[[1]][[ii]], out[[ii]])
   }
   out  
+}
+
+#' Colors of the `sign` levels from [mark_lowest_rsd_norm()]
+#' @export
+norm_sign_colors <- c("#00BFC4", "#F8766D", "#7CAE00", "#7f7f7f") |>
+  stats::setNames(c(paste(intToUtf8(0x2193), c("LOESS", "Closest", "Multivariate")), "All 0s"))
+
+#' Mark the normalization method with the lowest RSD% per feature
+#'
+#' @param rsd_df A data frame from [calc_rsd_qstd()]
+#' @param labs A named character vector: names are labels, values are matrix IDs (columns of
+#'   `rsd_df`). `raw` is not a normalization method and is never marked.
+#' @returns `rsd_df` with a factor column `sign`, e.g. "↓ LOESS", or "All 0s" when no method has
+#'   a valid RSD%
+#' @md
+#' @export
+mark_lowest_rsd_norm <- function(rsd_df, labs) {
+  norm_labs <- labs[labs != "raw"]
+  levs <- c(paste(intToUtf8(0x2193), names(norm_labs)), "All 0s")   # Down arrow
+  m <- as.matrix(rsd_df[unname(norm_labs)])
+  m[!is.finite(m)] <- Inf
+  i_min <- max.col(-m, ties.method = "first")
+  sign <- ifelse(rowSums(is.finite(m)) == 0, "All 0s", levs[i_min])
+  rsd_df$sign <- factor(sign, levels = levs)
+  rsd_df
 }
 
 #' Plot the RSD% of various data sets of features
@@ -253,6 +296,7 @@ ggplot_calcurve_samples <- function(x_se, cc_se, mat_id, colors_of_classes, log_
     tidyr::drop_na(tidyselect::all_of(unname(mat_id))) |>
     dplyr::mutate(
       txt = paste(
+        "batch: ", batch_id, "\n",
         "inj: ", injection_order, ", conc: ", c_conc, "\n",
         "name: ", sample_name, "\n",
         "int: ", round(.data[[mat_id]], 0)
@@ -268,6 +312,7 @@ ggplot_calcurve_samples <- function(x_se, cc_se, mat_id, colors_of_classes, log_
     tidyr::drop_na(conc) |>
     dplyr::mutate(
       txt = paste(
+        "batch: ", batch_id, "\n",
         "inj: ", injection_order, ", conc: ", conc, "\n",
         "name: ", sample_name, "\n",
         "int: ", round(.data[[mat_id]], 0)

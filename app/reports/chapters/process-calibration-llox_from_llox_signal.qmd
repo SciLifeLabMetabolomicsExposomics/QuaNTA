@@ -31,6 +31,10 @@ for (ii in names(calcurve_lst)) {
   v <- util$spiked_conc_pts(se)
   v <- v[!is.na(v)] |>
     labelled::copy_labels_from(v)
+  if (length(v) == 0) {   # The batch is quantified by the global calibration curve
+    cat("\n\n**Batch ", ii, "**: no calibration curve samples.\n\n", sep = "")
+    next
+  }
   table(v) |>
     knitr::kable(
       align = c("r", "r"),

@@ -252,6 +252,103 @@ get_loess_fit <- function(istd_se, excl_cat, overall_rt_range, span, mat_id) {
   loess_fit
 }
 
+#' Multivariate (PCA) internal standard normalization
+#'
+#' Per-sample normalization factor derived from the first principal component of UVN-scaled
+#' (unit-variance scaled, NOT mean-centered) internal standard peak areas. The factor is rescaled
+#' to a mean of 1 so the normalized values stay in the same order of magnitude as the raw data.
+#' Follows Surowiec et al. (2017), Metabolomics 13:114.
+#'
+#' @param se A [`SumExp::SumExp`] object with the features to be normalized
+#' @param istd_se A [`SumExp::SumExp`] object of internal standard features only, with the same
+#'   samples in the same order as `se`
+#' @param mat_id The name of a matrix in `se` and `istd_se`
+#'
+#' @returns A list:
+#' * `normalized`: a numeric matrix with the same dimensions as `se[[mat_id]]`
+#' * `factor`: the per-sample normalization factor (PC1 score / its mean), named by sample ID
+#' * `loadings`: the loadings of the internal standards on PC1
+#' * `explained_variance`: the fraction of the (uncentered) internal standard variance on PC1
+#' * `is_used`: IDs of the internal standards used (those with a positive, finite variance)
+#' @md
+#' @export
+multivariate_is_pca_normalization <- function(se, istd_se, mat_id) {
+  stopifnot(identical(colnames(se), colnames(istd_se)))
+  is_x <- t(istd_se[[mat_id]]) # Samples in rows, internal standards in columns
+  if (any(!is.finite(is_x))) stop("Internal standard data contain NA, NaN or infinite values.")
+  if (any(is_x <= 0)) stop("Internal standard peak areas must be > 0.")
+
+  # UVN scaling WITHOUT mean centering
+  is_sd <- apply(is_x, 2, stats::sd)
+  keep <- is.finite(is_sd) & is_sd > 0
+  if (sum(keep) < 2) stop("At least two internal standards with non-zero variance are required.")
+  is_scaled <- sweep(is_x[, keep, drop = FALSE], 2, is_sd[keep], FUN = "/")
+
+  # PCA without centering via SVD (`prcomp()` centers by default)
+  svd_fit <- svd(is_scaled, nu = 1, nv = 1)
+  t1 <- svd_fit$u[, 1] * svd_fit$d[1]
+  p1 <- svd_fit$v[, 1]
+  if (sum(p1) < 0) { # The sign of a PC is arbitrary; orient it along the peak areas
+    t1 <- -t1
+    p1 <- -p1
+  }
+  if (any(t1 <= 0)) stop("Non-positive PC1 scores; the normalization factor is undefined.")
+  norm_factor <- stats::setNames(t1 / mean(t1), colnames(se))
+
+  list(
+    normalized = sweep(se[[mat_id]], 2, norm_factor, FUN = "/"),
+    factor = norm_factor,
+    loadings = stats::setNames(p1, colnames(is_x)[keep]),
+    explained_variance = svd_fit$d[1]^2 / sum(svd_fit$d^2),
+    is_used = colnames(is_x)[keep]
+  )
+}
+
+##  COMPARISON OF NORMALIZATION METHODS  -------------------
+
+#' Median RSD% of replicate samples per matrix
+#'
+#' RSD% is computed per feature within each class (replicate group, e.g. a QC class or a
+#' calibration level) of the sample category `cat`, then the median over all features and classes
+#' is taken. Targeted features are used; if there are none (non-target mode), all features except
+#' internal standards are used.
+#'
+#' @param se A [`SumExp::SumExp`] object, including the matrices in `mat_ids`
+#' @param mat_ids A character vector of matrix IDs to compare
+#' @param cat The sample category of the replicates, e.g. `"QC"` or `"CalCurve"`
+#' @returns A named numeric vector of the median RSD% per matrix ID. `NA` when it cannot be
+#'   computed, e.g. without replicates.
+#' @md
+#' @export
+median_rsd_per_matrix <- function(se, mat_ids, cat = "QC") {
+  qc_se <- util$extract_ctrl_smpl_cat(se, cat)
+  is_tgt <- util$is_targeted_feature(qc_se)
+  qc_se <- if (any(is_tgt)) qc_se[is_tgt, ] else qc_se[!util$is_internal_std(qc_se), ]
+  qc_class <- SumExp::col_df(qc_se)$Class
+  rsd_perc <- function(x) 100 * stats::sd(x) / mean(x)
+  vapply(stats::setNames(nm = mat_ids), function(mat_id) {
+    rsd <- unlist(lapply(unique(qc_class), function(cl) {
+      apply(qc_se[[mat_id]][, qc_class == cl, drop = FALSE], 1, rsd_perc)
+    }))
+    rsd <- rsd[is.finite(rsd)]
+    if (length(rsd) == 0) NA_real_ else stats::median(rsd)
+  }, numeric(1))
+}
+
+#' Select the normalization method with the lowest median RSD%
+#'
+#' @param median_rsd A named numeric vector from [median_rsd_per_matrix()]
+#' @param candidates Matrix IDs eligible to be selected
+#' @param fallback Matrix ID returned when no candidate has a valid RSD%
+#' @returns A single matrix ID
+#' @md
+#' @export
+select_best_normalization <- function(median_rsd, candidates, fallback = "loess_norm") {
+  v <- median_rsd[intersect(candidates, names(median_rsd))]
+  v <- v[!is.na(v)]
+  if (length(v) == 0) fallback else names(v)[which.min(v)]
+}
+
 #  -----  BLANK FILTERING  -----------------------------------------------------
 
 #' Filter features based on blank samples
@@ -407,9 +504,11 @@ apply_per_spiked_conc <- function(cc_se, mat_id, MARGIN, FUN, ..., simplify = TR
   }
 
   # Checking starting index of increase for all compounds
-  start_ind <- list()
   for (comp in seq_len(nrow(cal_curve_df))) {
     start_ind <- find_increasing_start(cal_curve_df[comp, ])
+    # NA: missing signals, e.g. chemicals removed by blank filtering (rows set to NA). Left as
+    # they are; they end up without a proper calibration range
+    if (is.na(start_ind)) next
 
     if (start_ind > 1) { # Change to 2 here if 0 always kept
 
@@ -1046,10 +1145,13 @@ replace_conc_whose_signal_below_lod <- function(sumexp, conc_mat_id) {
 #'
 #' @param signal A vector with signals from instrument sorted in increasing theoretical conc
 #'
-#' @returns Index of the cal point at which point there is always increasing signal
+#' @returns Index of the cal point at which point there is always increasing signal. `NA` when
+#'   any signal is missing.
 #' @md
 #' @export
 find_increasing_start <- function(signal) {
+  signal <- as.double(unlist(signal)) # Also accepts a one-row data frame
+  if (anyNA(signal)) return(NA_integer_)
   n <- length(signal)
   for (i in seq_len(n)) {
     if (all(diff(as.double(signal[i:n])) > 0)) {

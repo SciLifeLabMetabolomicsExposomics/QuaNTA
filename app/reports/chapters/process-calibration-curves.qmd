@@ -76,18 +76,25 @@ The concentration range was narrowed down to the range after the trimming step d
 #| label: 'calibration-curve-by-chemical-legend'
 #| fig-width: 10
 #| fig-height: 1
+# Point shape per batch, named by batch ID so that every plot and the shared legend agree.
+# The default shape palette has only 6 shapes; repeat the list for any number of batches.
+batch_ids <- sort(unique(as.character(calcurve_to_show_df$Batch)))
+batch_shapes <- rep_len(c(16, 17, 15, 18, 8, 3, 4, 7, 9, 10, 11, 12, 13, 14), length(batch_ids)) |>
+  setNames(batch_ids)
 # Plot calibration curves
 calcurve_plot <- function(dfm, y = params$norm_method) {
   dfm <- dfm |>
     dplyr::mutate(
       # Label for the points
-      txt = paste0("inj: ", injection_order, ", conc: ", .cc_pt, 
+      txt = paste0("Batch: ", Batch,
+                   "\ninj: ", injection_order, ", conc: ", .cc_pt,
                    "\nName: ", sample_name,
                    "\nint: ", signif(.data[[y]], 6))
     )
   facet_fill <- if (any(!dfm$has_proper_range)) "lightcoral" else "lightgray"
   ggplot(dfm, aes(x = .cc_pt, y = .data[[y]], shape = Batch)) +
     suppressWarnings(geom_point(aes(color = c_type, text = txt))) +
+    scale_shape_manual(values = batch_shapes) +
     labs(
       x = show$label_if_has(dfm$.cc_pt, "Calibrant Concentration"),
       y = show$label_if_has(dfm[[y]], "Signal"),
@@ -187,7 +194,7 @@ if (weight_method == "largestR2") {
 }
 ```
 
-The calibration curve is fitted to the `r switch(params$norm_method, "loess_norm" = "LOESS", "closest_norm" = "Closest RT")` normalized data using `r n_models` different models.
+The calibration curve is fitted to the `r switch(params$norm_method, "loess_norm" = "LOESS normalized", "closest_norm" = "Closest RT normalized", "mvis_norm" = "multivariate (PCA) normalized", "raw" = "non-normalized", params$norm_method)` data using `r n_models` different models.
 Linear models and quadratic models are fitted to the data with `r weight_txt`.
 The best model is selected based on the $R^2$ value.
 Preferring simpler models, the measures of explained variation of quadratic models were penalized by 0.01.

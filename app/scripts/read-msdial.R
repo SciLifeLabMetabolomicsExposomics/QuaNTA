@@ -31,7 +31,7 @@ cat(
 )
 
 # Load packages and project local libraries
-box.path = Sys.getenv("R_BOX_PATH", "app/")          # Path to project local libraries
+options(box.path = Sys.getenv("R_BOX_PATH", "app/"))          # Path to project local libraries
 box::use(
   projlib/msdial,   # Handle MS-Dial files
   io = projlib/check_io_exist,       # Check input/output files
@@ -49,8 +49,6 @@ FILE <- list(
 # Check if input files and output directories exist
 io$check_io_exist(FILE)
 
-print(io$check_io_exist(FILE))
-print(FILE)
 # "non-target mode": When there is missing information for calibration of targeted chemicals
 is_non_target_mode <- FALSE
 
@@ -178,12 +176,21 @@ for (i_batch in batch_ids) {
   if (!any(sinfo_b$.ctrl_cat == "Blank")) {
     stop("`Blank` samples are required in batch ", i_batch)
   }
-  for (catx in c("CalCurve", "QC")) {
-    if (!any(sinfo_b$.ctrl_cat == catx)) {
-      warning("`", catx, "` samples are missing in batch ", i_batch)
-      is_non_target_mode <- TRUE
-    }
+  # Neither QC nor calibration curve samples are required per batch:
+  # - Without QC samples, the evaluations using QC samples are skipped.
+  # - Without calibration curve samples, the batch is quantified by the global calibration curve.
+  if (!any(sinfo_b$.ctrl_cat == "QC")) {
+    cat("No `QC` samples in batch ", i_batch, ". The QC-based evaluations will not include it.\n", sep = "")
   }
+  if (!any(sinfo_b$.ctrl_cat == "CalCurve")) {
+    cat("No `CalCurve` samples in batch ", i_batch,
+        ". It will be quantified using the global calibration curve.\n", sep = "")
+  }
+}
+# Calibration requires calibration curve samples in at least one batch
+if (!any(sample_info$.ctrl_cat == "CalCurve")) {
+  warning("`CalCurve` samples are missing.")
+  is_non_target_mode <- TRUE
 }
 
 if (is_non_target_mode) {

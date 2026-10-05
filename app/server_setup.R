@@ -32,6 +32,8 @@ rds_file <- function(suffix) msdial$get_raw_data_file_name(current_inputs(), suf
 # Parsed data (output of read-msdial.R)
 raw_se_r <- shiny::reactive({
   read_done()
+  session_loaded()   # Also re-read after loading saved session data
+  input[["data_info-input_file_upload"]]   # A new upload deletes the data (also with the same name)
   shiny::req(nzchar(data_info[["input_file"]]))
   shiny::req(file.exists(rds_file("")))
   msdial$read_parsed_msdial_data(current_inputs())
@@ -57,6 +59,10 @@ feature_id_name_tbl <- shiny::reactive({
 # Intermediate data of the quality-control steps (output of process.R), read once per run
 to_report_r <- shiny::reactive({
   proc_done()
+  session_loaded()
+  read_done()                              # Re-reading deletes the processed data (see app.R)
+  input[["read_msdial-run_button"]]        # ... from the moment the read is started
+  input[["data_info-input_file_upload"]]   # A new upload deletes it too
   shiny::req(nzchar(data_info[["input_file"]]))
   path <- rds_file("to_report")
   shiny::req(file.exists(path))
@@ -71,6 +77,10 @@ internal_std_se_r <- shiny::reactive(to_report_r()[["internal std. before qc"]])
 # Calibrated data (output of process.R, target mode only)
 proc_r <- shiny::reactive({
   proc_done()
+  session_loaded()
+  read_done()
+  input[["read_msdial-run_button"]]
+  input[["data_info-input_file_upload"]]
   shiny::req(nzchar(data_info[["input_file"]]))
   path <- rds_file("proc")
   shiny::req(file.exists(path))

@@ -8,6 +8,10 @@ options(shiny.host = "0.0.0.0")
 options(shiny.port = 7579)
 options(shiny.maxRequestSize = 500 * 1024^2)
 
+# `box` caches loaded modules for the whole R session. Clear the cache so that re-running the app
+# in the same session (e.g. RStudio) picks up edits to `projlib/` instead of stale modules.
+box::purge_cache()
+
 
 # TODO: replace with box::use() + pkg:: qualification at call sites (r-lang-guide / CLAUDE.md),
 # deferred for now since call sites are unqualified file-wide and this app can't be run here to verify.
@@ -24,11 +28,18 @@ library(echarts4r)
 library(DT)
 library(plotly)
 library(shinycssloaders)
+
+# Larger text in all plots of the app. Shiny draws ggplot2 plots at 72 dpi, so the default 11pt
+# text is only ~11 pixels high however large the plot is. Plotly plots converted with
+# `ggplotly()` follow this theme too.
+QUANTA_PLOT_BASE_SIZE <- 16
+ggplot2::theme_set(ggplot2::theme_grey(base_size = QUANTA_PLOT_BASE_SIZE))
 # 1) Define theme
 custom_theme <- bs_theme(
   version = 5,
   bootswatch = NULL,
-  base_font = font_google("Inter"),
+  # Lato from www/fonts/ (the @font-face rules are in www/fonts/lato.css, linked in the UI header)
+  base_font = font_collection("Lato", "sans-serif"),
   heading_font = font_google("Oswald"),
   code_font = font_google("JetBrains Mono"),
   bg = "#FFFFFF", # white background
@@ -43,11 +54,11 @@ custom_theme <- bs_theme(
   danger = "#FF6B6B",
 
   ### >>>>> CARD COLOR UPDATED (BLUE) <<<<<
-  "card-bg" = "#6FAAF7", # QuANTA deep blue
+  "card-bg" = "#608cc4", # QuANTA deep blue 6FAAF7
   "card-border-color" = "#6FAAF7", # darker border to match
   "navbar-bg" = "#0D121C",
   "navbar-fg" = "#FFFFFF",
-  "link-color" = "#F4A259",
+  "link-color" = "#d6a376", #F4A259
   "link-hover-color" = "#8F8DF7"
 )
 
@@ -77,6 +88,16 @@ custom_theme <- bs_add_rules(
   background-color: #E69500 !important;   /* DARKER ORANGE when pressed */
   border-color: #E69500 !important;
   color: #000000 !important;
+}
+
+/* Disabled buttons (e.g. report / export until a final normalization method is chosen) */
+.btn:disabled, .btn.disabled,
+.btn:disabled:hover, .btn.disabled:hover {
+  background-color: #C8C8C8 !important;   /* GREY */
+  border-color: #C8C8C8 !important;
+  color: #6B6B6B !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
 }
 
 /* Outline button behavior */
@@ -149,8 +170,17 @@ pre.shiny-text-output:hover {
 .bslib-card-header,
 .bslib-card-header *,
 .bslib-card-header-title {
-  font-size: 2rem !important;
+  /* Scales with the window width (min 1.25rem, max 2rem) so the titles fit on one line */
+  font-size: clamp(1.25rem, 1.9vw, 2rem) !important;
   font-weight: 700 !important;
+  line-height: 1.2 !important;   /* relative to the font size, so wrapped titles don't overlap */
+}
+
+/* Card titles on one line; they wrap only in small windows (below 992px) */
+@media (min-width: 992px) {
+  .card-header > div:first-child {
+    white-space: nowrap !important;
+  }
 }
 
 
@@ -281,7 +311,6 @@ table.dataTable tbody tr.selected:hover > td {
 }
 
 
-
 /* =========================================================
    FINAL FIX — FORCE ALL KABLE TABLE TEXT TO BLACK
    ========================================================= */
@@ -313,9 +342,35 @@ spinner <- function(x, size = 1.5) {
   withSpinner(x, type = 4, color = "#0072B2", size = size,
               caption = "Loading ... Do not refresh or change tab")
 }
+# Normalization methods (matrix IDs) and their labels in the UI
+NORM_METHOD_LABELS <- c(
+  "LOESS" = "loess_norm",
+  "Closest RT" = "closest_norm",
+  "Multivariate (PCA)" = "mvis_norm",
+  "Without normalization" = "raw"
+)
+
 quanta_card <- function(title, ...) {
-  card(card_header(div(title, style = "margin-bottom: 10px;"),
-                   div(style = "height:3px; background:white; width:100%;")), ...)
+  card(
+    card_header(
+      div(title, style = "margin-bottom: 10px;"),
+      div(style = "height:3px; background:white; width:100%;")
+    ),
+  ...)
+}
+
+
+
+quanta_card_resize <- function(title, side, ...) { #"qc-left", "qc-right"
+    div(
+      id = side,
+      card(
+        card_header(
+          div(title, style = "margin-bottom: 10px;"),
+          div(style = "height:3px; background:white; width:100%;")
+        ),
+      ...)
+    )
 }
 section <- function(title, ...) div(style = "padding: 0;", h3(title, style = "margin: 0;"), ...)
 
@@ -330,6 +385,17 @@ ui <-
     window_title = "QuaNTA",   # text in the browser tab; fixes the last warning
     header = tags$head(
       tags$link(rel = "icon", type = "image/jpeg", href = "QuaNTA_square.jpg"),
+      tags$script(src = "split.min.js"),
+      tags$link(rel = "stylesheet", href = "fonts/lato.css"),   # Lato font (base_font of the theme)
+      shinyjs::useShinyjs(),   # Enable / disable buttons from the server
+      # Start a download from the server: clicks the (hidden) download link with the given ID.
+      # Used when a file is ready after a background task (external report, session data).
+      tags$script(HTML("
+        Shiny.addCustomMessageHandler('quantaClickDownload', function(id) {
+          var a = document.getElementById(id);
+          if (a) a.click();
+        });
+      ")),
       tags$style(HTML("
         .navbar-brand img,
         .navbar-logo {
@@ -360,10 +426,29 @@ ui <-
           background-color: black !important;
           color: white !important;
         }
+        
+        .split-pane {
+          display: flex;
+          flex-direction: row;
+          width: 100%;
+        }
+        .split-pane > div {
+          overflow: auto;   /* scroll instead of clipping when a pane gets narrow */
+          min-width: 0;      /* let flex children shrink below content width */
+        }
+        .gutter {
+          background-color: #F4A259;
+          background-repeat: no-repeat;
+          background-position: 50%;
+          cursor: col-resize;
+        }
+        .gutter.gutter-horizontal {
+          width: 8px;
+        }
       "))
     ),
     nav_panel(
-      title = HTML("1. Input data and Processing  <strong> >> </strong>"),
+      title = HTML("Input and parameters  <strong> >> </strong>"),
       layout_columns(
         col_widths = c(4, 4, 4),
         card(
@@ -376,6 +461,8 @@ ui <-
               style = "height:3px; background:white; width:100%;"
             )
           ),
+          sessionLoadUI("session_data"),   # Load saved session data (.rds), R/sessionData.R
+          .hr(),
           msdialInfoUI("data_info")
         ),
         card(
@@ -390,6 +477,7 @@ ui <-
           ),
           runReadMsdialUI("read_msdial"),
           runProcessUI("proc"),
+          sessionSaveUI("session_data"),   # Save session data (.rds), R/sessionData.R
         ),
 
         quanta_card("Log",
@@ -406,11 +494,12 @@ ui <-
       )
     ),
     nav_panel(
-      title = HTML("2. Data overview  <strong> >> </strong>"),
-      layout_columns(
-        col_widths = c(6, 6),
+      title = HTML("Overview  <strong> >> </strong>"),
+      div(
+        id = "ov-split",
+        class = "split-pane",
         #Card
-        quanta_card("Tables",
+        quanta_card_resize("Tables", "ov-left",
                     section("Samples by category/class (2.1.1)",
                             spinner(DT::DTOutput("tb_2_1_1"))),
                     section("The distribution of the features across m/z and retention time (2.2)",
@@ -420,22 +509,37 @@ ui <-
                     section("Features (2.2)",
                             spinner(htmlOutput("tb_2_2")))),
         #Card
-        quanta_card("Figures",
+        quanta_card_resize("Figures", "ov-right",
                     section("The distribution of the features across m/z and retention time (2.2)",
                             spinner(plotOutput("ggplot1_2_2"))),
                     section("The distribution of the features (2.2)",
                             spinner(plotOutput("ggplot2_2_2"))),
                     section("Distribution of the values (2.3)",
-                            spinner(plotOutput("ggplot2_3")))),
+                            spinner(plotOutput("ggplot2_3"))))
         
-      )
+      ),
+      tags$script(HTML("
+        $(document).on('shiny:sessioninitialized', function() {
+          if (typeof Split === 'undefined') {
+            console.warn('Split.js did not load — check app/www/split.min.js exists.');
+            return;
+          }
+          Split(['#ov-left', '#ov-right'], {
+            sizes: [50, 50],
+            minSize: 250,
+            gutterSize: 8,
+            onDragEnd: function() { window.dispatchEvent(new Event('resize')); }
+          });
+        });
+      "))
     ),
     nav_panel(
-      title = HTML("3. Quality control and Normalization <strong> >> </strong>"),
-      layout_columns(
-        col_widths = c(6, 6),
+      title = HTML("Quality control and Normalization <strong> >> </strong>"),
+      div(
+        id = "qc-split",
+        class = "split-pane",
         #Card
-        quanta_card("Tables",
+        quanta_card_resize("Tables", "qc-left",
                     section("Internal standards (3.1)",
                             spinner(DT::DTOutput("tb_3_1")),
                             spinner(verbatimTextOutput("df_selected_row")),
@@ -450,7 +554,7 @@ ui <-
                             ),
                             spinner(DT::DTOutput("tb_3_4_1")))),
         #Card
-        quanta_card("Figures",
+        quanta_card_resize("Figures", "qc-right",
                     section("Distribution of the values of individual IS features (3.1.3)",
                             spinner(plotOutput("ggplot3_1_3")),
                             spinner(uiOutput("remove_failedIS_outlier"))),
@@ -479,12 +583,17 @@ ui <-
                       )
                     ),
                     div(
-                      spinner(plotlyOutput("ggplot3_2_1_2")),
+                      # Only shown once a grouping is chosen above; otherwise its empty
+                      # 400px placeholder leaves a gap
+                      shiny::conditionalPanel(
+                        condition = "input.group_choice",
+                        spinner(plotlyOutput("ggplot3_2_1_2"))
+                      ),
                       h3(
                         "Comparison of normalization methods 3.2.3",
                         style = "margin: 0;"
                       ),
-                      spinner(plotOutput("ggplot3_2_3")),
+                      spinner(plotlyOutput("ggplot3_2_3", height = "550px")),
                       h3(
                         "RSD% values (3.2.3)",
                         style = "margin: 0;"
@@ -492,23 +601,39 @@ ui <-
                       spinner(DT::DTOutput("tb_3_2_3")),
                     )
                   )
-      )
+      ),
+      tags$script(HTML("
+        $(document).on('shiny:sessioninitialized', function() {
+          if (typeof Split === 'undefined') {
+            console.warn('Split.js did not load — check app/www/split.min.js exists.');
+            return;
+          }
+          Split(['#qc-left', '#qc-right'], {
+            sizes: [50, 50],
+            minSize: 250,
+            gutterSize: 8,
+            onDragEnd: function() { window.dispatchEvent(new Event('resize')); }
+          });
+        });
+      "))
     ),
     nav_panel(
-      title = HTML("4. Calibration and Quantification <strong> >> </strong>"),
+      title = HTML("Calibration and Quantification <strong> >> </strong>"),
       layout_columns(
         col_widths = c(6, 6),
         quanta_card("Tables",
                     shiny::radioButtons(
                       inputId = "norm_method",
                       label = "Normalization method",
-                      choices = c(
-                        "LOESS" = "loess_norm",
-                        "Closest RT" = "closest_norm",
-                        "Without normalization" = "raw"
-                      ),
+                      choices = NORM_METHOD_LABELS,   # Updated to the computed ones in the server
                       selected = "loess_norm",
                       inline = TRUE
+                    ),
+                    # Batch shown in the tables and figures of this panel (choices set in the server)
+                    shiny::selectInput(
+                      inputId = "calib_batch",
+                      label = "Batch",
+                      choices = NULL
                     ),
                     div(
                       style = "padding: 0;",
@@ -535,6 +660,18 @@ ui <-
                       spinner( DT::DTOutput("tb_4_5")),
                     )),
         quanta_card("Figures",
+                    # Which calibration points to show for a chemical quantified with the global
+                    # curve: all points of the global curve, or only those of the selected batch
+                    div(
+                      style = "display: flex; gap: 16px; align-items: center; flex-wrap: wrap;",
+                      shiny::selectInput(
+                        inputId = "calib_points_view",
+                        label = "Calibration points shown",
+                        choices = NULL,
+                        width = "260px"
+                      ),
+                      shiny::uiOutput("calib_points_note", style = "flex: 1; min-width: 200px;")
+                    ),
                     div(
                       h3(
                         "Calibration curves per chemical  (4.3)",
@@ -571,7 +708,14 @@ ui <-
       )
     ),
     nav_panel(
-      title = HTML("5. Report export&nbsp;📄&nbsp <strong>  </strong>"),
+      title = HTML("Reports&nbsp;📄&nbsp <strong>  </strong>"),
+      # Final normalization method: used by both reports and the exported tables. Nothing is
+      # pre-selected; the generate / export buttons stay disabled until a method is chosen.
+      div(
+        style = "width: 40%; min-width: 320px;",
+        quanta_card("Final normalization method",
+                    spinner(uiOutput("final_norm_ui")))
+      ),
       layout_columns(
         col_widths = c(9, 3),
         card(
@@ -603,44 +747,15 @@ ui <-
           )
         ),
         quanta_card("Extract data",
-                    # shiny::radioButtons(
-                    #   inputId = "norm_method_2",
-                    #   label = "Normalization method",
-                    #   choices = c(
-                    #     "LOESS" = "loess_norm",
-                    #     "Closest RT" = "closest_norm",
-                    #     "Without normalization" = "raw"
-                    #   ),
-                    #   selected = "loess_norm"
-                    # ),
-                    # shiny::checkboxInput(
-                    #   inputId = "blk_substraction",
-                    #   label = "The output is blank substracted",
-                    #   value = FALSE,
-                    # ),
-                    # shiny::checkboxInput(
-                    #   inputId = "blk_filtering2",
-                    #   label = "The output is blank filtered",
-                    #   value = FALSE,
-                    #   width = "100%"
-                    # ),
-                    # numericInput(
-                    #   inputId = "blank_filtering_factor2",
-                    #   label = "Blank filtering factor (> 1):",
-                    #   value = 1,
-                    #   min = 1,
-                    #   width = "100%"
-                    # ),
-                    
-                    
-                    ##  the selected thinsg needs to be injected in to the runScriptUI() in the runScript.R
-                    ## actually it needs to be injected in to the export_data.R
-                    
-                    
+                    # Exports the normalized, blank-subtracted and concentration tables of the
+                    # final normalization method selected at the top of this panel
                     runScriptUI("export_data", label = "Export data into tables", download=T)
                   )
       )
-    )
+    ),
+    # Help icon in the top-right corner; the popup content is in R/helpPopup.R
+    nav_spacer(),
+    nav_item(helpPopupUI("help"))
   )
 
 ####################################################################################################################
@@ -650,7 +765,10 @@ ui <-
 ################################################################################################
 
 server <- function(input, output, session) {
-  
+
+  # Help popup (question-mark icon in the navbar)
+  helpPopupServer("help")
+
   # ---- 1. Private workspace of this session (deleted when the session ends) ----
   ws <- create_session_workspace(session)
   
@@ -664,9 +782,40 @@ server <- function(input, output, session) {
     apply_processing_params(session, data_info$loaded_processing)
   }, ignoreNULL = TRUE)
   
+  # ---- Normalization methods computed by process.R and the final choice for report/export ----
+  # (`to_report_r()` is defined in server_setup.R; reactives are evaluated lazily)
+  # Matrix IDs computed in the processed data, e.g. "raw", "loess_norm", "closest_norm", "mvis_norm"
+  available_norm_r <- shiny::reactive({
+    ids <- to_report_r()[["matrix ids to blk subt"]]
+    ids[order(match(ids, NORM_METHOD_LABELS))]
+  })
+  # Method with the lowest median QC RSD% (`loess_norm` for data processed by older versions)
+  best_norm_r <- shiny::reactive({
+    best <- to_report_r()[["best normalization"]]
+    if (is.null(best)) "loess_norm" else best
+  })
+  # The final method used for the report and the exported tables: "auto" resolves to the best
+  # Nothing is pre-selected: the user must choose (the report / export buttons stay disabled)
+  final_norm_chosen_r <- shiny::reactive({
+    sel <- input$final_norm_method
+    !is.null(sel) && length(sel) == 1 && (sel == "auto" || sel %in% available_norm_r())
+  })
+  final_norm_method_r <- shiny::reactive({
+    shiny::req(final_norm_chosen_r())
+    sel <- input$final_norm_method
+    if (sel == "auto") best_norm_r() else sel
+  })
+
   # ---- 3. Child processes; each returns a reactive that changes when a run has finished ----
   read_done <- runReadMsdialServer("read_msdial", data_info = data_info, ws = ws)
   proc_done <- runProcessServer("proc", data_info = data_info, ws = ws)
+  # Save / load the session data (.rds); changes when data has been loaded
+  session_loaded <- sessionDataServer(
+    "session_data",
+    data_info = data_info,
+    ws = ws,
+    processing_params = shiny::reactive(collect_processing_params(input))
+  )
   
   runScriptServer2(
     "export_data",
@@ -674,8 +823,7 @@ server <- function(input, output, session) {
     what = "Export data into tables",
     data_info = data_info,
     ws = ws,
-    input1 = shiny::reactive(input$norm_method_2),
-    input2 = shiny::reactive(input$blk_substraction)
+    norm_method = final_norm_method_r
   )
   
   # ---- 4. Cached data reactives: raw_se_r, to_report_r, proc_r, ... ----
@@ -687,10 +835,13 @@ server <- function(input, output, session) {
     "report",
     data_info = data_info,
     ws = ws,
-    norm_method = shiny::reactive(input$norm_method)
+    norm_method = final_norm_method_r
   )
   
   output$the_report <- shiny::renderUI({
+    # Re-reading / a new upload deletes the report (see below / msdialInfo.R): hide it then
+    input[["read_msdial-run_button"]]
+    input[["data_info-input_file_upload"]]
     shiny::req(report_obj$report_ready())
     path <- report_obj$report_path()
     shiny::req(file.exists(path))
@@ -702,7 +853,7 @@ server <- function(input, output, session) {
   })
   
   output$download_report <- shiny::downloadHandler(
-    filename = function() paste0("Internal Report ", input$norm_method, ".html"),
+    filename = function() paste0("Internal Report ", final_norm_method_r(), ".html"),
     content = function(file) {
       path <- report_obj$report_path()
       if (!file.exists(path)) stop("Generate the report first.")
@@ -712,14 +863,110 @@ server <- function(input, output, session) {
   
   source("server_setup.R", local = TRUE)
 
+  # ---- Re-reading makes earlier processing results outdated: remove them ----
+  # The processed data, exported tables and reports of this session are deleted when "Read MS-Dial
+  # output files" is clicked (before the read starts: higher priority than the module's observer),
+  # so the QC / Calibration / Reports tabs stay empty until the data is processed again.
+  shiny::observeEvent(input[["read_msdial-run_button"]], {
+    f <- data_info[["input_file"]]
+    if (!is.null(f) && nzchar(f)) unlink(c(rds_file("proc"), rds_file("to_report")))
+    unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
+    unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
+  }, priority = 100)
+
+  # ---- Step buttons are disabled (greyed out) until their input exists ----
+  # - "Read MS-Dial output files": an MS-DIAL file has been uploaded (or restored from a session)
+  # - "Process data": the read data exists (after reading, or restored from a session)
+  shiny::observe({
+    read_done()
+    session_loaded()
+    input[["data_info-input_file_upload"]]   # A new upload deletes the earlier read data
+    f <- data_info[["input_file"]]
+    has_input <- !is.null(f) && nzchar(f) && file.exists(f)
+    has_parsed <- has_input && file.exists(rds_file(""))
+    shinyjs::toggleState("read_msdial-run_button", condition = has_input)
+    shinyjs::toggleState("proc-run_button", condition = has_parsed)
+  }, priority = -10)   # After the upload handler has deleted the earlier data
+
+  # ---- Final normalization method (top of the Reports panel) ----
+  output$final_norm_ui <- shiny::renderUI({
+    ids <- available_norm_r()
+    best <- best_norm_r()
+    rsd <- to_report_r()[["median RSD% per normalization"]]
+    basis <- to_report_r()[["median RSD% basis"]]
+    label_of <- function(id) {
+      nm <- names(NORM_METHOD_LABELS)[match(id, NORM_METHOD_LABELS)]
+      if (is.na(nm)) nm <- id
+      if (!is.null(rsd) && !is.na(rsd[id])) {
+        nm <- paste0(nm, " (median RSD ", round(rsd[id], 1), "%)")
+      }
+      nm
+    }
+    basis_txt <- if (is.null(basis) || is.na(basis)) {
+      paste("could not be determined (no replicate QC or calibration samples, or data processed",
+            "by an older version), so LOESS is used.")
+    } else if (basis == "QC") {
+      "is the method with the lowest median RSD% across the replicate QC samples."
+    } else {
+      paste("is the method with the lowest median RSD% across the replicates of each calibration",
+            "level (there are no replicate QC samples).")
+    }
+    choices <- c("auto", ids)
+    names(choices) <- c(paste0("Best: ", label_of(best)), vapply(ids, label_of, character(1)))
+    # Nothing pre-selected (forces a decision); keep an earlier choice when re-processed
+    selected <- shiny::isolate(input$final_norm_method)
+    if (is.null(selected) || !selected %in% choices) selected <- character(0)
+    shiny::tagList(
+      # Let the long labels wrap in the narrow column (the app's CSS keeps radio labels on one line)
+      shiny::tags$style(shiny::HTML(
+        "#final_norm_method .form-check-label { white-space: normal !important; }"
+      )),
+      shiny::radioButtons(
+        inputId = "final_norm_method",
+        label = paste("Choose the normalization method used for the internal and external reports",
+                      "and the exported tables"),
+        choices = choices,
+        selected = selected,
+        inline = FALSE,
+        width = "100%"
+      ),
+      shiny::helpText(
+        "\"Best\"", basis_txt,
+        "RSD% is computed on the targeted features (all non-internal-standard features in",
+        "non-target mode) before blank subtraction."
+      ),
+      if (!"mvis_norm" %in% ids) {
+        shiny::helpText("Multivariate (PCA) normalization could not be computed for this data;",
+                        "see the processing messages.")
+      }
+    )
+  })
+
+  # Report and export buttons are disabled (greyed out) until a final method has been chosen
+  shiny::observe({
+    chosen <- isTRUE(tryCatch(final_norm_chosen_r(), error = function(e) FALSE))
+    for (id in c("report-gen_external", "report-gen_internal", "export_data-run_button")) {
+      shinyjs::toggleState(id, condition = chosen)
+    }
+  })
+
+  # Calibration tab: offer only the computed methods; start from the best one after processing
+  shiny::observeEvent(to_report_r(), {
+    ids <- available_norm_r()
+    shiny::updateRadioButtons(
+      session, "norm_method",
+      choices = NORM_METHOD_LABELS[NORM_METHOD_LABELS %in% ids],
+      selected = best_norm_r(),
+      inline = TRUE
+    )
+  })
+
   r <- reactiveValues()
 
   is_target_mode <- reactive({
     req(raw_se_r())
     
     md <- SumExp::metadata(raw_se_r())
-    
-    str(md)
     
     !isTRUE(md$is_non_target_mode)
   })
@@ -872,7 +1119,9 @@ server <- function(input, output, session) {
   output$tb_2_1_3 <- renderUI({
     shiny::req(raw_se_r())
     
-    tb_2_1_3 <- show$extract_qc_samples_to_list(raw_se_r()) |>
+    qc_lst <- show$extract_qc_samples_to_list(raw_se_r())
+    if (length(qc_lst) == 0) return(HTML("<p><em>No QC samples were found.</em></p>"))
+    tb_2_1_3 <- qc_lst |>
       sapply(ncol) |>
       knitr::kable(col.names = c("Class", "Number of Replicates")) |>
       kableExtra::kable_styling(full_width = FALSE)
@@ -1000,6 +1249,7 @@ server <- function(input, output, session) {
     DT::datatable(
       df,
       selection = "single", # or "multiple"
+      rownames = FALSE,
 
       options = list(
         scrollX = TRUE,
@@ -1029,6 +1279,10 @@ server <- function(input, output, session) {
         )
       )
     ) |>
+      DT::formatRound(
+        columns = "rsd",
+        digits = 2
+      ) |>
       DT::formatStyle(
         columns = "is_failed_istd",
         target = "cell",
@@ -1105,7 +1359,7 @@ server <- function(input, output, session) {
 
   output$ggplot3_1_3 <- renderPlot({
     se_show <- internal_std_se_r()
-    selected <- input$tb_3_1_rows_selected
+    selected <- shiny::req(input$tb_3_1_rows_selected)   # Nothing to draw before a row is selected
     ggplot3_1_3 <- box_scatter_plot_of_one_feature(
       se_show,
       selected,
@@ -1182,19 +1436,7 @@ server <- function(input, output, session) {
     is_outlier <- to_report_r()[["is outlier sample"]]
     # The following is added only when the outlier removal step has been set to perform
 
-    # cat(is_outlier)
     if (!is.null(is_outlier)) {
-      cat(
-        "### Outlier samples\n\n",
-        "Each internal standard (IS) is expected to have consistent values across all samples.\n",
-        "After applying a log-transformation ($log(1 + x)$),",
-        "the mean and standard deviation for each IS are calculated.\n",
-        "A sample is flagged as an outlier for a given IS",
-        "if its value deviates by more than 3 standard deviations from the IS mean.\n",
-        "If more than 20% of IS features in a sample are flagged this way,",
-        "the sample itself is classified as an outlier.\n",
-        "The outlier samples are then removed from the data.\n\n"
-      )
       # Number of outlying internal standard features per sample
       n_out_istd <- to_report_r()[["number of outlier internal std. per sample"]]
 
@@ -1289,19 +1531,21 @@ server <- function(input, output, session) {
 
   output$tb_3_4_1 <- DT::renderDataTable({
     shiny::req(internal_std_se_r())
-    m_rsd1 <- show$extract_qc_samples_to_list(internal_std_se_r()) |>
-      lapply(function(se) {
-        apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
-      }) |>
-      do.call(cbind, args = _) # Make sure the result is a matrix even if there is only one value
-    # The `rownames` are syntactically valid names, not the original feature names
-    stopifnot(identical(rownames(m_rsd1), rownames(internal_std_se_r())))
+    # RSD% per QC class; no columns when there are no QC samples
+    qc_lst <- show$extract_qc_samples_to_list(internal_std_se_r())
+    m_rsd1 <- if (length(qc_lst) > 0) {
+      m <- qc_lst |>
+        lapply(function(se) {
+          apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
+        }) |>
+        do.call(cbind, args = _) # Make sure the result is a matrix even if there is only one value
+      # The `rownames` are syntactically valid names, not the original feature names
+      stopifnot(identical(rownames(m), rownames(internal_std_se_r())))
+      data.frame(m, check.names = FALSE)
+    } else {
+      data.frame(row.names = rownames(internal_std_se_r()))
+    }
     rownames(m_rsd1) <- SumExp::row_df(internal_std_se_r())$feature_name
-
-
-    m_rsd1 <- data.frame(m_rsd1,
-      check.names = FALSE
-    )
 
 
     se <- util$exclude_ctrl_smpl_cat(internal_std_se_r(), "QC")
@@ -1370,7 +1614,6 @@ server <- function(input, output, session) {
     mat_ids_to_compare <- c("raw")
 
     if (any(is_vIS)) {
-      cat("\n\nThe bars represent the peak areas of volumetric internal standards (vIS).\n\n")
       df_show <- norm_se[is_vIS, ] |>
         show$df_for_injection_order(mat_ids_to_compare)
       df_show <- as.data.frame(df_show,
@@ -1486,22 +1729,43 @@ server <- function(input, output, session) {
   ### This is for figure 3.2.3
 
 
-  output$ggplot3_2_3 <- renderPlot({
+  # One line per targeted chemical and QC class (panels): its RSD% among the QC replicates under
+  # each method (x-axis), colored by the normalization method with the lowest RSD%. Interactive:
+  # hover shows the chemical and all its RSD% values, the legend filters, drag to zoom.
+  output$ggplot3_2_3 <- plotly::renderPlotly({
     norm_se <- to_report_r()[["normalized"]]
+    shiny::validate(shiny::need(show$has_enough_qc(norm_se), show$not_enough_qc_msg))
     labs <- SumExp::name_labs(norm_se)
     names(labs) <- gsub(" .*", "", names(labs)) # First word only
     df_to_show <- show$extract_quant_qc(norm_se) |>
       show$calc_rsd_qstd(labs) |>
+      show$mark_lowest_rsd_norm(labs) |>
+      dplyr::left_join(feature_id_name_tbl(), by = "feature_id")
+
+    # Hover text: the chemical with its RSD% under every method
+    rsd_txt <- apply(as.matrix(df_to_show[unname(labs)]), 1, function(v) {
+      paste0(names(labs), ": ", ifelse(is.na(v), "NA (all 0s)", paste0(round(v, 1), "%")),
+             collapse = "<br>")
+    })
+    df_long <- df_to_show |>
       dplyr::mutate(
-        sign = ifelse(loess_norm <= closest_norm, "↓ LOESS", "↓ Closest"),
-        sign = ifelse(is.na(sign), "All 0s", sign),
-        sign = factor(sign, levels = c("↓ LOESS", "↓ Closest", "All 0s"))
+        txt = paste0("<b>", feature_name, "</b> (", QC, ")<br>", rsd_txt,
+                     "<br>Lowest: ", sub("^\\S+ ", "", as.character(sign)))
+      ) |>
+      tidyr::pivot_longer(dplyr::all_of(unname(labs)), names_to = "Data", values_to = "RSD") |>
+      dplyr::mutate(
+        RSD = ifelse(is.na(RSD), 0, RSD),   # NA when all values are 0
+        Data = factor(Data, levels = unname(labs), labels = names(labs))
       )
-    ggplot3_2_3 <- show$ggplot_rsdp_metab(df_to_show, labs) +
-      aes(color = sign) +
-      scale_color_manual(values = c("#00BFC4", "#F8766D", "#7f7f7f")) +
-      facet_grid(~QC)
-    ggplot3_2_3
+
+    p <- ggplot(df_long, aes(x = Data, y = RSD, group = feature_id, color = sign, text = txt)) +
+      geom_line(alpha = 0.5) +
+      geom_point(size = 1, alpha = 0.6) +
+      scale_color_manual(values = show$norm_sign_colors, drop = FALSE) +
+      facet_wrap(~QC) +
+      labs(x = NULL, y = "RSD%", color = "Lowest RSD%")
+    plotly::ggplotly(p, tooltip = "text") |>
+      plotly::layout(legend = list(title = list(text = "Lowest RSD%<br>(click to filter)")))
   })
 
 
@@ -1511,15 +1775,11 @@ server <- function(input, output, session) {
 
   output$tb_3_2_3 <- DT::renderDataTable({
     norm_se <- to_report_r()[["normalized"]]
+    shiny::validate(shiny::need(show$has_enough_qc(norm_se), show$not_enough_qc_msg))
     labs <- SumExp::name_labs(norm_se)
     names(labs) <- gsub(" .*", "", names(labs)) # First word only
     df_to_show <- show$extract_quant_qc(norm_se) |>
-      show$calc_rsd_qstd(labs) |>
-      dplyr::mutate(
-        sign = ifelse(loess_norm <= closest_norm, "↓ LOESS", "↓ Closest"),
-        sign = ifelse(is.na(sign), "All 0s", sign),
-        sign = factor(sign, levels = c("↓ LOESS", "↓ Closest", "All 0s"))
-      )
+      show$calc_rsd_qstd(labs)
 
     df_to_show <- df_to_show |>
       dplyr::left_join(feature_id_name_tbl(), by = "feature_id") |> # Add feature names
@@ -1569,58 +1829,155 @@ server <- function(input, output, session) {
   ################################################################################################################
   ### This is for table 4.1
 
+  # ---- Calibration and Quantification: batch selection ----
+  # Calibrated data of the selected normalization method: batch ID -> list(calcurve, concn)
+  calib_lst_proc_r <- shiny::reactive({
+    shiny::req(is_target_mode())
+    MAT_ID_BLANK_SUBT <- util$mat_id_of_blank_subtracted(shiny::req(input$norm_method))
+    shiny::req(proc_r()[[MAT_ID_BLANK_SUBT]])
+  })
+
+  # Batch choices follow the processed data; keep the current batch if it still exists
+  shiny::observe({
+    batch_ids <- names(calib_lst_proc_r())
+    current <- shiny::isolate(input$calib_batch)
+    selected <- if (!is.null(current) && current %in% batch_ids) current else batch_ids[1]
+    shiny::updateSelectInput(session, "calib_batch", choices = batch_ids, selected = selected)
+  })
+
+  # Calibrated data of the selected batch: list(calcurve, concn)
+  calib_batch_proc_r <- shiny::reactive({
+    lst_proc <- calib_lst_proc_r()
+    shiny::req(input$calib_batch %in% names(lst_proc))
+    lst_proc[[input$calib_batch]]
+  })
+
+  # Feature ID of the chemical selected in table 4.2. Kept when the batch or the normalization
+  # method changes, so that the same chemical is selected again in the re-rendered table.
+  calib_feature_id <- shiny::reactiveVal(NULL)
+  shiny::observeEvent(input$tb_4_2_rows_selected, {
+    ids <- rownames(shiny::isolate(calib_batch_proc_r())$calcurve)
+    calib_feature_id(ids[input$tb_4_2_rows_selected[1]])
+  })
+  # Selected feature ID that exists in the selected batch (stops the figures until one is selected)
+  calib_selected_feature_r <- shiny::reactive({
+    shiny::req(input$tb_4_2_rows_selected)
+    id <- rownames(calib_batch_proc_r()$calcurve)[input$tb_4_2_rows_selected[1]]
+    shiny::req(!is.na(id))
+    id
+  })
+
+  # ---- Calibration points shown in the figures ----
+  # Calibration curve used for the selected chemical in the selected batch: "Batch", "Global" or
+  # NA (no proper calibration range)
+  calib_used_curve_r <- shiny::reactive({
+    cc <- calib_batch_proc_r()$calcurve
+    src <- SumExp::row_df(cc)[["src_calcurve"]]
+    if (is.null(src)) return(NA_character_)   # Processed by an older version
+    src[rownames(cc) == calib_selected_feature_r()]
+  })
+  # "All batches" is offered only for a chemical quantified with the global curve
+  calib_global_used_r <- shiny::reactive({
+    isTRUE(calib_used_curve_r() == "Global") && length(calib_lst_proc_r()) > 1
+  })
+  # The user's choice of points ("all" / "batch"). It is kept when only the batch or the
+  # normalization method changes, and reset to the curve used ("all") for another chemical.
+  calib_view_pref <- shiny::reactiveVal("all")
+  calib_last_feature <- shiny::reactiveVal(NULL)
+  shiny::observeEvent(input$calib_points_view, {
+    # Only a choice between both options is the user's; "batch" alone is forced by the data
+    if (shiny::isolate(calib_global_used_r())) calib_view_pref(input$calib_points_view)
+  })
+  shiny::observe({
+    feature_id <- calib_selected_feature_r()
+    if (!identical(feature_id, shiny::isolate(calib_last_feature()))) {
+      calib_last_feature(feature_id)
+      calib_view_pref("all")   # Default: the points of the curve used for quantification
+    }
+    choices <- c("All batches (global curve)" = "all", "Selected batch only" = "batch")
+    if (calib_global_used_r()) {
+      shiny::updateSelectInput(session, "calib_points_view", choices = choices,
+                               selected = shiny::isolate(calib_view_pref()))
+    } else {
+      shiny::updateSelectInput(session, "calib_points_view", choices = choices["Selected batch only"],
+                               selected = "batch")
+    }
+  })
+  calib_points_view_r <- shiny::reactive({
+    if (calib_global_used_r() && identical(input$calib_points_view, "all")) "all" else "batch"
+  })
+
+  # Calibration curve samples of the selected chemical (one row) to show in the figures. For
+  # "all", the samples of all batches, i.e. those the global curve was fitted on, with the global
+  # limits of the selected batch's data (identical for every batch using the global curve).
+  calib_cc_se_r <- shiny::reactive({
+    feature_id <- calib_selected_feature_r()
+    cc_sel <- calib_batch_proc_r()$calcurve
+    cc_sel <- cc_sel[rownames(cc_sel) == feature_id, ]
+    if (calib_points_view_r() == "batch") return(cc_sel)
+
+    # Combine the samples of all batches. A batch without its own calibration curve samples holds
+    # all the global ones, so drop the samples already collected.
+    seen <- character(0)
+    se_lst <- list()
+    for (b in names(calib_lst_proc_r())) {
+      se <- calib_lst_proc_r()[[b]]$calcurve
+      se <- se[rownames(se) == feature_id, !colnames(se) %in% seen]
+      if (nrow(se) == 0 || ncol(se) == 0) next
+      seen <- c(seen, colnames(se))
+      SumExp::row_df(se) <- SumExp::row_df(cc_sel)   # Global limits, required to bind columns
+      se_lst[[b]] <- se
+    }
+    se <- Reduce(cbind, se_lst)
+    # Mask the calibration matrix outside the global range, as done in processing
+    mat_src <- util$mat_id_of_blank_subtracted(input$norm_method)
+    mat_calib <- util$mat_id_in_calibration(mat_src)
+    rd <- SumExp::row_df(se)
+    conc <- util$spiked_conc_pts(se)
+    to_na <- !(conc >= rd$min_c_conc & conc <= rd$max_c_conc)
+    to_na[is.na(to_na)] <- TRUE
+    m <- se[[mat_src]]
+    m[, to_na] <- NA_real_
+    se[[mat_calib]] <- labelled::copy_labels(cc_sel[[mat_calib]], m)
+    se
+  })
+
+  # Explanation next to the dropdown; red when the shown points are not those of the curve used
+  output$calib_points_note <- shiny::renderUI({
+    batch <- input$calib_batch
+    used <- calib_used_curve_r()
+    txt <- if (is.na(used)) {
+      list("No calibration curve with a proper range for this chemical in batch ", batch, ".")
+    } else if (used == "Batch") {
+      list("Concentrations in batch ", batch, " were calculated with this batch's own calibration curve.")
+    } else if (!calib_global_used_r()) {
+      list("Concentrations were calculated with the calibration curve of all samples.")
+    } else if (calib_points_view_r() == "all") {
+      list("Concentrations in batch ", batch, " were calculated with the global calibration curve, ",
+           "fitted on the calibration points of all batches shown here.")
+    } else {
+      return(shiny::tags$div(
+        style = "color: #C62828; font-weight: 600;",
+        paste0("Only batch ", batch, "'s calibration points are shown. The concentrations were ",
+               "calculated with the global calibration curve, fitted on the calibration points of ",
+               "all batches.")
+      ))
+    }
+    shiny::tags$div(style = "color: #333;", do.call(paste0, txt))
+  })
+
   output$tb_4_1 <- DT::renderDataTable({
     ###################################################
     ### There are two issues.
     ## (1) One is the reactivity of params_yml$norm_method
     ## (2) One is reactivity to the data
 
-    MAT_ID_BLANK_SUBT <- input$norm_method |>
-      util$mat_id_of_blank_subtracted()
-    MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)
-
     if (is_target_mode()) {
-      lst_proc <- shiny::req(proc_r())[[MAT_ID_BLANK_SUBT]]
-
-      calcurve_lst <- lst_proc |>
-        lapply(\(x) x$calcurve)
-
-      for (ii in names(calcurve_lst)) {
-        se <- calcurve_lst[[ii]]
-
-        v <- util$spiked_conc_pts(se)
-        v <- v[!is.na(v)] |>
-          labelled::copy_labels_from(v)
-
-        # ✅ convert table → data.frame
-        v <- as.data.frame(table(v),
-          check.names = FALSE
-        )
-
-        colnames(v) <- c(
-          "Calibration curve samples",
-          "Number of Samples"
-        )
-
-        # ✅ IF you still want a table for display, create separately
-        v_table <- knitr::kable(
-          v,
-          align = c("r", "r"),
-          caption = paste("Batch", ii)
-        ) |>
-          kableExtra::kable_styling(
-            bootstrap_options = "striped",
-            full_width = FALSE
-          )
-
-        # Now:
-        # v        -> data.frame ✅
-        # v_table  -> formatted table ✅
-      }
-
-      v <- data.frame(v,
-        check.names = FALSE
-      )
+      # Number of calibration curve samples per concentration in the selected batch
+      se <- calib_batch_proc_r()$calcurve
+      v <- util$spiked_conc_pts(se)
+      v <- as.data.frame(table(v[!is.na(v)]), check.names = FALSE)
+      colnames(v) <- c("Calibration curve samples", "Number of Samples")
       DT::datatable(
         v,
         options = list(
@@ -1659,31 +2016,28 @@ server <- function(input, output, session) {
   ### This is for table 4.2
   output$tb_4_2 <- DT::renderDataTable({
 
-    MAT_ID_BLANK_SUBT <- input$norm_method |>
-      util$mat_id_of_blank_subtracted()
-    
     min_cal_points <- to_report_r()[["params"]][["min_cal_points"]]
 
     if (is_target_mode()) {
-      lst_proc <- shiny::req(proc_r())[[MAT_ID_BLANK_SUBT]]
-      
       # --------------------------------------------------------
-      # Prepare data
-      calcurve_lst <- lapply(lst_proc, function(x) x$calcurve)
-
-      limit_df <- lapply(calcurve_lst, function(se) {
-        SumExp::row_df(se) |>
-          dplyr::select(
-            min_c_conc,
-            max_c_conc,
-            lod,
-            lloq,
-            has_proper_range,
-            src_calcurve
-          ) |>
-          tibble::as_tibble(rownames = "feature_id")
-      }) |>
-        purrr::list_rbind(names_to = "batch")
+      # Prepare data of the selected batch. Rows are in the order of `rownames(calcurve)`, which
+      # the figures use to find the selected chemical.
+      se <- calib_batch_proc_r()$calcurve
+      limit_df <- SumExp::row_df(se) |>
+        dplyr::select(
+          min_c_conc,
+          max_c_conc,
+          lod,
+          lloq,
+          has_proper_range,
+          src_calcurve
+        ) |>
+        tibble::as_tibble(rownames = "feature_id") |>
+        dplyr::mutate(batch = shiny::isolate(input$calib_batch))
+      # Select the same chemical as before the batch / normalization method changed
+      prev_id <- shiny::isolate(calib_feature_id())   # NULL until a chemical has been selected
+      preselect <- if (is.null(prev_id)) NA_integer_ else match(prev_id, limit_df$feature_id)
+      preselect <- if (is.na(preselect)) NULL else preselect
 
       # --------------------------------------------------------
       show_df <- limit_df |>
@@ -1695,9 +2049,10 @@ server <- function(input, output, session) {
           # ✅ flags for coloring
           is_bad = !has_proper_range,
           is_global = src_calcurve == "Global",
+          # Calibration curve used for quantification: "Batch", "Global" or "None"
+          calibration = dplyr::coalesce(src_calcurve, "None"),
           Note = dplyr::case_when(
             max_c == 0 ~ "All zero",
-            src_calcurve == "Global" ~ "Global calibration",
             is.na(max_c) ~ paste0("<", min_cal_points ," valid pts."),
             !has_proper_range ~ "Excluded",
             TRUE ~ ""
@@ -1712,6 +2067,7 @@ server <- function(input, output, session) {
         dplyr::select(
           "Batch" = batch,
           "Chemical Name" = feature_name,
+          "Calibration" = calibration,
           "LOD" = lod,
           "Minimum conc. (LLOQ)" = min_c,
           "Maximum conc." = max_c,
@@ -1725,7 +2081,7 @@ server <- function(input, output, session) {
       # --------------------------------------------------------
       DT::datatable(
         show_df,
-        selection = "single",
+        selection = list(mode = "single", selected = preselect),
         options = list(
           scrollX = TRUE,
           paging = FALSE,
@@ -1776,24 +2132,20 @@ server <- function(input, output, session) {
   ### This is for Figrue 4.3
   output$ggplot4_3 <- renderPlotly({
 
-    MAT_ID_BLANK_SUBT <- input$norm_method |>
-      util$mat_id_of_blank_subtracted()
-    
     if (is_target_mode()) {
-      lst_proc <- shiny::req(proc_r())[[MAT_ID_BLANK_SUBT]]
-
       ############################################
       # Parameters
       log_scale <- to_report_r()[["params"]][["log_calibration"]]
 
       ############################################
-      # Prepare data
-      calcurve_lst <- lapply(lst_proc, \(ea) ea$calcurve)
-
-      seq_feat_id <- rownames(calcurve_lst[[1]])
-
-      calcurve_to_show_df <- lapply(calcurve_lst, SumExp::as_tibble) |>
-        dplyr::bind_rows(.id = "Batch")
+      # Calibration curve samples of the selected chemical (selected batch or all batches);
+      # the batch of each point is that of the sample
+      # Evaluate the reactives before passing them to S4 methods like `as_tibble`: a `req()`
+      # inside an S4 argument becomes an error message instead of silently waiting
+      cc_se <- calib_cc_se_r()
+      calcurve_lst <- list(calib_batch_proc_r()$calcurve)   # Source of the labels below
+      calcurve_to_show_df <- SumExp::as_tibble(cc_se) |>
+        dplyr::mutate(Batch = as.character(batch_id))
 
       # Copy labels
       for (ii in names(calcurve_lst[[1]])) {
@@ -1817,19 +2169,10 @@ server <- function(input, output, session) {
           )
         )
 
-      # Split by feature
-      lst_calcurve_to_show_df <- split(calcurve_to_show_df, calcurve_to_show_df$.row_id)
-
-      lst_calcurve_to_show_df <- lst_calcurve_to_show_df[
-        match(seq_feat_id, names(lst_calcurve_to_show_df), nomatch = 0)
-      ]
-
       ############################################
-      # ✅ Get selection EARLY (fast)
-      selected_4_3 <- input$tb_4_2_rows_selected
-      shiny::req(selected_4_3)
-
-      dfm <- lst_calcurve_to_show_df[[selected_4_3[1]]]
+      # Data of the chemical selected in table 4.2
+      dfm <- calcurve_to_show_df[calcurve_to_show_df$.row_id == calib_selected_feature_r(), ]
+      shiny::req(nrow(dfm) > 0)
 
       ############################################
       # Plot function
@@ -1838,7 +2181,8 @@ server <- function(input, output, session) {
           dplyr::mutate(
             Batch = factor(Batch),
             txt = paste0(
-              "inj: ", injection_order,
+              "Batch: ", Batch,
+              "\ninj: ", injection_order,
               ", conc: ", .cc_pt,
               "\nName: ", sample_name,
               "\nint: ", signif(.data[[y]], 6)
@@ -1871,7 +2215,9 @@ server <- function(input, output, session) {
             "Cal0" = "red",
             "LOD" = "blue"
           )) +
-          scale_shape_manual(values = c(16, 17, 15, 18)) +
+          scale_shape_manual(
+            values = rep_len(c(16, 17, 15, 18, 8, 3, 4, 7, 9, 10, 11, 12, 13, 14), nlevels(dfm$Batch))
+          ) +
 
           # ✅ THIS IS THE KEY FIX
           guides(
@@ -1931,100 +2277,17 @@ server <- function(input, output, session) {
     MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)
 
     if (is_target_mode()) {
-      lst_proc <- shiny::req(proc_r())[[MAT_ID_BLANK_SUBT]]
-
       ############################################
-      # Prepare data
-
+      # Prepare data of the selected batch and chemical
       log_scale <- to_report_r()[["params"]][["log_calibration"]]
 
-      calcurve_lst <- lapply(lst_proc, \(ea) ea$calcurve)
+      concn_se <- calib_batch_proc_r()$concn
+      calib_se <- calib_cc_se_r()   # Calibration points of the selected batch or all batches
+      feature_id <- calib_selected_feature_r()
+      shiny::req(feature_id %in% rownames(concn_se))
+      se_selected <- concn_se[rownames(concn_se) == feature_id, ]
 
-      concn_lst <- lapply(lst_proc, \(ea) {
-        se <- ea$concn
-        se
-      })
-
-      calib_lst <- lapply(calcurve_lst, \(se) {
-        se
-      })
-
-      seq_feat_id <- rownames(calcurve_lst[[1]])
-
-      ############################################
-      # ✅ Selection
-      selected <- input$tb_4_2_rows_selected
-      shiny::req(selected)
-
-      ############################################
-      # ✅ Use ONE batch (same logic as ggplot4_3)
-      batch_id <- names(concn_lst)[1]
-
-      concn_se <- concn_lst[[batch_id]]
-      calib_se <- calib_lst[[batch_id]]
-
-      ############################################
-      # Split into features
-      lst_concn_se <- SumExp::split_rows(
-        concn_se,
-        rownames(SumExp::row_df(concn_se))
-      )
-
-      # Keep order consistent
-      lst_concn_se <- lst_concn_se[
-        match(seq_feat_id, names(lst_concn_se), nomatch = 0)
-      ]
-
-
-      se_selected <- lst_concn_se[[selected[1]]]
-
-
-      ############################################
-      # ✅ Build ONE plot
-
-
-      df_check <- SumExp::as_tibble(se_selected)
-
-      valid_ids <-
-        which(SumExp::row_df(concn_se)$has_proper_range)
-
-
-      invalid_ids <-
-        which(!SumExp::row_df(concn_se)$has_proper_range)
-
-
-      if (is.null(se_selected)) {
-        message("se_selected is NULL")
-      } else {
-        message("selected")
-        print(selected)
-        message("invalid_ids ")
-        print(invalid_ids)
-
-        message("se_selected itself")
-
-        se_selected_print <- as_tibble(se_selected)
-        print(se_selected_print)
-        message("Class of se_selected:")
-        print(class(se_selected))
-
-        message("Dimensions of se_selected:")
-        print(dim(se_selected))
-
-        df_check <- SumExp::as_tibble(se_selected)
-
-        message("Preview of df_check:")
-        print(df_check)
-        print(colnames(df_check))
-        message("Summary of raw:")
-        print(summary(df_check$raw))
-
-        message("Summary of lod:")
-        print(summary(df_check$lod))
-      }
-
-
-      if (selected %in% invalid_ids) {
+      if (!isTRUE(SumExp::row_df(se_selected)$has_proper_range)) {
 
 
         ############################################
@@ -2069,33 +2332,17 @@ server <- function(input, output, session) {
   ### This is for Figrue 5.1
 
   output$ggplot5_1 <- renderPlot({
-    shiny::req(input$tb_4_2_rows_selected)
     shiny::req(to_report_r())
 
-    MAT_ID_BLANK_SUBT <- input$norm_method |>
-      util$mat_id_of_blank_subtracted()
-
     if (shiny::req(is_target_mode())) {
-      # Load the processed data using the specified normalization method
-      lst_proc <- shiny::req(proc_r())[[MAT_ID_BLANK_SUBT]]
-      selected <- input$tb_4_2_rows_selected
-      selected_row <- selected[1]
-
       log_scale <- to_report_r()[["params"]][["log_calibration"]]
 
       # ------------------------------------------------------------
-      # Prepare data
-      calcurve_lst <- lapply(lst_proc, function(ea) ea$calcurve)
-      concn_lst <- lapply(lst_proc, function(ea) ea$concn)
-
-      feature_id <- rownames(calcurve_lst[[1]])[selected_row]
-
-      concn_se <- concn_lst[[1]]
-
+      # Prepare data of the selected batch and chemical (by feature ID, not by name)
+      feature_id <- calib_selected_feature_r()
+      concn_se <- calib_batch_proc_r()$concn   # Evaluated before the S4 method (see 4.3)
       show_df <- SumExp::as_tibble(concn_se)
-      show_df_by_feature <- split(show_df, show_df$feature_name)
-
-      df1 <- show_df_by_feature[[feature_id]]
+      df1 <- show_df[show_df$.row_id == feature_id, ]
 
       # ------------------------------------------------------------
       # ✅ ✅ DATA VALIDATION (IMPORTANT)

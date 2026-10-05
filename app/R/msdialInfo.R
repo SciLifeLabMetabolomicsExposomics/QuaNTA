@@ -5,7 +5,7 @@
 #   - directories are per-session and not chosen by the user
 # ------------------------------------------------------------------------------------------- #
 
-.hr <- function() shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;")
+.hr <- function() shiny::tags$hr(style = "border-top: 5px solid #FFFFFF; margin: 1px 0;")
 
 #' MS-DIAL User Information UI for Shiny
 #'
@@ -79,15 +79,17 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
     # MS-DIAL file upload: keep the original file name (used to name reports and tables)
     shiny::observeEvent(input$input_file_upload, {
       up <- input$input_file_upload
-      # A new file makes all earlier intermediate results stale
+      # A new file makes all earlier results stale (data, exported tables, reports)
       unlink(list.files(ws$input, full.names = TRUE))
       unlink(list.files(ws$intermediate, full.names = TRUE))
+      unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
+      unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
       safe_name <- gsub("[^A-Za-z0-9._-]", "_", basename(up$name))
       dest <- file.path(ws$input, safe_name)
       file.copy(up$datapath, dest, overwrite = TRUE)
       data_info$input_file <- normalizePath(dest, winslash = "/", mustWork = TRUE)
       data_info$input_file_name <- up$name
-    })
+    }, priority = 100)   # Before the outputs re-read the (deleted) data files
     output$input_file_out <- shiny::renderText({
       nm <- data_info$input_file_name
       if (is.null(nm) || !nzchar(nm)) "No file uploaded" else nm

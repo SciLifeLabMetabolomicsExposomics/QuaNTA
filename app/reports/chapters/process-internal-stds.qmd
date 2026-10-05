@@ -195,10 +195,16 @@ The relative standard deviation (RSD%) of the raw values of the internal standar
 As these `QC` samples are technical replicates, the RSD% values of the samples are expected to be low.
 
 ```{r}
+#| results: 'asis'
+if (!show$has_enough_qc(internal_std_se)) cat("\n\n*", show$not_enough_qc_msg, "*\n\n", sep = "")
+```
+
+```{r}
 #| label: 'rsd-internal-standards-by-qc-samples'
+#| eval: !expr show$has_enough_qc(internal_std_se)
 # Divide the internal standard features by quality control sample
 # Calculate RSD% per internal standard feature and per quality control sample
-m_rsd <- show$extract_qc_samples_to_list(internal_std_se) |> 
+m_rsd <- show$extract_qc_samples_to_list(internal_std_se, min_n = 2) |>
   lapply(function(se) {
     apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
   }) |>

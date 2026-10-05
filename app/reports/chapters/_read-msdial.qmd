@@ -98,10 +98,17 @@ Aliquots of some samples were measured as technical replicates for quality contr
 The number of the replicates were as below.
 
 ```{r}
-show$extract_qc_samples_to_list(raw_se) |> 
-  sapply(ncol) |> 
-  knitr::kable(col.names = c("Class", "Number of Replicates")) |> 
-  kableExtra::kable_styling(full_width = FALSE)
+#| results: 'asis'
+qc_lst <- show$extract_qc_samples_to_list(raw_se)
+if (length(qc_lst) == 0) {
+  cat("\n\n*No QC samples were found.*\n\n")
+} else {
+  qc_lst |>
+    sapply(ncol) |>
+    knitr::kable(col.names = c("Class", "Number of Replicates")) |>
+    kableExtra::kable_styling(full_width = FALSE) |>
+    print()
+}
 ```
 
 ## Features

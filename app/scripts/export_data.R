@@ -1,5 +1,7 @@
 # ------------------------------------------------------------------------------------------- #
-# Export 2 tables per normalization method:
+# Export the tables of ONE normalization method, given by `--norm_method=<matrix ID>` (e.g.
+# `loess_norm`, `closest_norm`, `mvis_norm`, `raw`) or `--norm_method=auto` (default: the method
+# with the lowest median QC RSD%, determined by `process.R`):
 # 1. Normalized data of overall features including non-targets
 # 2. Blank subtracted normalized data of overall features
 # 3. Concentration data of targeted features (blank subtracted)
@@ -11,7 +13,7 @@
 # ------------------------------------------------------------------------------------------- #
 
 # Load packages and project local libraries
-box.path = Sys.getenv("R_BOX_PATH", "app/")           # Path to project local libraries
+options(box.path = Sys.getenv("R_BOX_PATH", "app/"))          # Path to project local libraries
 box::use(
   SumExp,           # Light SummarizedExperiment, `[`
   projlib/msdial,     # Handle MS-Dial files
@@ -71,83 +73,62 @@ org_feature_table <- msdial$fetch_data_of_columns(FILE$i$raw, i_sec[[1]])
 
 
 
+# Normalization method to export: `--norm_method=<matrix ID>` or `--norm_method=auto` (default),
+# which uses the method with the lowest median QC RSD% determined by `process.R`
 args <- commandArgs(trailingOnly = TRUE)
-
-# helper to parse --key=value
-parse_arg <- function(x) {
-  strsplit(sub("^--", "", x), "=")[[1]]
+norm_arg <- sub("^--norm_method=", "", grep("^--norm_method=", args, value = TRUE))
+norm_method <- if (length(norm_arg) == 0 || !nzchar(norm_arg[1])) "auto" else norm_arg[1]
+if (norm_method == "auto") {
+  norm_method <- to_report[["best normalization"]]
+  if (is.null(norm_method)) {   # Processed with an older version; re-run processing to update
+    norm_method <- "loess_norm"
+    cat("No best normalization method found in the processed data. Using `loess_norm`.\n")
+  } else {
+    cat("Best normalization method (lowest median RSD% of replicates):", norm_method, "\n")
+  }
 }
+if (!norm_method %in% mat_ids_to_export) {
+  stop("Normalization method `", norm_method, "` is not available. Available: ",
+       paste(mat_ids_to_export, collapse = ", "), call. = FALSE)
+}
+ii <- which(mat_ids_to_export == norm_method)
+mat_id <- mat_ids_to_export[ii]
+blk_mat_id <- util$mat_id_of_blank_subtracted(mat_id)
+is_closest_norm <- mat_id == "closest_norm"
+cat("Exporting", mat_id, "data.\n")
 
-parsed <- lapply(args, parse_arg)
-parsed <- setNames(
-  sapply(parsed, `[`, 2),
-  sapply(parsed, `[`, 1)
+# Normalized data
+norm_se <- to_report[["normalized"]]
+se <- norm_se[! util$is_internal_std(norm_se), ]   # Remove internal standards
+msdial$export_data_with_feature_table_xlsx(
+  sumexp_lst = se,
+  mat_id = mat_id,
+  org_feature_table = org_feature_table,
+  out_file = FILE$o$norm[[ii]],
+  is_closest_norm = is_closest_norm
 )
+cat(glue::glue("{mat_id} data has been saved to {basename(FILE$o$norm[[ii]])}."), "\n")
 
-
-input1 <- parsed[["input1"]]
-input2 <- as.logical(parsed[["input2"]])
-
-
-
-
-## mat_ids_To_reprot
-## raw, loess_norm, closest_norm
-#for (ii in seq_along(mat_ids_to_export)) {
-cat("input1 is",input1)
-cat("input2 is",input2)
-
-  norm_se <- to_report[["normalized"]]
-  se <- norm_se[! util$is_internal_std(norm_se), ]   # Remove internal standards
-  
-  ii<-which(mat_ids_to_export==input1)
-  mat_id <- mat_ids_to_export[ii]
-  
-  blk_mat_id <- util$mat_id_of_blank_subtracted(mat_id)
-  
-  cat("This is",mat_id)
-if(input2==F){ 
-  msdial$export_data_with_feature_table_xlsx(
-    sumexp_lst = se, 
-    mat_id = mat_id,
-    org_feature_table = org_feature_table,
-    out_file = FILE$o$norm[[ii]],
-    is_closest_norm = mat_id == "closest_norm"
-  )
-  cat(glue::glue("{mat_id} data has been saved to {basename(FILE$o$norm[[ii]])}."), "\n")
-} else if (input2==T){ 
-  ### raw_blk
-  
-  msdial$export_data_with_feature_table_xlsx(
-    sumexp_lst = to_report[["normalized - blank"]],   # Already removed internal standards
-    mat_id = blk_mat_id,
-    org_feature_table = org_feature_table,
-    out_file = FILE$o$norm_blk[[ii]],
-    is_closest_norm = mat_id == "closest_norm"
-  )
-  cat(glue::glue("{blk_mat_id} data has been saved to {basename(FILE$o$norm_blk[[ii]])}."), "\n")
-#}
-}
+# Blank subtracted normalized data
+msdial$export_data_with_feature_table_xlsx(
+  sumexp_lst = to_report[["normalized - blank"]],   # Already removed internal standards
+  mat_id = blk_mat_id,
+  org_feature_table = org_feature_table,
+  out_file = FILE$o$norm_blk[[ii]],
+  is_closest_norm = is_closest_norm
+)
+cat(glue::glue("{blk_mat_id} data has been saved to {basename(FILE$o$norm_blk[[ii]])}."), "\n")
 
 # Export concentration values ----------
 if (IS_TARGET_MODE) {
-  io$chq_all_files_exist(FILE$i$proc)
   proc_se_lst <- readRDS(FILE$i$proc)
-  
- # for (ii in seq_along(mat_ids_to_export)) {
-  ii<-which(mat_ids_to_export==input1)
-  mat_id <- mat_ids_to_export[ii]
-    # The ID of the matrix to use for calibration
-    input_mat_id <- mat_id |>
-      util$mat_id_of_blank_subtracted()
-    # Load the processed data using the specified normalization method
-    lst_proc <- lapply(proc_se_lst[[input_mat_id]], \(ea) ea[["concn"]])
-    msdial$export_concentration_xlsx(
-      # Concentration has been computed on the blank subtracted data
-      sumexp_lst = lst_proc,
-      file = FILE$o$conc[[ii]],
-      is_closest_norm = mat_id == "closest_norm"
-    )
-    cat(glue::glue("{mat_id} concentration data has been saved to {basename(FILE$o$conc[[ii]])}."), "\n")
-  }
+  # Concentration has been computed on the blank subtracted data
+  lst_proc <- lapply(proc_se_lst[[blk_mat_id]], \(ea) ea[["concn"]])
+  msdial$export_concentration_xlsx(
+    sumexp_lst = lst_proc,
+    file = FILE$o$conc[[ii]],
+    is_closest_norm = is_closest_norm
+  )
+  cat(glue::glue("{mat_id} concentration data has been saved to {basename(FILE$o$conc[[ii]])}."), "\n")
+}
 

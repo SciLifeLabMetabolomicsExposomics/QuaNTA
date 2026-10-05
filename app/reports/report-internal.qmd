@@ -62,9 +62,11 @@ set.seed(7579)
 
 ## Normalization by ISs
 
-The dataset is normalized using the provided ISs. The user can opt to choose between 2 normalization methods: 
+The dataset is normalized using the provided ISs. The user can opt to choose between 3 normalization methods:
+
 - "Closest RT" method, whereby the peak area intensity of each feature/chemical is corrected with that of the closest IS in RT. Target classes of compounds can be specified.
 - "LOESS" method, whereby the peak area intensity of each feature/chemical is corrected by a LOESS model curve built using all the IS spanning across the entire chromatographic RT.
+- "Multivariate (PCA)" method, whereby the peak area intensity of each feature/chemical is divided by a per-sample factor from the first principal component of the unit-variance scaled IS peak areas (Surowiec et al. 2017, Metabolomics 13:114).
 
 ```{r}
 #| purl: true
@@ -140,7 +142,20 @@ Blank subtraction is applied to all samples in the dataset except for the calibr
 #| label: target_mode
 if (IS_TARGET_MODE) {
   cat("\n\n# Calibration\n\n")
-  cat("\nThe calibration is performed per batch.\n\n")
+  cat("\nThe calibration is performed per batch when the batch has enough calibration curve",
+      "replicates; otherwise, the global calibration curve using all batches is used.\n\n")
+  cal_per_batch <- to_report[["calibration per batch"]]
+  if (!is.null(cal_per_batch)) {
+    d <- cal_per_batch[cal_per_batch$mat_id == MAT_ID_BLANK_SUBT, ]
+    data.frame(
+      Batch = as.character(d$batch_id),
+      Calibration = as.character(d$calibration),
+      Note = dplyr::coalesce(as.character(d$note), "")
+    ) |>
+      knitr::kable(caption = "Calibration curve used per batch") |>
+      kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE) |>
+      print()
+  }
   qmd <- "process-calibration-llox_from_llox_signal.qmd"
   cat(knitr::knit_child(file.path(chapters_dir, qmd), quiet = TRUE))
   # Stop here if the calibration is not performed

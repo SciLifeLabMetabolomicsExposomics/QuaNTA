@@ -47,7 +47,9 @@ MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)
 # Get the input file name provided by the user
 user_inputs <- msdial$get_user_input()
 # To keep constants consistent across reports
-constants_yml <- yaml::read_yaml("app/constants.yml")
+# The app directory: `APP_ROOT` (absolute, set by the app / Docker), else `app/` from the project root
+app_root <- Sys.getenv("APP_ROOT", "app")
+constants_yml <- yaml::read_yaml(file.path(app_root, "constants.yml"))
 COLORS <- lapply(constants_yml$COLORS, unlist) # Lists to named vectors
 raw_se <- msdial$read_parsed_msdial_data(user_inputs)
 # For consistency throughout the report
@@ -237,7 +239,7 @@ The unit of concentration is `r user_inputs$concentration_unit`.
 ```{r}
 #| label: 'lod-lloq-limits-text'
 qmd <- "_external-llox_from_llox_signal.qmd"
-cat(knitr::knit_child(file.path("app/reports/chapters", qmd), quiet = TRUE))
+cat(knitr::knit_child(file.path(app_root, "reports", "chapters", qmd), quiet = TRUE))
 ```
 
 ```{r}

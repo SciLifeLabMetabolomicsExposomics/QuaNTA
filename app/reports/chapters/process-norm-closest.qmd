@@ -33,8 +33,14 @@ Normalization is evaluated by comparing the relative standard deviation (RSD) of
 Quality control (QC) samples are used for this evaluation because they are technical replicates and should have low RSD values.
 
 ```{r}
+#| results: 'asis'
+if (!show$has_enough_qc(norm_se)) cat("\n\n*", show$not_enough_qc_msg, "*\n\n", sep = "")
+```
+
+```{r}
 #| label: 'evaluation-normalization-closest-istd'
 #| out.width: '80%'
+#| eval: !expr show$has_enough_qc(norm_se)
 
 # Quantification standard samples
 qc_se <- show$extract_quant_qc(norm_se)
@@ -54,11 +60,12 @@ show$ggplot_rsdp_metab(rsd_qstd, mat_ids) +
   facet_grid(~ QC)
 ```
 
-The number of features with higher/lower RSD after normalization is counted below.
+`r if (show$has_enough_qc(norm_se)) "The number of features with higher/lower RSD after normalization is counted below."`
 
 ```{r}
 #| label: 'evaluation-normalization-closest-istd-count'
 #| results: 'markup'
+#| eval: !expr show$has_enough_qc(norm_se)
 rsd_qstd |> 
   janitor::tabyl(QC, sign)
 ```

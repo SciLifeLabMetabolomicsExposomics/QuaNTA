@@ -77,7 +77,7 @@ cat(
 
 #  -----  LIBRARIES AND FILES  -------------------------------------------------
 # Load packages and project local libraries
-box.path = Sys.getenv("R_BOX_PATH", "app/") # Path to project local libraries
+options(box.path = Sys.getenv("R_BOX_PATH", "app/")) # Path to project local libraries
 box::use(
   SumExp, # Light SummarizedExperiment, `[`
   projlib / msdial, # Handle MS-Dial files
@@ -119,6 +119,12 @@ stopifnot(!is.null(IS_NON_TARGET_MODE))
 #       length() == ncol(`internal std. before qc`)
 # - `excluded categories in normalization`: Sample categories excluded from normalization
 # - `LOESS fit`: A list of LOESS models for each sample. Output of `proc$get_loess_fit()`
+# - `multivariate IS-PCA`: Factor, loadings, etc. of `proc$multivariate_is_pca_normalization()`
+#       (absent when it could not be computed)
+# - `median RSD% per normalization`: Named vector of the median RSD% of replicates per matrix ID
+# - `median RSD% basis`: Sample category of those replicates: "QC", "CalCurve" or NA (none)
+# - `best normalization`: Matrix ID of the normalization with the lowest median RSD%
+#       (`loess_norm` when it cannot be computed)
 # - `normalized`: `SumExp` object after normalization (before blank filtering)
 # - `after blank filtering`: `SumExp` object after blank filtering
 # - `matrix ids to blk subt`: IDs of matrices that underwent blank subtraction
@@ -227,6 +233,44 @@ proc_sumexp[["loess_norm"]] <- sapply(
   labelled::set_variable_labels("LOESS normalized")
 cat("LOESS normalization is done.\n")
 
+##  NORMALIZE - MULTIVARIATE (PCA) OF INTERNAL STANDARDS  --
+# Optional: if it fails (e.g. too few internal standards), the other methods are still used
+norm_mat_ids <- c("loess_norm", "closest_norm")
+mvis_out <- tryCatch(
+  proc$multivariate_is_pca_normalization(se = proc_sumexp, istd_se = internal_std_se, mat_id = "raw"),
+  error = function(e) {
+    warning("Multivariate (PCA) IS normalization skipped: ", conditionMessage(e),
+            call. = FALSE, immediate. = TRUE)
+    NULL
+  }
+)
+if (!is.null(mvis_out)) {
+  proc_sumexp[["mvis_norm"]] <- mvis_out$normalized |>
+    labelled::set_label_attribute("Multivariate (PCA) normalized")
+  to_report[["multivariate IS-PCA"]] <- mvis_out[c("factor", "loadings", "explained_variance", "is_used")]
+  norm_mat_ids <- c(norm_mat_ids, "mvis_norm")
+  cat("Multivariate (PCA) IS normalization is done (PC1 explains ",
+      round(100 * mvis_out$explained_variance, 1), "% of the IS variance).\n", sep = "")
+}
+
+##  BEST NORMALIZATION METHOD  -----------------------------
+# Lowest median RSD% of replicate QC samples (before blank filtering/subtraction). Without QC
+# replicates, the replicates of the calibration curve levels are used instead.
+rsd_basis <- "QC"
+median_rsd <- proc$median_rsd_per_matrix(proc_sumexp, c("raw", norm_mat_ids), cat = "QC")
+if (all(is.na(median_rsd[norm_mat_ids]))) {
+  rsd_basis <- "CalCurve"
+  median_rsd <- proc$median_rsd_per_matrix(proc_sumexp, c("raw", norm_mat_ids), cat = "CalCurve")
+}
+if (all(is.na(median_rsd[norm_mat_ids]))) rsd_basis <- NA_character_
+best_norm <- proc$select_best_normalization(median_rsd, candidates = norm_mat_ids)
+to_report[["median RSD% per normalization"]] <- median_rsd
+to_report[["median RSD% basis"]] <- rsd_basis
+to_report[["best normalization"]] <- best_norm
+cat("Median RSD% of ", rsd_basis, " replicates per method: ",
+    paste0(names(median_rsd), " = ", round(median_rsd, 2), collapse = ", "), "\n",
+    "Best normalization method: ", best_norm, "\n", sep = "")
+
 ##  END OF INTERNAL STANDARD PROCESSING  -------------------
 to_report[["normalized"]] <- proc_sumexp # Final internal standard normalized data
 proc_sumexp <- proc_sumexp[!util$is_internal_std(proc_sumexp), ] # Remove internal standards
@@ -235,7 +279,7 @@ proc_sumexp <- proc_sumexp[!util$is_internal_std(proc_sumexp), ] # Remove intern
 #  -----  BLANK FILTERING  ----------------------------------------------------
 
 # Matrix IDs to perform blank subtraction. Raw + normalized matrices
-to_blk_subt <- c("raw", "loess_norm", "closest_norm")
+to_blk_subt <- c("raw", norm_mat_ids)
 to_report[["matrix ids to blk subt"]] <- to_blk_subt
 
 if (params$blank_filter) {
@@ -325,6 +369,9 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   
   # Restrict to targeted features
   qt_se <- qt_se[util$is_targeted_feature(qt_se), ]
+  # Exclude chemicals removed by blank filtering (their rows are all NA). Blank filtering is done
+  # before splitting into batches, so the same chemicals are excluded globally and per batch.
+  qt_se <- qt_se[rowSums(!is.na(qt_se[[mat_id_to_calib]])) > 0, ]
   
   # Sort by chemical name for presentation consistency in the reports, exported files, etc.
   qt_se <- qt_se[order(SumExp::row_df(qt_se)$feature_name), ]
@@ -431,6 +478,40 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   ))
 }
 
+#' [quantify_using_calcurve()] that reports an error as "not done" instead of stopping, e.g. when
+#' a batch has only one sample per calibration level (no SD / RSD% can be computed). Batches that
+#' are not done fall back to the global calibration below.
+try_quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params, what) {
+  tryCatch(
+    quantify_using_calcurve(qt_se, mat_id_to_calib, params),
+    error = function(e) {
+      warning(glue::glue("  Calibration failed for {what}: {conditionMessage(e)}"),
+              call. = FALSE, immediate. = TRUE)
+      list(done = FALSE, reason = conditionMessage(e))
+    }
+  )
+}
+
+#' Why calibration curve samples are not enough for calibration, or `NULL` if they are enough
+#'
+#' Replicates are needed for the SD of the zero point (`pt_signal_mean_plus_sd`) and for the
+#' RSD% of the calibration points (`--use_rsd20`).
+calcurve_replicate_issue <- function(qt_se, params) {
+  c_conc <- util$spiked_conc_pts(qt_se)
+  n_per_pt <- table(c_conc[!is.na(c_conc)])
+  if (length(n_per_pt) == 0) return("no calibration curve samples")
+  if (params$llox_method == "pt_signal_mean_plus_sd" && !isTRUE(n_per_pt[["0"]] >= 2)) {
+    return("< 2 zero-conc cal samples (needed for SD of the LOD/LLOQ)")
+  }
+  if (params$use_rsd20 && any(n_per_pt[names(n_per_pt) != "0"] < 2)) {
+    return("< 2 replicates per cal point (needed for RSD% <= 20%)")
+  }
+  NULL
+}
+
+# Calibration used per batch, collected for the reports. One row per matrix ID and batch
+calibration_per_batch <- list()
+
 ##  CALIBRATION  -------------------------------------------
 
 # Collect the output. "mat_id_to_calib" -> "batch_id" -> list of "calcurve" and "concn"
@@ -444,18 +525,18 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
   lst_proc[[mat_id_to_calib]] <- list() # Initialize to collect the output per normalization method
   # Label for the normalized data.
   norm_lab <- labelled::get_label_attribute(proc_sumexp[[mat_id_to_calib]])
-  cat(glue::glue("Processing {norm_lab} data."), "\n")
   
   # Global calibration for failed batches.
-  cal_global <- quantify_using_calcurve(proc_sumexp, mat_id_to_calib, params)
+  cal_global <- try_quantify_using_calcurve(proc_sumexp, mat_id_to_calib, params, "all samples")
   
   if (cal_global$done) {
-    # In batch-mode, it can be "Global" or "Batch" or NA
-    SumExp::row_df(cal_global$calcurve)[["src_calcurve"]] <- dplyr::if_else(
+    # Source of the calibration curve per chemical. In batch-mode, it can be "Global" or "Batch"
+    # or NA (no proper calibration range). Also kept with the concentrations for the exports.
+    src_global <- dplyr::if_else(
       SumExp::row_df(cal_global$calcurve)[, "has_proper_range"], "Global", NA_character_
     )
-    # Progress message
-    cat(glue::glue("  Global calibration using all samples is done."), "\n")
+    SumExp::row_df(cal_global$calcurve)[["src_calcurve"]] <- src_global
+    SumExp::row_df(cal_global$concn)[["src_calcurve"]] <- src_global
   } else {
     warning(
       "  NO Valid calibration points for any chemical in all samples.",
@@ -465,20 +546,32 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
   
   uniq_batch_ids <- unique(as.character(SumExp::col_df(proc_sumexp)[["batch_id"]]))
   for (batch_id in uniq_batch_ids) {
-    cat(glue::glue("  Processing batch `{batch_id}`."), "\n")
+    # cat(glue::glue("  Processing batch `{batch_id}`."), "\n")
     
-    # Batch-wise calibration
-    cal_batch <- quantify_using_calcurve(per_batch_proc_se_lst[[batch_id]], mat_id_to_calib, params)
+    # Batch-wise calibration, if the batch has enough calibration curve replicates
+    batch_se <- per_batch_proc_se_lst[[batch_id]]
+    issue <- calcurve_replicate_issue(batch_se, params)
+    cal_batch <- if (is.null(issue)) {
+      try_quantify_using_calcurve(batch_se, mat_id_to_calib, params, glue::glue("batch `{batch_id}`"))
+    } else {
+      list(done = FALSE, reason = issue)
+    }
     if (cal_global$done) {
       # The data of the batch in globally calibrated data
-      batch_in_global <- list(
-        calcurve = cal_global$calcurve[, colnames(cal_batch$calcurve)],
-        concn = cal_global$concn[, colnames(cal_batch$concn)]
-      )
-      stopifnot(exprs = {
-        identical(colnames(cal_batch$concn), colnames(batch_in_global$concn))
-        identical(colnames(cal_batch$calcurve), colnames(batch_in_global$calcurve))
+      # (Samples of the batch, also when the batch calibration failed and has no output)
+      batch_samples <- colnames(per_batch_proc_se_lst[[batch_id]])
+      batch_in_global <- lapply(cal_global[c("calcurve", "concn")], \(se) {
+        se[, colnames(se) %in% batch_samples]
       })
+      # A batch without its own calibration curve samples shows all the global ones, which made
+      # its calibration curves (also keeps plots and tables from getting empty data)
+      if (ncol(batch_in_global$calcurve) == 0) batch_in_global$calcurve <- cal_global$calcurve
+      if (cal_batch$done) {
+        stopifnot(exprs = {
+          identical(colnames(cal_batch$concn), colnames(batch_in_global$concn))
+          identical(colnames(cal_batch$calcurve), colnames(batch_in_global$calcurve))
+        })
+      }
     }
     
     if (cal_batch$done) { # At least one chemical has proper calibration range
@@ -486,6 +579,7 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
       # Source of calibration curve
       src_calcurve <- dplyr::if_else(has_proper_range, "Batch", NA_character_)
       SumExp::row_df(cal_batch$calcurve)[["src_calcurve"]] <- src_calcurve
+      SumExp::row_df(cal_batch$concn)[["src_calcurve"]] <- src_calcurve
       # If any chemical has no proper range in the batch calibration, try to use global calibration
       if (cal_global$done && sum(!has_proper_range) > 0) {
         global_has_proper_range <- SumExp::row_df(batch_in_global$calcurve)[, "has_proper_range"]
@@ -493,44 +587,65 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
         in_only_global <- !has_proper_range & global_has_proper_range
         if (sum(in_only_global) > 0) {
           batch_in_only_global <- lapply(batch_in_global, \(x) x[in_only_global, ])
-          cat(glue::glue(
-            "    Replacing concentrations with global calibration for {sum(in_only_global)} ",
-            "chemicals in batch `{batch_id}`.",
-          ), "\n")
+
           # Replace the values in the batch calibration with the global calibration
           cal_batch$concn[["conc"]][in_only_global, ] <- batch_in_only_global$concn[["conc"]]
           cal_batch$concn[["conc0"]][in_only_global, ] <- batch_in_only_global$concn[["conc0"]]
-          # colnames(SumExp::row_df(cal_batch$concn))
-          # [1] "alignment_id"     "feature_name"     "mz"               ".rt"              ".std_type"
-          # [6] "closest_istd"     "min_c_conc"       "max_c_conc"       "lod"              "lloq"
-          # [11] "avg_signal_at_lloq"  "has_proper_range" "calcurve_model"   "to_export"
+          
+          #Replacing information with global curve info
           SumExp::row_df(cal_batch$concn)[in_only_global, ] <- SumExp::row_df(batch_in_only_global$concn)
-          # Replace information of the calibration curve with the one from global calibration
-          # colnames(SumExp::row_df(cal_batch$calcurve))
-          # [1] "alignment_id"     "feature_name"     "mz"               ".rt"              ".std_type"
-          # [6] "closest_istd"     "min_c_conc"       "max_c_conc"       "lod"              "lloq"
-          # [11] "avg_signal_at_lloq"  "has_proper_range" "src_calcurve"
           SumExp::row_df(cal_batch$calcurve)[in_only_global, ] <- SumExp::row_df(batch_in_only_global$calcurve)
         }
       }
       lst_proc[[mat_id_to_calib]][[batch_id]] <- cal_batch
+      src <- SumExp::row_df(cal_batch$concn)[["src_calcurve"]]
+      batch_cal <- if (any(src %in% "Global")) "Batch + Global" else "Batch"
+      note <- if (batch_cal == "Batch") {
+        NA_character_
+      } else {
+        glue::glue("{sum(src %in% 'Global')} chemical(s) without a proper range in the batch use the global calibration")
+      }
       # Progress message
       cat(glue::glue("  Calibration of batch `{batch_id}` is done."), "\n")
     } else {
-      warning(glue::glue(
-        "  NO Valid calibration points for any chemical in batch `{batch_id}`.",
-      ), call. = FALSE, immediate = TRUE)
       if (cal_global$done) {
         lst_proc[[mat_id_to_calib]][[batch_id]] <- list(
           done = TRUE,
           calcurve = batch_in_global$calcurve,
           concn = batch_in_global$concn
         )
-        cat(glue::glue("  Globally calibrated data copied to the batch `{batch_id}`."), "\n")
+        # cat(glue::glue("  Globally calibrated data copied to the batch `{batch_id}`."), "\n")
+      } else {
+        warning(glue::glue(
+          "  NO Valid calibration points for any chemical in batch `{batch_id}`.",
+        ), call. = FALSE, immediate = TRUE)
+      }
+      batch_cal <- if (cal_global$done) "Global" else NA_character_
+      note <- if (is.null(cal_batch$reason)) {
+        "no chemical with a proper calibration range in the batch"
+      } else {
+        cal_batch$reason
       }
     }
+
+    # Tag the samples of the batch with the calibration used: "Batch", "Batch + Global"
+    # (some chemicals from the global calibration) or "Global" (batch calibration not possible)
+    if (!is.null(lst_proc[[mat_id_to_calib]][[batch_id]])) {
+      for (part in c("calcurve", "concn")) {
+        n_smpl <- ncol(lst_proc[[mat_id_to_calib]][[batch_id]][[part]])   # Can be 0 for "calcurve"
+        SumExp::col_df(lst_proc[[mat_id_to_calib]][[batch_id]][[part]])[["calibration"]] <-
+          rep(batch_cal, n_smpl)
+        SumExp::metadata(lst_proc[[mat_id_to_calib]][[batch_id]][[part]])$calibration_note <- note
+      }
+    }
+    calibration_per_batch[[length(calibration_per_batch) + 1L]] <- tibble::tibble(
+      mat_id = mat_id_to_calib, batch_id = batch_id, calibration = batch_cal, note = note
+    )
   }
 }
+to_report[["calibration per batch"]] <- dplyr::bind_rows(calibration_per_batch)
+cat("\nCalibration used per batch:\n")
+print(as.data.frame(to_report[["calibration per batch"]]), right = FALSE)
 # Save the processed data
 saveRDS(lst_proc, file = FILE$proc)
 cat("The `SumExp` object after processing saved to:", FILE$proc, "\n")

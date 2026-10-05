@@ -220,6 +220,10 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
         "Given Batch ID" = SumExp::col_df(sumexp)[["org_batch_id"]],
       )
   }
+  if ("calibration" %in% names(SumExp::col_df(sumexp))) {  # Calibration used for the batch
+    s_rows <- s_rows |>
+      dplyr::mutate("Calibration" = SumExp::col_df(sumexp)[["calibration"]])
+  }
   return(t(s_rows))  # Horizontal table
 }
 
@@ -472,7 +476,10 @@ tbl_chemical_summary <- function(sumexp) {
       )
   })
   # Summary table for all batches
-  tbl <- dplyr::bind_rows(chem_col_lst, .id = "Batch") |>
+  tbl <- dplyr::bind_rows(chem_col_lst, .id = "Batch")
+  # Data processed by older versions have no `src_calcurve` with the concentrations
+  if (!"src_calcurve" %in% names(tbl)) tbl$src_calcurve <- NA_character_
+  tbl <- tbl |>
     dplyr::summarise(
       alignment_id = alignment_id[1L],
       chem_name = chem_name[1L],
@@ -483,6 +490,8 @@ tbl_chemical_summary <- function(sumexp) {
       unit = unit[1L],
       dplyr::across(c(n_det, n_quant, n_samples), ~ sum(.x, na.rm = TRUE)),
       model_r2 = mean(model_r2, na.rm = TRUE),
+      # Calibration curve used per batch, e.g. "1: Batch; 2: Global"
+      calib_per_batch = paste0(Batch, ": ", dplyr::coalesce(src_calcurve, "None"), collapse = "; "),
       .by = alignment_id
     ) |>
     dplyr::mutate(
@@ -503,6 +512,7 @@ tbl_chemical_summary <- function(sumexp) {
       "Quantified (q/n)" = n_q_s,
       "Concentration" = unit,
       "Average R2" = model_r2,
+      "Calibration per batch" = calib_per_batch,
     )
   if (is_closest_norm) {
     out <- dplyr::bind_cols(
@@ -547,6 +557,9 @@ tbl_chemical_summary <- function(sumexp) {
       "Equation" = eqn,
       "N of points" = n_conc,
     )
+  if ("src_calcurve" %in% names(tbl)) {   # Calibration curve used: "Batch", "Global" or none
+    out[["Calibration"]] <- dplyr::coalesce(tbl$src_calcurve, "None")
+  }
   if (is_closest_norm) {
     out <- dplyr::bind_cols(
       out,

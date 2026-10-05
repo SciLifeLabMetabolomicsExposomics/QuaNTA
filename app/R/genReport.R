@@ -1,5 +1,9 @@
 # ------------------------------------------------------------------------------------------- #
-# A Shiny module to generate a report (rendered into the per-session report directory)
+# A Shiny module to generate the reports (rendered into the per-session report directory)
+#
+# Rendering runs in a background process (scripts/render_report.R via [run_bg_rscript()]) in a
+# private copy of the report sources, so it neither freezes the app for other users nor shares
+# Quarto's intermediate files with them.
 # ------------------------------------------------------------------------------------------- #
 
 #' A Shiny UI module to generate a report
@@ -9,6 +13,13 @@
 genReportUI <- function(uiId) {
   ns <- shiny::NS(uiId)
   shiny::tagList(
+    # External report (PDF): downloaded directly once generated, not shown in the app
+    shiny::actionButton(inputId = ns("gen_external"), label = "Generate external report"),
+    shiny::textOutput(ns("gen_external_out")),
+    # Hidden link that the server "clicks" (message `quantaClickDownload`, defined in app.R) to
+    # start the download when the PDF is ready
+    shiny::downloadLink(ns("download_external"), label = "", style = "display: none;"),
+    shiny::br(),
     shiny::actionButton(inputId = ns("gen_internal"), label = "Generate internal report"),
     shiny::textOutput(ns("gen_internal_out"))
   )
@@ -28,6 +39,7 @@ genReportServer <- function(serverId, data_info, ws, norm_method) {
   shiny::moduleServer(serverId, function(input, output, session) {
     msg <- shiny::reactiveVal("")
     report_ready <- shiny::reactiveVal(NULL)
+    rendering <- shiny::reactiveVal(FALSE)   # One render at a time per session
 
     # e.g. "Dummy_Test-loess_norm-internal.html"
     report_name <- shiny::reactive({
@@ -37,41 +49,89 @@ genReportServer <- function(serverId, data_info, ws, norm_method) {
     })
     report_path <- shiny::reactive(file.path(ws$report, report_name()))
 
+    # Start rendering a report in the background; `on_done(path)` / `on_error(message)` follow
+    render_report <- function(qmd, out_name, output_format, what, on_done, on_error) {
+      if (shiny::isolate(rendering())) {
+        on_error("A report is already being generated. Please wait until it has finished.")
+        return(invisible())
+      }
+      params_file <- tryCatch(
+        write_session_params(shiny::reactiveValuesToList(data_info), ws),
+        error = function(e) {
+          on_error(conditionMessage(e))
+          NULL
+        }
+      )
+      if (is.null(params_file)) return(invisible())
+      rendering(TRUE)
+      job <- list(
+        reports_dir = normalizePath("reports", winslash = "/", mustWork = TRUE),
+        work_dir = file.path(ws$base, "render"),
+        qmd = qmd,
+        output_format = output_format,
+        out_name = out_name,
+        out_dir = ws$report,
+        execute_params = list(
+          norm_method = shiny::isolate(norm_method()),
+          interactive_plot = FALSE,
+          project_title = shiny::isolate(data_info[["project_title"]])
+        )
+      )
+      run_bg_rscript(
+        session, ws,
+        script = "scripts/render_report.R",
+        job = job,
+        env = c(QUANTA_PARAMS_FILE = params_file),
+        progress_message = paste0("Rendering ", what, " (this can take a minute) ..."),
+        on_done = function(ok, log) {
+          rendering(FALSE)
+          path <- file.path(ws$report, out_name)
+          if (ok && file.exists(path)) on_done(path) else on_error(bg_error_message(log))
+        }
+      )
+    }
+
     shiny::observeEvent(input$gen_internal, {
       shiny::req(norm_method())
       msg("")
       out_name <- report_name()
-      msg(tryCatch({
-        # Same hand-over as for the processing scripts. The env var is inherited by the quarto
-        # child process. `quarto_render()` blocks, so no other session can interleave.
-        params_file <- write_session_params(shiny::reactiveValuesToList(data_info), ws)
-        reports_dir <- normalizePath("reports", mustWork = TRUE)
-        rel_out <- as.character(fs::path_rel(ws$report, start = reports_dir))
-
-        shiny::withProgress(message = "Rendering report (this can take a minute) ...", value = 0.3, {
-          withr::with_envvar(
-            c(QUANTA_PARAMS_FILE = params_file),
-            withr::with_dir(
-              reports_dir,
-              quarto::quarto_render(
-                "report-internal.qmd",
-                output_format = "html",
-                output_file = out_name,
-                execute_params = rlang::list2(
-                  norm_method = norm_method(),
-                  interactive_plot = FALSE,
-                  project_title = data_info[["project_title"]]
-                ),
-                quarto_args = c("--output-dir", rel_out)
-              )
-            )
-          )
-        })
-        report_ready(Sys.time())
-        paste0("Internal report `", out_name, "` generated.")
-      }, error = function(e) paste("Error:", conditionMessage(e))))
+      render_report(
+        "report-internal.qmd", out_name, "html", "internal report",
+        on_done = function(path) {
+          report_ready(Sys.time())
+          msg(paste0("Internal report `", out_name, "` generated."))
+        },
+        on_error = function(e) msg(paste("Error:", e))
+      )
     })
     output$gen_internal_out <- shiny::renderText(msg())
+
+    # ---- External report (PDF), downloaded directly when generated ----
+    msg_external <- shiny::reactiveVal("")
+    external_path <- shiny::reactiveVal(NULL)
+    shiny::observeEvent(input$gen_external, {
+      shiny::req(norm_method())
+      msg_external("")
+      out_name <- sub("-internal\\.html$", "-external.pdf", report_name())
+      render_report(
+        "report-external.qmd", out_name, "pdf", "external report",
+        on_done = function(path) {
+          external_path(path)
+          # Start the download in the browser
+          session$sendCustomMessage("quantaClickDownload", session$ns("download_external"))
+          msg_external(paste0("External report `", out_name, "` generated and downloaded."))
+        },
+        on_error = function(e) msg_external(paste("Error:", e))
+      )
+    })
+    output$gen_external_out <- shiny::renderText(msg_external())
+    output$download_external <- shiny::downloadHandler(
+      filename = function() basename(shiny::req(external_path())),
+      content = function(file) file.copy(shiny::req(external_path()), file, overwrite = TRUE),
+      contentType = "application/pdf"
+    )
+    # The link is hidden; without this Shiny would not give it a download URL
+    shiny::outputOptions(output, "download_external", suspendWhenHidden = FALSE)
 
     list(report_path = report_path, report_ready = report_ready)
   })
