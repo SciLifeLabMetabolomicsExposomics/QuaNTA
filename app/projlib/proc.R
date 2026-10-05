@@ -335,6 +335,43 @@ median_rsd_per_matrix <- function(se, mat_ids, cat = "QC") {
   }, numeric(1))
 }
 
+#' Whether there are QC replicates to compute RSD% (a QC class with at least two samples)
+#'
+#' @param se A [`SumExp::SumExp`] object
+#' @returns `TRUE` or `FALSE`
+#' @export
+has_qc_replicates <- function(se) {
+  qc_class <- SumExp::col_df(util$extract_ctrl_smpl_cat(se, "QC"))$Class
+  any(table(qc_class) >= 2)
+}
+
+#' QC RSD% of each feature
+#'
+#' RSD% is computed within each QC class with at least two samples; with several QC classes the
+#' median over the classes is taken.
+#'
+#' @param se A [`SumExp::SumExp`] object
+#' @param mat_id The name of a matrix in `se`
+#' @returns A numeric vector of RSD% per feature (rows of `se`); `NA` when it cannot be computed,
+#'   e.g. all values are zero or missing
+#' @export
+qc_rsd_per_feature <- function(se, mat_id) {
+  qc_se <- util$extract_ctrl_smpl_cat(se, "QC")
+  qc_class <- SumExp::col_df(qc_se)$Class
+  classes <- names(which(table(qc_class) >= 2))
+  rsd_perc <- function(x) {
+    m <- mean(x, na.rm = TRUE)
+    if (!is.finite(m) || m == 0) NA_real_ else 100 * stats::sd(x, na.rm = TRUE) / m
+  }
+  if (length(classes) == 0) return(rep(NA_real_, nrow(se)))
+  per_class <- vapply(classes, function(cl) {
+    apply(qc_se[[mat_id]][, qc_class == cl, drop = FALSE], 1, rsd_perc)
+  }, numeric(nrow(se)))
+  per_class <- matrix(per_class, nrow = nrow(se))
+  out <- apply(per_class, 1, \(v) if (all(is.na(v))) NA_real_ else stats::median(v, na.rm = TRUE))
+  stats::setNames(out, rownames(se))
+}
+
 #' Select the normalization method with the lowest median RSD%
 #'
 #' @param median_rsd A named numeric vector from [median_rsd_per_matrix()]
@@ -396,6 +433,9 @@ filter_by_blank <- function(sumexp, mat_id, factor = 5) {
 #' @param out_mat_ids The names of the output matrices in the returned object.
 #'   These should be the same size as `mat_ids` in the same order.
 #'
+#' Each batch is subtracted by the average of its own blank samples. A batch without blank samples
+#' is subtracted by the average of all blank samples (of all batches).
+#'
 #' @returns A [`SumExp::SumExp`] object with the blank values subtracted.
 #'   The columns of the blanks are removed from the `sumexp`.
 #' @md
@@ -407,12 +447,13 @@ add_blank_subtracted_sumexp <- function(sumexp,
   stopifnot(length(mat_ids) == length(out_mat_ids))
   g <- ifelse(util$ctrl_smpl_cat(sumexp) == "Blank", "Blank", "Other")
   se_lst <- SumExp::split_columns(sumexp, g)
-  blank_se <- se_lst[["Blank"]]
+  blank_se <- se_lst[["Blank"]]     # NULL when there are no blank samples (e.g. a batch without)
+  has_blank <- !is.null(blank_se) && ncol(blank_se) > 0
   sumexp <- se_lst[["Other"]]
   no_change <- no_change[g == "Other"]    # Blank has been split already
   for (ii in seq(mat_ids)) {      # Paired `mat_ids` and `out_mat_ids`
     mat_id <- mat_ids[ii]
-    blank_bat_ids <- SumExp::col_df(blank_se)[["batch_id"]]
+    blank_bat_ids <- if (has_blank) SumExp::col_df(blank_se)[["batch_id"]] else character(0)
     se_bat_ids <- SumExp::col_df(sumexp)[["batch_id"]]
     x_mat <- sumexp[[mat_id]]
     x_lab <- labelled::get_label_attribute(x_mat)
@@ -424,6 +465,13 @@ add_blank_subtracted_sumexp <- function(sumexp,
       is_batch_i <- se_bat_ids == i_batch
       to_be_chg <- is_batch_i & !no_change
       mat_subt[, to_be_chg] <- x_mat[, to_be_chg] - blank_mean
+    }
+    # Batches without blank samples: subtract the average of all blank samples
+    no_blank_batches <- setdiff(unique(se_bat_ids), unique(blank_bat_ids))
+    if (length(no_blank_batches) > 0 && has_blank) {
+      all_blank_mean <- rowMeans(blank_se[[mat_id]])
+      to_be_chg <- se_bat_ids %in% no_blank_batches & !no_change
+      mat_subt[, to_be_chg] <- x_mat[, to_be_chg] - all_blank_mean
     }
     mat_subt[mat_subt < 0] <- 0
     sumexp[[out_mat_ids[ii]]] <- mat_subt |>

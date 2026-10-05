@@ -42,29 +42,34 @@ The subdirectories within the `<project>/code/` directory are structured as show
 ## Software environment
 
 To mitigate issues arising from software environment inconsistencies, the environment in which the scripts were developed has been saved together with the scripts.
-We use a popular container system called [Docker](https://wwww.docker.com), which runs on multiple platforms such as Linux, MacOS and Windows.
-The Docker image can be built using the `Dockerfile` provided in the `code/envs/` directory if you
-want to customize the environment.
-It encapsulates the software environment.
-Please ensure that the necessary management software is pre-installed and running.
+We use a popular container system called [Docker](https://www.docker.com), which runs on multiple platforms such as Linux, MacOS and Windows.
+Please ensure that Docker is installed and running.
 For installation questions, please refer to the software's website.
 
-The commands below will restore the same environment and initiate the Shiny app using an image built from the `Dockerfile` and shared on Docker Hub.
-Make sure you are in the `<project>` directory before running the command below.
+The `Dockerfile` in the root of the repository builds the image that runs the Shiny app, e.g. on
+[SciLifeLab Serve](https://serve.scilifelab.se).
+It installs R and the packages in `renv.lock`, Quarto with TinyTeX (for the PDF report) and the
+local `SumExp` package, copies the app (`app/`) to `/srv/shiny-server/`, and starts the app with
+**shiny-server** on port **3838**.
+Building the image needs internet access; the running app does not (fonts and LaTeX packages are
+included in the image).
+
+To build and run the image locally, run the commands below in the root of the repository and open
+<http://localhost:3838> in a web browser.
 
 ```sh
-docker pull mghong/exposome
-docker run -it -v .:/proj -p 7579:7579 --name=expo-docker mghong/exposome /proj/code/expo_app.sh
+docker build -t quanta .
+docker run --rm -p 3838:3838 quanta
 ```
 
 The parameters are as follows:
 
-* `-it` : Run the container in interactive mode.
-* `-v .:/proj` : Mount the current directory to the `/proj` directory in the container.
-* `-p 7579:7579` : Map port 7579 of the container to port 7579 of the host, which is used by the Shiny app.
-* `--name=expo-docker` : Name the container `expo-docker`, which can be changed to any name.
-* `mghong/exposome` : The name of the Docker image pulled from Docker Hub.
-* `/proj/code/expo_app.sh` : The command to run inside the container, which starts the Shiny app.
+* `-t quanta` : Name the image `quanta`, which can be changed to any name.
+* `--rm` : Remove the container when it stops.
+* `-p 3838:3838` : Map port 3838 of the container, used by shiny-server, to port 3838 of the host.
+
+All data of a user session (uploads, processed data, tables and reports) are stored in a private
+temporary directory of that session inside the container and deleted when the session ends.
 
 ## Shiny app
 

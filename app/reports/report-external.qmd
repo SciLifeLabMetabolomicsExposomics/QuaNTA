@@ -139,14 +139,34 @@ Features were filtered based on blank samples.
 A feature was kept if its maximum peak area in the samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area, OR if its average peak area in samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area.
 
 ```{r}
-removed_n <- if (is.null(to_report[["before blank filtering"]])) {
-  0
-} else {
-  nrow(to_report[["before blank filtering"]]) - nrow(to_report[["before normalization"]])
-}
+# Features removed by the blank filter and the QC RSD% filter (for the method of this report)
+removed <- to_report[["removed features"]]
+removed <- if (is.null(removed)) NULL else removed[removed$mat_id == params$norm_method, ]
+removed_n <- if (is.null(removed)) NA else sum(removed$reason == "Blank filter")
 ```
 
 A total of `r removed_n` features were removed in this step.
+
+```{r}
+#| results: 'asis'
+rf <- to_report[["qc rsd filter"]]
+if (isTRUE(rf$enabled)) {
+  cat("\n## QC RSD% filtering\n\n")
+  limits <- c(
+    if (!is.na(rf$max_targeted)) paste0("targeted features with a QC RSD% above ", rf$max_targeted, "%"),
+    if (!is.na(rf$max_nontargeted)) paste0("non-targeted features with a QC RSD% above ", rf$max_nontargeted, "%")
+  )
+  cat("After normalization and blank subtraction,", paste(limits, collapse = " and "),
+      "were removed (RSD% among the QC replicates).\n\n")
+  if (isTRUE(rf$skipped)) {
+    cat("**This filter was requested but skipped.**", rf$skip_reason, "\n\n")
+  } else {
+    rem_rsd <- removed[removed$reason == "QC RSD%", ]
+    cat(paste0("A total of ", nrow(rem_rsd), " features were removed in this step (",
+               sum(rem_rsd$targeted), " targeted and ", sum(!rem_rsd$targeted), " non-targeted).\n\n"))
+  }
+}
+```
 
 ## PCA
 

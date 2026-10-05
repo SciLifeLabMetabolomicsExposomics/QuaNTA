@@ -32,6 +32,7 @@ runScriptUI <- function(uiId, label, download=FALSE) {
     output_txt <- shiny::reactiveVal("")
     proc <- shiny::reactiveVal(NULL)
     done_at <- shiny::reactiveVal(NULL)   # Set every time a run has finished
+    started_at <- shiny::reactiveVal(NULL)   # To report the elapsed time
 
     shiny::observeEvent(input[["run_button"]], {
       old <- proc()
@@ -67,6 +68,7 @@ runScriptUI <- function(uiId, label, download=FALSE) {
           env = env
         )
         proc(p)
+        started_at(Sys.time())
         output_txt(paste(what, "is running...\nTime:", Sys.time(), "\n"))
       }, error = function(e) {
         output_txt(paste("Error running script:", conditionMessage(e), sep = "\n"))
@@ -101,6 +103,7 @@ runScriptUI <- function(uiId, label, download=FALSE) {
               paste0("Script ended with exit status ", status, ". See the messages above. ",
                      "(Non-target data intentionally stops before calibration.)")
             },
+            paste("Elapsed time:", format_elapsed(started_at())),
             sep = "\n"
           )
           proc(NULL)
@@ -120,6 +123,20 @@ runScriptUI <- function(uiId, label, download=FALSE) {
 
     done_at
   })
+}
+
+#' Time elapsed since `start`, e.g. "2 min 35 s"
+#'
+#' @param start A `POSIXct` time
+#' @export
+format_elapsed <- function(start) {
+  if (is.null(start)) return("unknown")
+  secs <- round(as.numeric(difftime(Sys.time(), start, units = "secs")))
+  if (secs < 60) return(paste(secs, "s"))
+  h <- secs %/% 3600
+  m <- (secs %% 3600) %/% 60
+  s <- secs %% 60
+  if (h > 0) paste(h, "h", m, "min", s, "s") else paste(m, "min", s, "s")
 }
 
 #' Locate the folder that contains `projlib/msdial.R` (and `SumExp`), whatever it is called
@@ -171,8 +188,9 @@ runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data
       },
       content = function(file) {
         # Only the tables of the selected method: "(base name).(method).(norm|norm_blk|conc).xlsx"
+        # and their CSV copies "(base name).(method).(norm|norm_blk|conc).(sheet).csv"
         method <- sub("_norm$", "", norm_method())
-        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc)\\.xlsx$")
+        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc)(\\.[^.]+)?\\.(xlsx|csv)$")
         files <- list.files(ws$tables, pattern = pattern, full.names = TRUE)
         if (length(files) == 0) stop("No exported tables of this method yet. Run the export first.")
         zip::zip(zipfile = file, files = files, mode = "cherry-pick")

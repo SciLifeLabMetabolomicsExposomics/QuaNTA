@@ -173,8 +173,11 @@ if (length(batch_ids) > 1) {
 }
 for (i_batch in batch_ids) {
   sinfo_b <- sample_info[sample_info$batch_id == i_batch, ]
+  # Blank samples are not required per batch: a batch without them is blank-subtracted with the
+  # average of all blank samples (its calibration is not affected)
   if (!any(sinfo_b$.ctrl_cat == "Blank")) {
-    stop("`Blank` samples are required in batch ", i_batch)
+    cat("No `Blank` samples in batch ", i_batch,
+        ". The average of all blank samples will be subtracted.\n", sep = "")
   }
   # Neither QC nor calibration curve samples are required per batch:
   # - Without QC samples, the evaluations using QC samples are skipped.
@@ -186,6 +189,10 @@ for (i_batch in batch_ids) {
     cat("No `CalCurve` samples in batch ", i_batch,
         ". It will be quantified using the global calibration curve.\n", sep = "")
   }
+}
+# Blank filtering and subtraction require blank samples in at least one batch
+if (!any(sample_info$.ctrl_cat == "Blank")) {
+  stop("`Blank` samples are required (in at least one batch).")
 }
 # Calibration requires calibration curve samples in at least one batch
 if (!any(sample_info$.ctrl_cat == "CalCurve")) {

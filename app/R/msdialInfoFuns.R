@@ -28,7 +28,11 @@
   "blank_filter_factor", "proc",        "numeric",
   "weight",              "proc",        "radio",
   "llox_method",         "proc",        "radio",
-  "use_rsd20",           "proc",        "checkbox"
+  "use_rsd20",           "proc",        "checkbox",
+  "rsd_filter",          "proc",        "checkbox",
+  "rsd_filter_scope",    "proc",        "radio",
+  "rsd_max_targeted",    "proc",        "numeric",
+  "rsd_max_nontargeted", "proc",        "numeric"
 )
 
 #' Current processing options as a named list (for the parameter download)

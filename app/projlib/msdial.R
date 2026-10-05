@@ -220,6 +220,10 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
         "Given Batch ID" = SumExp::col_df(sumexp)[["org_batch_id"]],
       )
   }
+  if ("blank_source" %in% names(SumExp::col_df(sumexp))) {  # Blank average subtracted
+    s_rows <- s_rows |>
+      dplyr::mutate("Blank subtracted" = SumExp::col_df(sumexp)[["blank_source"]])
+  }
   if ("calibration" %in% names(SumExp::col_df(sumexp))) {  # Calibration used for the batch
     s_rows <- s_rows |>
       dplyr::mutate("Calibration" = SumExp::col_df(sumexp)[["calibration"]])

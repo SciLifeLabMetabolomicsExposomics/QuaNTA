@@ -132,3 +132,18 @@ if (IS_TARGET_MODE) {
   cat(glue::glue("{mat_id} concentration data has been saved to {basename(FILE$o$conc[[ii]])}."), "\n")
 }
 
+# CSV copies ----------
+# One CSV per worksheet, with the same layout as the sheet:
+# "(base name).(method).(norm|norm_blk|conc).(sheet).csv"
+xlsx_files <- unlist(lapply(FILE$o, \(x) x[[ii]]))
+for (xlsx in xlsx_files[file.exists(xlsx_files)]) {
+  for (sheet in openxlsx::getSheetNames(xlsx)) {
+    tbl <- openxlsx::read.xlsx(xlsx, sheet = sheet, colNames = FALSE,
+                               skipEmptyRows = FALSE, skipEmptyCols = FALSE)
+    csv <- paste0(tools::file_path_sans_ext(xlsx), ".", gsub("[^A-Za-z0-9_-]+", "_", sheet), ".csv")
+    utils::write.table(tbl, csv, sep = ",", na = "", row.names = FALSE, col.names = FALSE,
+                       qmethod = "double", fileEncoding = "UTF-8")
+  }
+}
+cat("CSV copies (one per worksheet) have been saved.\n")
+

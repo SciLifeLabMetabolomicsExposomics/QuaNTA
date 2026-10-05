@@ -138,24 +138,90 @@ Number of features filtered based on blank:
 After data normalization, peak areas are blank corrected by subtracting the corresponding feature average peak area detected in the blanks (negative values set to zero).
 Blank subtraction is applied to all samples in the dataset except for the calibration standards per batch.
 
+### Per-batch processing summary
+
+Which blank average was subtracted from each batch and which calibration curve was used (`r params$norm_method`).
+A batch without blank samples is subtracted by the average of all blank samples (of all batches).
+A batch is calibrated by its own calibration curve when it has enough calibration curve replicates; otherwise by the global calibration curve of all batches.
+
+```{r}
+#| label: per-batch-processing-summary
+#| results: 'asis'
+norm_cd <- SumExp::col_df(to_report[["normalized"]])   # After outlier removal, incl. blanks
+batch_ids_all <- names(to_report[["normalized - blank"]])
+n_blank <- vapply(batch_ids_all, function(b) {
+  sum(as.character(norm_cd$batch_id) == b & norm_cd$.ctrl_cat == "Blank")
+}, integer(1))
+no_blank <- to_report[["batches without blank"]]
+summary_df <- data.frame(
+  Batch = batch_ids_all,
+  `Blank samples` = n_blank,
+  `Blank subtracted` = ifelse(batch_ids_all %in% no_blank, "Average of all batches", "Batch"),
+  check.names = FALSE
+)
+cal_per_batch <- to_report[["calibration per batch"]]
+if (IS_TARGET_MODE && !is.null(cal_per_batch)) {
+  d <- cal_per_batch[cal_per_batch$mat_id == MAT_ID_BLANK_SUBT, ]
+  i <- match(summary_df$Batch, as.character(d$batch_id))
+  summary_df$Calibration <- as.character(d$calibration)[i]
+  summary_df$Note <- dplyr::coalesce(as.character(d$note)[i], "")
+}
+summary_df |>
+  knitr::kable(caption = "Blank subtraction and calibration per batch", row.names = FALSE) |>
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE) |>
+  print()
+```
+
+```{r}
+#| label: qc-rsd-filtering
+#| results: 'asis'
+rf <- to_report[["qc rsd filter"]]
+if (isTRUE(rf$enabled)) {
+  cat("\n\n### QC RSD% filtering\n\n")
+  limits <- c(
+    if (!is.na(rf$max_targeted)) paste0("targeted features with a QC RSD% above ", rf$max_targeted, "%"),
+    if (!is.na(rf$max_nontargeted)) paste0("non-targeted features with a QC RSD% above ", rf$max_nontargeted, "%")
+  )
+  cat("After normalization and blank subtraction, the RSD% of each feature among the QC replicates",
+      "was computed (per QC class; the median over the classes), and",
+      paste(limits, collapse = " and "), "were removed, per normalization method.",
+      "Removed targeted compounds are not calibrated.\n\n")
+  if (isTRUE(rf$skipped)) {
+    cat("**The QC RSD% filter was requested but skipped.**", rf$skip_reason, "\n\n")
+  } else {
+    rem <- to_report[["removed features"]]
+    rem_rsd <- rem[rem$reason == "QC RSD%", ]
+    mat_ids <- to_report[["matrix ids to blk subt"]]
+    data.frame(
+      `Normalization` = mat_ids,
+      `Targeted removed` = vapply(mat_ids, \(m) sum(rem_rsd$mat_id == m & rem_rsd$targeted), integer(1)),
+      `Non-targeted removed` = vapply(mat_ids, \(m) sum(rem_rsd$mat_id == m & !rem_rsd$targeted), integer(1)),
+      check.names = FALSE
+    ) |>
+      knitr::kable(caption = "Features removed by the QC RSD% filter", row.names = FALSE) |>
+      kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE) |>
+      print()
+    tgt <- rem_rsd[rem_rsd$mat_id == params$norm_method & rem_rsd$targeted, ]
+    if (nrow(tgt) > 0) {
+      data.frame(Compound = tgt$feature_name, `QC RSD%` = round(tgt$qc_rsd, 1), check.names = FALSE) |>
+        dplyr::arrange(Compound) |>
+        knitr::kable(caption = paste0("Targeted compounds removed by the QC RSD% filter (",
+                                      params$norm_method, ")"), row.names = FALSE) |>
+        kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE) |>
+        kableExtra::scroll_box(height = "300px") |>
+        print()
+    }
+  }
+}
+```
+
 ```{r}
 #| label: target_mode
 if (IS_TARGET_MODE) {
   cat("\n\n# Calibration\n\n")
   cat("\nThe calibration is performed per batch when the batch has enough calibration curve",
-      "replicates; otherwise, the global calibration curve using all batches is used.\n\n")
-  cal_per_batch <- to_report[["calibration per batch"]]
-  if (!is.null(cal_per_batch)) {
-    d <- cal_per_batch[cal_per_batch$mat_id == MAT_ID_BLANK_SUBT, ]
-    data.frame(
-      Batch = as.character(d$batch_id),
-      Calibration = as.character(d$calibration),
-      Note = dplyr::coalesce(as.character(d$note), "")
-    ) |>
-      knitr::kable(caption = "Calibration curve used per batch") |>
-      kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE) |>
-      print()
-  }
+      "replicates; otherwise, the global calibration curve using all batches is used",
+      "(see the *Per-batch processing summary* above).\n\n")
   qmd <- "process-calibration-llox_from_llox_signal.qmd"
   cat(knitr::knit_child(file.path(chapters_dir, qmd), quiet = TRUE))
   # Stop here if the calibration is not performed

@@ -38,10 +38,11 @@ ggplot2::theme_set(ggplot2::theme_grey(base_size = QUANTA_PLOT_BASE_SIZE))
 custom_theme <- bs_theme(
   version = 5,
   bootswatch = NULL,
-  # Lato from www/fonts/ (the @font-face rules are in www/fonts/lato.css, linked in the UI header)
+  # All fonts are served from www/fonts/ (@font-face rules in www/fonts/fonts.css, linked in the UI
+  # header), so the app never contacts Google Fonts (`font_google()` downloads at start-up)
   base_font = font_collection("Lato", "sans-serif"),
-  heading_font = font_google("Oswald"),
-  code_font = font_google("JetBrains Mono"),
+  heading_font = font_collection("Oswald", "sans-serif"),
+  code_font = font_collection("JetBrains Mono", "monospace"),
   bg = "#FFFFFF", # white background
   fg = "#000000", # black text
 
@@ -386,7 +387,7 @@ ui <-
     header = tags$head(
       tags$link(rel = "icon", type = "image/jpeg", href = "QuaNTA_square.jpg"),
       tags$script(src = "split.min.js"),
-      tags$link(rel = "stylesheet", href = "fonts/lato.css"),   # Lato font (base_font of the theme)
+      tags$link(rel = "stylesheet", href = "fonts/fonts.css"),   # Lato, Oswald, JetBrains Mono (local)
       shinyjs::useShinyjs(),   # Enable / disable buttons from the server
       # Start a download from the server: clicks the (hidden) download link with the given ID.
       # Used when a file is ready after a background task (external report, session data).
@@ -394,6 +395,23 @@ ui <-
         Shiny.addCustomMessageHandler('quantaClickDownload', function(id) {
           var a = document.getElementById(id);
           if (a) a.click();
+        });
+      ")),
+      # Logs of the scripts (read, process, export): scroll within the box and follow the newest
+      # lines, unless the user has scrolled up to read earlier lines
+      tags$style(HTML("
+        pre[id$='script_output'] {
+          max-height: 35vh;
+          overflow-y: auto;
+        }
+      ")),
+      tags$script(HTML("
+        $(document).on('shiny:value', function(e) {
+          if (!/script_output$/.test(e.name)) return;
+          var el = document.getElementById(e.name);
+          if (!el) return;
+          var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;  // Before the update
+          setTimeout(function() { if (atBottom) el.scrollTop = el.scrollHeight; }, 0);
         });
       ")),
       tags$style(HTML("
@@ -599,6 +617,19 @@ ui <-
                         style = "margin: 0;"
                       ),
                       spinner(DT::DTOutput("tb_3_2_3")),
+                      # Features removed by blank filtering or the QC RSD% filter
+                      h3(
+                        "Removed features (3.2.4)",
+                        style = "margin: 0;"
+                      ),
+                      shiny::selectInput(
+                        inputId = "removed_method",
+                        label = "Normalization method",
+                        choices = NORM_METHOD_LABELS,   # Updated to the computed ones
+                        width = "260px"
+                      ),
+                      shiny::uiOutput("removed_note"),
+                      spinner(DT::DTOutput("tb_3_2_4")),
                     )
                   )
       ),
@@ -1829,6 +1860,77 @@ server <- function(input, output, session) {
   ################################################################################################################
   ### This is for table 4.1
 
+  # ---- Removed features (3.2.4): blank filtering and QC RSD% filter ----
+  shiny::observeEvent(to_report_r(), {
+    ids <- available_norm_r()
+    current <- shiny::isolate(input$removed_method)
+    shiny::updateSelectInput(
+      session, "removed_method",
+      choices = NORM_METHOD_LABELS[NORM_METHOD_LABELS %in% ids],
+      selected = if (!is.null(current) && current %in% ids) current else best_norm_r()
+    )
+  })
+
+  # Explanation of the filters; red when the QC RSD% filter was skipped
+  output$removed_note <- shiny::renderUI({
+    tr <- to_report_r()
+    rf <- tr[["qc rsd filter"]]
+    blank_txt <- if (isTRUE(tr[["blank_filter"]])) {
+      paste0("Blank filter: a feature is removed unless its maximum or average signal in the ",
+             "samples is > ", tr[["blank_filter_factor"]], " × the average blank signal.")
+    } else {
+      "Blank filter: not used."
+    }
+    rsd_txt <- if (is.null(rf) || !isTRUE(rf$enabled)) {
+      "QC RSD% filter: not used."
+    } else {
+      limits <- c(
+        if (!is.na(rf$max_targeted)) paste0("targeted > ", rf$max_targeted, "%"),
+        if (!is.na(rf$max_nontargeted)) paste0("non-targeted > ", rf$max_nontargeted, "%")
+      )
+      paste0("QC RSD% filter (after normalization and blank subtraction): removed if ",
+             paste(limits, collapse = ", "), ".")
+    }
+    shiny::tagList(
+      shiny::tags$div(style = "color: #333;", blank_txt, shiny::br(), rsd_txt),
+      if (isTRUE(rf$skipped)) {
+        shiny::tags$div(style = "color: #C62828; font-weight: 600;",
+                        paste("The QC RSD% filter was requested but skipped.", rf$skip_reason))
+      }
+    )
+  })
+
+  output$tb_3_2_4 <- DT::renderDataTable({
+    tr <- to_report_r()
+    rem <- tr[["removed features"]]
+    shiny::validate(shiny::need(!is.null(rem),
+                                "Not available for data processed by an older version; process again."))
+    rf <- tr[["qc rsd filter"]]
+    rem <- rem[rem$mat_id == shiny::req(input$removed_method), ]
+    shiny::validate(shiny::need(nrow(rem) > 0, "No features were removed for this normalization method."))
+    show_df <- data.frame(
+      Feature = rem$feature_name,
+      Type = ifelse(rem$targeted, "Targeted", "Non-targeted"),
+      `Removed by` = ifelse(
+        rem$reason == "QC RSD%",
+        paste0("QC RSD% > ", ifelse(rem$targeted, rf$max_targeted, rf$max_nontargeted), "%"),
+        paste0("Blank filter (≤ ", tr[["blank_filter_factor"]], "× blank)")
+      ),
+      `QC RSD%` = round(rem$qc_rsd, 1),
+      check.names = FALSE
+    )
+    show_df <- show_df[order(show_df$Type != "Targeted", show_df$Feature), ]
+    DT::datatable(
+      show_df,
+      rownames = FALSE,
+      caption = paste0(nrow(show_df), " removed features (",
+                       sum(show_df$Type == "Targeted"), " targeted, ",
+                       sum(show_df$Type != "Targeted"), " non-targeted)"),
+      options = list(scrollX = TRUE, scrollY = "300px", paging = FALSE, info = FALSE,
+                     dom = "ft")   # Search box: find a feature
+    )
+  })
+
   # ---- Calibration and Quantification: batch selection ----
   # Calibrated data of the selected normalization method: batch ID -> list(calcurve, concn)
   calib_lst_proc_r <- shiny::reactive({
@@ -1946,6 +2048,13 @@ server <- function(input, output, session) {
   output$calib_points_note <- shiny::renderUI({
     batch <- input$calib_batch
     used <- calib_used_curve_r()
+    # Why the batch uses the global curve (saved by process.R), e.g. no blank samples
+    concn_se <- calib_batch_proc_r()$concn   # Evaluated before the S4 method (see 4.3)
+    reason <- SumExp::metadata(concn_se)$calibration_note
+    reason_tag <- if (isTRUE(used == "Global") && length(reason) == 1 && !is.na(reason)) {
+      shiny::tags$div(style = "color: #333; font-style: italic;",
+                      paste0("Reason for the global curve in batch ", batch, ": ", reason, "."))
+    }
     txt <- if (is.na(used)) {
       list("No calibration curve with a proper range for this chemical in batch ", batch, ".")
     } else if (used == "Batch") {
@@ -1956,14 +2065,17 @@ server <- function(input, output, session) {
       list("Concentrations in batch ", batch, " were calculated with the global calibration curve, ",
            "fitted on the calibration points of all batches shown here.")
     } else {
-      return(shiny::tags$div(
-        style = "color: #C62828; font-weight: 600;",
-        paste0("Only batch ", batch, "'s calibration points are shown. The concentrations were ",
-               "calculated with the global calibration curve, fitted on the calibration points of ",
-               "all batches.")
+      return(shiny::tagList(
+        shiny::tags$div(
+          style = "color: #C62828; font-weight: 600;",
+          paste0("Only batch ", batch, "'s calibration points are shown. The concentrations were ",
+                 "calculated with the global calibration curve, fitted on the calibration points of ",
+                 "all batches.")
+        ),
+        reason_tag
       ))
     }
-    shiny::tags$div(style = "color: #333;", do.call(paste0, txt))
+    shiny::tagList(shiny::tags$div(style = "color: #333;", do.call(paste0, txt)), reason_tag)
   })
 
   output$tb_4_1 <- DT::renderDataTable({
@@ -2064,6 +2176,7 @@ server <- function(input, output, session) {
           )
         ) |>
         dplyr::left_join(feature_id_name_tbl(), by = "feature_id") |>
+        dplyr::mutate(is_removed = FALSE) |>
         dplyr::select(
           "Batch" = batch,
           "Chemical Name" = feature_name,
@@ -2071,12 +2184,35 @@ server <- function(input, output, session) {
           "LOD" = lod,
           "Minimum conc. (LLOQ)" = min_c,
           "Maximum conc." = max_c,
+          Note,
           is_global,
           is_bad,
-          Note
+          is_removed
         )
 
+      # Targeted compounds removed before calibration (blank filter / QC RSD% filter) are listed
+      # at the end (after the rows of the calibrated chemicals, which the figures index by row)
+      rem <- to_report_r()[["removed features"]]
+      if (!is.null(rem)) {
+        rf <- to_report_r()[["qc rsd filter"]]
+        rem <- rem[rem$mat_id == input$norm_method & rem$targeted, ]
+        if (nrow(rem) > 0) {
+          show_df <- dplyr::bind_rows(show_df, tibble::tibble(
+            "Batch" = shiny::isolate(input$calib_batch),
+            "Chemical Name" = rem$feature_name,
+            "Calibration" = "None",
+            "LOD" = "", "Minimum conc. (LLOQ)" = "", "Maximum conc." = "",
+            Note = ifelse(rem$reason == "QC RSD%",
+                          paste0("Removed: QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
+                          "Removed: blank filter"),
+            is_global = FALSE, is_bad = FALSE, is_removed = TRUE
+          ))
+        }
+      }
+
       show_df <- as.data.frame(show_df, check.names = FALSE)
+      # Positions of the helper columns in the DataTable (0 is the row name column)
+      i_flag <- match(c("is_global", "is_bad", "is_removed"), names(show_df))
 
       # --------------------------------------------------------
       DT::datatable(
@@ -2089,39 +2225,23 @@ server <- function(input, output, session) {
           info = FALSE,
           dom = "t",
 
-          # ✅ hide helper columns
-          columnDefs = list(
-            list(
-              targets = c(ncol(show_df) - 2, ncol(show_df) - 1),
-              visible = FALSE
-            )
-          ),
+          # Hide the helper columns
+          columnDefs = list(list(targets = i_flag, visible = FALSE)),
 
-          # ✅ ✅ ROW COLORING (JS)
-          rowCallback = JS("
+          # Row colors: red = no proper calibration range, blue = global calibration curve,
+          # grey = removed before calibration
+          rowCallback = JS(sprintf("
           function(row, data) {
-
-            var is_bad = data[data.length - 2];
-            var is_global = data[data.length - 1];
-
-            // 🔴 priority 1: failed calibration
-            if (is_bad) {
+            var is_global = data[%d], is_bad = data[%d], is_removed = data[%d];
+            var color = is_removed ? '#D9D9D9' : (is_bad ? 'lightcoral' : (is_global ? 'lightblue' : null));
+            if (color) {
               $('td', row).each(function() {
-                this.style.setProperty('background-color', 'lightcoral', 'important');
+                this.style.setProperty('background-color', color, 'important');
                 this.style.setProperty('color', 'black', 'important');
               });
             }
-
-            // 🔵 priority 2: global calibration
-            else if (is_global) {
-              $('td', row).each(function() {
-                this.style.setProperty('background-color', 'lightblue', 'important');
-                this.style.setProperty('color', 'black', 'important');
-              });
-            }
-
           }
-        ")
+        ", i_flag[1], i_flag[2], i_flag[3]))
         )
       )
     }

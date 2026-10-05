@@ -1,0 +1,50 @@
+/* All fonts of the app, served from this folder (no requests to Google Fonts or other servers).
+   The paths are relative to this file. Linked in app.R; used in the theme (`bs_theme()`):
+   - Lato: base font            (copied from app/envs/Lato; license: OFL.txt)
+   - Oswald: headings           (google/fonts, variable font; license: oswald/OFL.txt)
+   - JetBrains Mono: code / logs (google/fonts, variable font; license: jetbrainsmono/OFL.txt) */
+
+@font-face {
+  font-family: "Lato";
+  src: url("Lato-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lato";
+  src: url("Lato-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lato";
+  src: url("Lato-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lato";
+  src: url("Lato-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Variable fonts: one file covers the whole weight range */
+@font-face {
+  font-family: "Oswald";
+  src: url("oswald/Oswald-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("jetbrainsmono/JetBrainsMono-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}

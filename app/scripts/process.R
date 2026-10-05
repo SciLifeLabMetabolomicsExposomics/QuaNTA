@@ -54,6 +54,29 @@ option_list <- rlang::list2(
     c("--blank_filter_factor"),
     type = "double", default = 5,
     help = "Blank filtering factor [default: %default]"
+  ),
+  optparse::make_option(
+    c("--rsd_filter"),
+    type = "logical", default = FALSE,
+    help = "Quality control: remove features with a QC RSD% above a threshold [default: %default]"
+  ),
+  optparse::make_option(
+    c("--rsd_filter_scope"),
+    type = "character", default = "both",
+    help = paste(
+      "Features the QC RSD% filter applies to.",
+      "Possible values are: `both`, `targeted`, `nontargeted`. [default: %default]"
+    )
+  ),
+  optparse::make_option(
+    c("--rsd_max_targeted"),
+    type = "double", default = 30,
+    help = "Maximum QC RSD% (0-80) of targeted features [default: %default]"
+  ),
+  optparse::make_option(
+    c("--rsd_max_nontargeted"),
+    type = "double", default = 30,
+    help = "Maximum QC RSD% (0-80) of non-targeted features [default: %default]"
   )
 )
 opt_parser <- optparse::OptionParser(
@@ -72,7 +95,21 @@ cat(
   "  - LOD/LLOQ method: ", params$llox_method, "\n",
   "  - Use RSD% 20% for LLOQ: ", params$use_rsd20, "\n",
   "  - Blank filtering: ", params$blank_filter, "\n",
-  "  - Blank filtering factor: ", params$blank_filter_factor, "\n"
+  "  - Blank filtering factor: ", params$blank_filter_factor, "\n",
+  "  - QC RSD% filtering: ", params$rsd_filter,
+  if (isTRUE(params$rsd_filter)) {
+    paste0(" (max. ", paste(c(
+      if (params$rsd_filter_scope %in% c("both", "targeted")) paste0("targeted ", params$rsd_max_targeted, "%"),
+      if (params$rsd_filter_scope %in% c("both", "nontargeted")) paste0("non-targeted ", params$rsd_max_nontargeted, "%")
+    ), collapse = ", "), ")")
+  }, "\n"
+)
+stopifnot(
+  "`--rsd_filter_scope` must be `both`, `targeted` or `nontargeted`." =
+    params$rsd_filter_scope %in% c("both", "targeted", "nontargeted"),
+  "The maximum QC RSD% must be between 0 and 80." =
+    all(c(params$rsd_max_targeted, params$rsd_max_nontargeted) >= 0 &
+          c(params$rsd_max_targeted, params$rsd_max_nontargeted) <= 80)
 )
 
 #  -----  LIBRARIES AND FILES  -------------------------------------------------
@@ -127,6 +164,10 @@ stopifnot(!is.null(IS_NON_TARGET_MODE))
 #       (`loess_norm` when it cannot be computed)
 # - `normalized`: `SumExp` object after normalization (before blank filtering)
 # - `after blank filtering`: `SumExp` object after blank filtering
+# - `qc rsd filter`: Settings of the QC RSD% filter (`enabled`, `scope`, `max_targeted`,
+#       `max_nontargeted`) and whether it was `skipped` (with `skip_reason`)
+# - `removed features`: Features removed by the blank filter or the QC RSD% filter, per matrix:
+#       `mat_id`, `feature_id`, `feature_name`, `targeted`, `reason`, `qc_rsd`
 # - `matrix ids to blk subt`: IDs of matrices that underwent blank subtraction
 # - `normalized - blank`: A list of `SumExp` objects after blank subtraction, split by batch
 to_report <- rlang::list2(
@@ -282,14 +323,35 @@ proc_sumexp <- proc_sumexp[!util$is_internal_std(proc_sumexp), ] # Remove intern
 to_blk_subt <- c("raw", norm_mat_ids)
 to_report[["matrix ids to blk subt"]] <- to_blk_subt
 
+# Removed features are kept as rows of NA (per matrix, i.e. normalization method). Which features
+# were removed and why is collected for the app and the reports:
+# `removed features`: tibble of `mat_id`, `feature_id`, `feature_name`, `targeted`, `reason`
+# ("Blank filter" / "QC RSD%") and `qc_rsd` (QC RSD% of the matrix, NA if not computed)
+is_all_na_row <- function(m) rowSums(!is.na(m)) == 0
+removed_features <- list()
+targeted <- util$is_targeted_feature(proc_sumexp)
+removed_tbl <- function(mat_id, is_removed, reason, qc_rsd = NA_real_) {
+  tibble::tibble(
+    mat_id = mat_id,
+    feature_id = rownames(proc_sumexp),
+    feature_name = SumExp::row_df(proc_sumexp)$feature_name,
+    targeted = targeted,
+    reason = reason,
+    qc_rsd = qc_rsd
+  )[is_removed, ]
+}
+
 if (params$blank_filter) {
   for (mat_id in to_blk_subt) {
     cat("Performing blank filtering for matrix:", mat_id, "\n")
+    na_before <- is_all_na_row(proc_sumexp[[mat_id]])
     proc_sumexp <- proc$filter_by_blank(
       proc_sumexp,
       mat_id = mat_id,
       factor = params$blank_filter_factor
     )
+    removed_features[[length(removed_features) + 1]] <-
+      removed_tbl(mat_id, !na_before & is_all_na_row(proc_sumexp[[mat_id]]), "Blank filter")
   }
   to_report[["after blank filtering"]] <- proc_sumexp
 }
@@ -310,6 +372,21 @@ if (has_multiple_batches) {
 } else {
   cat("Processing blank subtraction for a single batch.\n")
 }
+# Batches without blank samples: blank subtraction with the average of all blank samples. Their
+# calibration follows the usual rules (batch-wise if possible, otherwise the global curve).
+batches_without_blank <- setdiff(
+  unique(batch_ids),
+  unique(batch_ids[util$ctrl_smpl_cat(proc_sumexp) == "Blank"])
+)
+to_report[["batches without blank"]] <- batches_without_blank
+if (length(batches_without_blank) > 0) {
+  cat("Batches without blank samples (the average of all blank samples is subtracted):",
+      paste(batches_without_blank, collapse = ", "), "\n")
+}
+# Which blank average is subtracted from each sample (shown in the exported tables)
+SumExp::col_df(proc_sumexp)[["blank_source"]] <- ifelse(
+  batch_ids %in% batches_without_blank, "Average of all batches", "Batch"
+)
 # Split the data by batch IDs
 per_batch_proc_se_lst <- SumExp::split_columns(proc_sumexp, batch_ids)
 # Per batch, then per normalization method
@@ -322,7 +399,6 @@ for (batch_id in unique(batch_ids)) {
     out_mat_ids = mat_ids_after_blk_subt
   )
 }
-to_report[["normalized - blank"]] <- per_batch_proc_se_lst
 
 # Global blank subtraction for failed batches.
 proc_sumexp <- proc$add_blank_subtracted_sumexp(
@@ -331,7 +407,61 @@ proc_sumexp <- proc$add_blank_subtracted_sumexp(
   mat_ids = to_blk_subt,
   out_mat_ids = mat_ids_after_blk_subt
 )
+# A batch without blanks is not blank-subtracted on its own: take its globally subtracted data
+for (batch_id in batches_without_blank) {
+  in_batch <- as.character(SumExp::col_df(proc_sumexp)[["batch_id"]]) == batch_id
+  per_batch_proc_se_lst[[batch_id]] <- proc_sumexp[, in_batch]
+}
 cat("Blank subtraction is done.\n")
+
+
+#  -----  QC RSD% FILTERING  ---------------------------------------------------
+# Remove features whose RSD% among the QC replicates exceeds the threshold, per normalization
+# method, after normalization and blank subtraction (the matrices used for calibration). RSD% is
+# computed on the QC samples of all batches. Skipped with a warning without QC replicates.
+rsd_filter <- list(
+  enabled = isTRUE(params$rsd_filter),
+  scope = params$rsd_filter_scope,
+  max_targeted = if (params$rsd_filter_scope %in% c("both", "targeted")) params$rsd_max_targeted else NA_real_,
+  max_nontargeted = if (params$rsd_filter_scope %in% c("both", "nontargeted")) params$rsd_max_nontargeted else NA_real_,
+  skipped = FALSE,
+  skip_reason = NA_character_
+)
+if (rsd_filter$enabled) {
+  if (!proc$has_qc_replicates(proc_sumexp)) {
+    rsd_filter$skipped <- TRUE
+    rsd_filter$skip_reason <- paste(
+      "Not enough QC samples: at least two QC samples of the same class are needed to compute",
+      "RSD%. No features were removed by the QC RSD% filter."
+    )
+    warning("QC RSD% filtering skipped. ", rsd_filter$skip_reason, call. = FALSE, immediate. = TRUE)
+  } else {
+    # The maximum RSD% of each feature; NA where the filter does not apply
+    limit <- ifelse(targeted, rsd_filter$max_targeted, rsd_filter$max_nontargeted)
+    for (ii in seq_along(to_blk_subt)) {
+      mat_id <- to_blk_subt[ii]                     # e.g. "loess_norm" (reported)
+      blk_mat_id <- mat_ids_after_blk_subt[ii]      # e.g. "loess_norm_blk" (filtered)
+      rsd <- proc$qc_rsd_per_feature(proc_sumexp, blk_mat_id)
+      already_removed <- is_all_na_row(proc_sumexp[[blk_mat_id]])
+      to_remove <- !already_removed & !is.na(limit) & !is.na(rsd) & rsd > limit
+      # In the overall (global) data and in each batch
+      proc_sumexp[[blk_mat_id]] <- util$extract_with_na(proc_sumexp[[blk_mat_id]], i = !to_remove)
+      for (batch_id in names(per_batch_proc_se_lst)) {
+        se <- per_batch_proc_se_lst[[batch_id]]
+        stopifnot(identical(rownames(se), rownames(proc_sumexp)))
+        se[[blk_mat_id]] <- util$extract_with_na(se[[blk_mat_id]], i = !to_remove)
+        per_batch_proc_se_lst[[batch_id]] <- se
+      }
+      removed_features[[length(removed_features) + 1]] <-
+        removed_tbl(mat_id, to_remove, "QC RSD%", qc_rsd = rsd)
+      cat("QC RSD% filtering for ", mat_id, ": ", sum(to_remove & targeted), " targeted and ",
+          sum(to_remove & !targeted), " non-targeted features removed.\n", sep = "")
+    }
+  }
+}
+to_report[["qc rsd filter"]] <- rsd_filter
+to_report[["removed features"]] <- dplyr::bind_rows(removed_features)
+to_report[["normalized - blank"]] <- per_batch_proc_se_lst
 
 
 #  -----  CALIBRATION USING CALCURVE  ------------------------------------------

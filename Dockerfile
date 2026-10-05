@@ -33,8 +33,6 @@ RUN wget -O quarto-linux.deb https://quarto.org/download/latest/quarto-linux-${T
     rm quarto-linux.deb && \
     rm -rf /var/lib/apt/lists/*
 
-RUN quarto install tinytex
-
 # Install the required packages
 # Recreate the R environment using renv package, skipping the local SumExp package
 RUN Rscript -e 'install.packages(c("renv"))'
@@ -58,6 +56,18 @@ RUN if id shiny &>/dev/null && [ "$(id -u shiny)" -ne 999 ]; then \
 
 # Other settings
 USER shiny
+
+# TinyTeX for the PDF (external) report. Installed as `shiny`, the user that runs the app: installed
+# as root it would end up in /root/.TinyTeX, which `shiny` cannot use. Then render a test document
+# with the same PDF settings as the external report, so that all the LaTeX packages it needs are
+# installed now (at build time) and never downloaded at runtime.
+RUN quarto install tinytex --no-prompt
+COPY --chown=shiny:shiny docker/latex-smoketest.qmd /tmp/latex-smoketest/latex-smoketest.qmd
+RUN cd /tmp/latex-smoketest && \
+    quarto render latex-smoketest.qmd --to pdf && \
+    test -s latex-smoketest.pdf && \
+    rm -rf /tmp/latex-smoketest
+
 EXPOSE 3838
 
 CMD ["/usr/bin/shiny-server"]

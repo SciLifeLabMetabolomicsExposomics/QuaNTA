@@ -86,6 +86,48 @@ runProcessUI <- function(uiId) {
       min = 0,
     ),
     shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
+    # QC RSD% filter: remove features with a high RSD% among the QC replicates (after
+    # normalization and blank subtraction)
+    shiny::checkboxInput(
+      inputId = ns("rsd_filter"),
+      label = "Quality control: remove features with QC RSD% above a threshold",
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::conditionalPanel(
+      condition = "input.rsd_filter == true",
+      ns = ns,
+      shiny::radioButtons(
+        inputId = ns("rsd_filter_scope"),
+        label = "Apply to",
+        choices = c(
+          "Targeted and non-targeted" = "both",
+          "Targeted only" = "targeted",
+          "Non-targeted only" = "nontargeted"
+        ),
+        selected = "both",
+        width = "100%"
+      ),
+      shiny::conditionalPanel(
+        condition = "input.rsd_filter_scope != 'nontargeted'",
+        ns = ns,
+        shiny::numericInput(
+          inputId = ns("rsd_max_targeted"),
+          label = "Maximum QC RSD% of targeted features (up to 80)",
+          value = 30, min = 1, max = 80, step = 1
+        )
+      ),
+      shiny::conditionalPanel(
+        condition = "input.rsd_filter_scope != 'targeted'",
+        ns = ns,
+        shiny::numericInput(
+          inputId = ns("rsd_max_nontargeted"),
+          label = "Maximum QC RSD% of non-targeted features (up to 80)",
+          value = 30, min = 1, max = 80, step = 1
+        )
+      )
+    ),
+    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
     shiny::radioButtons(
       inputId = ns("weight"),
       label = "Weighting method",
@@ -174,7 +216,11 @@ runProcessServer <- function(serverId, data_info, ws) {
       "llox_method",
       "use_rsd20",
       "blank_filter",
-      "blank_filter_factor"
+      "blank_filter_factor",
+      "rsd_filter",
+      "rsd_filter_scope",
+      "rsd_max_targeted",
+      "rsd_max_nontargeted"
     ),
     data_info = data_info,
     ws = ws
