@@ -1,0 +1,65 @@
+# Status profiles
+
+Each targeted compound in each study sample gets one status, from the concentration before filtering
+(`conc0`) and the compound's limits: **Valid**, **> ULOQ** (above the calibration range), **< LLOQ**,
+**< LOD**, **Not detected**, **No valid calibration**, or **Removed** before calibration.
+
+::: {.panel-tabset}
+
+### Overall
+
+```{r}
+#| fig-height: 3
+study_long |> count(status) |> mutate(share = n / sum(n)) |>
+  ggplot(aes(x = share, y = "All study samples", fill = status)) +
+  geom_col(position = position_stack(reverse = TRUE)) +
+  scale_fill_manual(values = status_colors, drop = FALSE) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = "Share of compound × sample values", y = NULL, fill = "Status") +
+  theme(legend.position = "bottom")
+```
+
+### Per compound (heatmap)
+
+```{r}
+#| fig-height: 5.5
+#| fig-width: 16
+ord <- study_long |> group_by(feature_name) |> summarise(v = mean(status == "Valid")) |>
+  arrange(desc(v)) |> pull(feature_name)
+p_heat <- study_long |> count(feature_name, status, .drop = FALSE) |>
+  group_by(feature_name) |> mutate(pct = 100 * n / sum(n)) |> ungroup() |>
+  mutate(feature_name = factor(feature_name, levels = ord),
+         txt = paste0(feature_name, "<br>", status, ": ", round(pct, 1), "%")) |>
+  ggplot(aes(x = feature_name, y = status, fill = pct, text = txt)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "% of samples", na.value = "white") +
+  labs(x = NULL, y = NULL) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 7))
+plotly::ggplotly(p_heat, tooltip = "text", height = 520)
+```
+
+### Per compound (table)
+
+```{r}
+study_long |> count(Compound = feature_name, status) |>
+  group_by(Compound) |> mutate(pct = round(100 * n / sum(n), 1)) |> ungroup() |>
+  select(-n) |>
+  tidyr::pivot_wider(names_from = status, values_from = pct, values_fill = 0) |>
+  arrange(desc(Valid)) |> dt()
+```
+
+### Per study group
+
+```{r}
+#| fig-height: 3.5
+study_long |> count(Class, status) |> group_by(Class) |> mutate(share = n / sum(n)) |>
+  ggplot(aes(x = share, y = Class, fill = status)) +
+  geom_col(position = position_stack(reverse = TRUE)) +
+  scale_fill_manual(values = status_colors, drop = FALSE) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = "Share of compound × sample values", y = NULL, fill = "Status") +
+  theme(legend.position = "bottom")
+```
+
+:::
+

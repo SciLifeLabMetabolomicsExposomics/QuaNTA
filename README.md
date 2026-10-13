@@ -83,6 +83,10 @@ R -e "shiny::runApp('code')"
 This will indicate the URL to access the Shiny app.
 Copy and paste the URL to a web browser to access the Shiny app.
 
+## Example data
+
+A synthetic example dataset to try the app with is in [`example_data/`](example_data/): the MS-DIAL file (`QuaNTA_example_ESIpos.zip`, uploadable as it is) and an optional parameters file. See [`example_data/README.md`](example_data/README.md) for its content.
+
 ## Running scripts without the Shiny app
 
 As an alternative way, you can also run the individual scripts in the command line.

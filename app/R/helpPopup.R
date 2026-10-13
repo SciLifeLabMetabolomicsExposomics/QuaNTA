@@ -17,7 +17,8 @@ help_popup_content <- function() {
       "Version 0.1.0", br(),
       help_link("QuaNTA tutorial", "https://tutorial.com"), br(),
       help_link("QuaNTA github repo", "https://github.com/Exposomics-SciLifeLab/QuaNTA"), br(),
-      help_link("QuaNTA example data download", "https://www.example-data.com"), br(),
+      help_link("QuaNTA example data download",
+                "https://github.com/Exposomics-SciLifeLab/QuaNTA/tree/main/example_data"), br(),
       help_link("QuaNTA preprint", "https://www.preprint.com")
     )
   )

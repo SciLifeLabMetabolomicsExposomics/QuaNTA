@@ -1,0 +1,95 @@
+## Group comparison
+
+Targeted compounds are compared by their concentrations, non-targeted features by their normalized,
+blank-subtracted intensities (features detected in at least half of the study samples).
+`r if (length(study_classes) > 2) paste0("The data has ", length(study_classes), " study groups; the first two (", study_classes[1], ", ", study_classes[2], ") are compared.") else ""`
+
+```{r}
+grp <- study_classes[1:2]
+cmp_t <- study_long |> filter(Class %in% grp) |>
+  group_by(Feature = feature_name) |>
+  filter(mean(status == "Valid") >= 0.5) |>
+  summarise(
+    med1 = median(conc[Class == grp[1]], na.rm = TRUE),
+    med2 = median(conc[Class == grp[2]], na.rm = TRUE),
+    p = tryCatch(wilcox.test(conc[Class == grp[1]], conc[Class == grp[2]])$p.value, error = \(e) NA_real_),
+    .groups = "drop"
+  ) |>
+  mutate(Type = "Targeted (concentration)")
+# Non-targeted features, all batches together
+nt_ids <- feat$feature_id[feat$type == "Non-targeted"]
+nt_m <- do.call(cbind, lapply(tr[["normalized - blank"]], \(se) se[[BLK]][nt_ids, , drop = FALSE]))
+nt_cd <- bind_rows(lapply(tr[["normalized - blank"]], \(se) tibble::as_tibble(SumExp::col_df(se))))
+g1 <- nt_cd$Class == grp[1] & nt_cd$.ctrl_cat == ""
+g2 <- nt_cd$Class == grp[2] & nt_cd$.ctrl_cat == ""
+keep_f <- rowSums(!is.na(nt_m)) > 0 & rowMeans(nt_m[, g1 | g2] > 0, na.rm = TRUE) >= 0.5
+nt_m <- nt_m[keep_f, , drop = FALSE]
+cmp_nt <- tibble(
+  Feature = feat$label[match(rownames(nt_m), feat$feature_id)],
+  med1 = apply(nt_m[, g1], 1, median, na.rm = TRUE),
+  med2 = apply(nt_m[, g2], 1, median, na.rm = TRUE),
+  p = vapply(seq_len(nrow(nt_m)), \(i) tryCatch(wilcox.test(nt_m[i, g1], nt_m[i, g2])$p.value,
+                                                 error = \(e) NA_real_), numeric(1)),
+  Type = "Non-targeted (intensity)"
+)
+cmp <- bind_rows(cmp_t, cmp_nt) |>
+  mutate(log2fc = log2((med2 + 1e-9) / (med1 + 1e-9)), q = p.adjust(p, "BH"),
+         sig = ifelse(q < 0.05, paste(sub(" \\(.*", "", Type), "q < 0.05"), "Not significant"))
+```
+
+```{r}
+#| results: asis
+cat(sprintf('<div class="callout-q">%s vs %s: %d of %d targeted compounds and %d of %d non-targeted features differ (q &lt; 0.05).</div>',
+            grp[2], grp[1], sum(cmp_t$Feature %in% cmp$Feature[cmp$q < 0.05 & cmp$Type == cmp_t$Type[1]]), nrow(cmp_t),
+            sum(cmp$q < 0.05 & cmp$Type == "Non-targeted (intensity)", na.rm = TRUE), nrow(cmp_nt)))
+```
+
+::: {.panel-tabset}
+
+### Fold change vs significance
+
+```{r}
+#| fig-height: 5.5
+p_v <- ggplot(cmp, aes(log2fc, -log10(q), text = paste0(Feature, " (", Type, ")<br>log2 FC: ", round(log2fc, 2),
+                                                          "<br>q: ", signif(q, 2)))) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey50") +
+  geom_vline(xintercept = 0, color = "grey70") +
+  geom_point(aes(color = sig, shape = Type), size = 2.2, alpha = .8) +
+  scale_color_manual(values = c("Targeted q < 0.05" = "#DD8452", "Non-targeted q < 0.05" = "#4C72B0",
+                                "Not significant" = "#BDBDBD"), name = NULL) +
+  scale_shape_manual(values = c("Targeted (concentration)" = 17, "Non-targeted (intensity)" = 16), name = NULL) +
+  labs(x = paste0("log2 fold change (", grp[2], " / ", grp[1], ", medians)"), y = "-log10(q) (Wilcoxon, BH)")
+plotly::ggplotly(p_v, tooltip = "text", height = 560)
+```
+
+### Table
+
+```{r}
+cmp |> transmute(Feature, Type = factor(Type), !!paste("Median", grp[1]) := signif(med1, 3),
+                 !!paste("Median", grp[2]) := signif(med2, 3),
+                 `log2 FC` = round(log2fc, 2), p = signif(p, 2), q = signif(q, 2)) |>
+  arrange(q) |> dt()
+```
+
+:::
+
+## Concentrations per group
+
+The 12 compounds quantified in the most study samples.
+
+```{r}
+#| fig-height: 8
+#| fig-width: 13
+top <- study_long |> group_by(feature_name) |> summarise(v = mean(status == "Valid")) |>
+  filter(v > 0) |> arrange(desc(v)) |> head(12) |> pull(feature_name)
+if (length(top) == 0) note("No quantified compounds in the study samples.") else
+conc_long |> filter(feature_name %in% top, status == "Valid", .ctrl_cat %in% c("", "QC")) |>
+  mutate(group = ifelse(.ctrl_cat == "QC", "QC", Class)) |>
+  ggplot(aes(x = group, y = conc, fill = group)) +
+  geom_boxplot(outlier.size = .6) +
+  scale_y_log10() +
+  scale_fill_manual(values = group_colors, guide = "none") +
+  facet_wrap(~feature_name, scales = "free_y", ncol = 4) +
+  labs(x = NULL, y = paste0("Concentration [", unit, "] (log10)"))
+```
+

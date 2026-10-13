@@ -79,6 +79,8 @@ to_valid_id <- function(given_id, tbl = util$conv_tbl) {
   m <- match(given_id, tbl$given_id)
   ifelse(is.na(m), given_id, tbl$id[m])
 }
+# Required columns must be present exactly once with exact names (stops with a message otherwise)
+msdial$check_feature_columns(FILE$i, i_three_sections[["1st"]])
 features <- msdial$fetch_data_of_columns(FILE$i, i_three_sections[["1st"]])
 # Identify features to be removed (Comment == "R")
 i_to_keep <- which(is.na(features$Comment) | features$Comment != "R")

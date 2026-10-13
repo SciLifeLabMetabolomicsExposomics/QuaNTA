@@ -5,7 +5,7 @@
 #   - directories are per-session and not chosen by the user
 # ------------------------------------------------------------------------------------------- #
 
-.hr <- function() shiny::tags$hr(style = "border-top: 5px solid #FFFFFF; margin: 1px 0;")
+.hr <- function() shiny::tags$hr(class = "q-divider")
 
 #' MS-DIAL User Information UI for Shiny
 #'
@@ -33,6 +33,7 @@ msdialInfoUI <- function(uiId) {
     .hr(),
     shiny::textInput(ns("concentration_unit"), "Concentration unit", value = "", width = "100%"),
     shiny::strong("MS-DIAL output file"),
+    shiny::uiOutput(ns("upload_hint")),   # Mentions the upload limit only on SciLifeLab Serve
     shiny::fileInput(
       ns("input_file_upload"),
       label = NULL,
@@ -40,10 +41,20 @@ msdialInfoUI <- function(uiId) {
       placeholder = "No file selected",
       width = "100%"
     ),
-    shiny::verbatimTextOutput(ns("input_file_out"), placeholder = TRUE),
-    .hr(),
-    shiny::downloadButton(ns("download_params"), "Download current parameters (.yml)")
+    shiny::verbatimTextOutput(ns("input_file_out"), placeholder = TRUE)
+    # The download of the parameters is at the end of the processing settings (app.R):
+    # msdialInfoDownloadUI()
   )
+}
+
+#' Button to download the parameters and processing settings (a `.yml` file that "Load parameters
+#' file" reads), for placement outside the module's UI
+#'
+#' @inheritParams msdialInfoUI
+#' @export
+msdialInfoDownloadUI <- function(uiId) {
+  shiny::downloadButton(shiny::NS(uiId)("download_params"),
+                        "Download parameters and processing settings (.yml)")
 }
 
 #' MS-DIAL User Information Server for Shiny
@@ -76,7 +87,8 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       })
     }
 
-    # MS-DIAL file upload: keep the original file name (used to name reports and tables)
+    # MS-DIAL file upload: keep the original file name (used to name reports and tables).
+    # Compressed uploads (.gz, .zip) are decompressed in a background process.
     shiny::observeEvent(input$input_file_upload, {
       up <- input$input_file_upload
       # A new file makes all earlier results stale (data, exported tables, reports)
@@ -84,12 +96,40 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       unlink(list.files(ws$intermediate, full.names = TRUE))
       unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
       unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
+
+      if (tolower(tools::file_ext(up$name)) %in% c("gz", "zip")) {
+        data_info$input_file <- ""   # Not usable until decompressed ("Read" stays disabled)
+        data_info$input_file_name <- paste(up$name, "(decompressing ...)")
+        result_file <- file.path(ws$base, "decompress_result.rds")
+        unlink(result_file)
+        job <- list(src = up$datapath, name = up$name, out_dir = ws$input, result_file = result_file)
+        run_bg_rscript(
+          session, ws, "scripts/decompress_input.R", job,
+          progress_message = paste("Decompressing", up$name),
+          on_done = function(ok, log) {
+            res <- if (ok && file.exists(result_file)) readRDS(result_file)
+            unlink(result_file)
+            if (is.null(res)) {
+              data_info$input_file_name <- paste(up$name, "(could not be decompressed)")
+              shiny::showNotification(paste("The uploaded file could not be decompressed:",
+                                            bg_error_message(log)), type = "error", duration = NULL)
+              return()
+            }
+            data_info$input_file <- res$path
+            data_info$input_file_name <- res$name
+            shiny::showNotification(paste("Decompressed", up$name, "to", res$name), type = "message")
+          }
+        )
+        return()
+      }
+
       safe_name <- gsub("[^A-Za-z0-9._-]", "_", basename(up$name))
       dest <- file.path(ws$input, safe_name)
       file.copy(up$datapath, dest, overwrite = TRUE)
       data_info$input_file <- normalizePath(dest, winslash = "/", mustWork = TRUE)
       data_info$input_file_name <- up$name
     }, priority = 100)   # Before the outputs re-read the (deleted) data files
+    output$upload_hint <- shiny::renderUI(upload_hint(session))
     output$input_file_out <- shiny::renderText({
       nm <- data_info$input_file_name
       if (is.null(nm) || !nzchar(nm)) "No file uploaded" else nm

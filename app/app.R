@@ -6,7 +6,9 @@ options(readr.show_progress = FALSE)
 
 options(shiny.host = "0.0.0.0")
 options(shiny.port = 7579)
-options(shiny.maxRequestSize = 500 * 1024^2)
+# Upload size limit of the app itself: no practical limit (uploads are stored on disk). On
+# SciLifeLab Serve, its web proxy allows at most 1000 MB anyway (see R/uploadLimit.R).
+options(shiny.maxRequestSize = 100 * 1024^3)
 
 # `box` caches loaded modules for the whole R session. Clear the cache so that re-running the app
 # in the same session (e.g. RStudio) picks up edits to `projlib/` instead of stale modules.
@@ -34,303 +36,30 @@ library(shinycssloaders)
 # `ggplotly()` follow this theme too.
 QUANTA_PLOT_BASE_SIZE <- 16
 ggplot2::theme_set(ggplot2::theme_grey(base_size = QUANTA_PLOT_BASE_SIZE))
-# 1) Define theme
+# Theme: Bootstrap variables only; the QuaNTA design itself is in www/quanta.css (loaded in the
+# UI header, after the theme). Colours of the logo: blue #1A0DF2, orange #FFB326.
 custom_theme <- bs_theme(
   version = 5,
   bootswatch = NULL,
   # All fonts are served from www/fonts/ (@font-face rules in www/fonts/fonts.css, linked in the UI
   # header), so the app never contacts Google Fonts (`font_google()` downloads at start-up)
   base_font = font_collection("Lato", "sans-serif"),
-  heading_font = font_collection("Oswald", "sans-serif"),
+  heading_font = font_collection("Lato", "sans-serif"),
   code_font = font_collection("JetBrains Mono", "monospace"),
-  bg = "#FFFFFF", # white background
-  fg = "#000000", # black text
-
-
-  primary = "black",
-  secondary = "#6BCBFF",
+  bg = "#FFFFFF",
+  fg = "#1F2A44",
+  primary = "#1A0DF2",
+  secondary = "#667085",
   info = "#9ADCFF",
-  success = "#3CD070",
-  warning = "#FFD66B",
-  danger = "#FF6B6B",
-
-  ### >>>>> CARD COLOR UPDATED (BLUE) <<<<<
-  "card-bg" = "#608cc4", # QuANTA deep blue 6FAAF7
-  "card-border-color" = "#6FAAF7", # darker border to match
-  "navbar-bg" = "#0D121C",
-  "navbar-fg" = "#FFFFFF",
-  "link-color" = "#d6a376", #F4A259
-  "link-hover-color" = "#8F8DF7"
+  success = "#2E9E5B",
+  warning = "#FFB326",
+  danger = "#D92D20",
+  "body-bg" = "#F5F7FA",
+  "border-radius" = "6px",
+  "link-color" = "#1A0DF2",
+  "navbar-bg" = "#FFFFFF",
+  "navbar-fg" = "#1F2A44"
 )
-
-# Add custom CSS rules
-custom_theme <- bs_add_rules(
-  custom_theme,
-  "
-  /* Buttons */
-
-
-.btn {
-  background-color: #F4A259 !important;   /* ORANGE (normal) */
-  border-color: #F4A259 !important;
-  color: #000000 !important;              /* BLACK TEXT */
-  border-width: 2px;
-   font-size: 20px
-}
-
-.btn:hover, .btn:focus {
-  background-color: #FFB733 !important;   /* LIGHT ORANGE on hover */
-  border-color: #FFB733 !important;
-  color: #000000 !important;              /* BLACK TEXT */
-  box-shadow: 0 0 10px rgba(255, 165, 0, 0.5) !important;
-}
-
-.btn:active {
-  background-color: #E69500 !important;   /* DARKER ORANGE when pressed */
-  border-color: #E69500 !important;
-  color: #000000 !important;
-}
-
-/* Disabled buttons (e.g. report / export until a final normalization method is chosen) */
-.btn:disabled, .btn.disabled,
-.btn:disabled:hover, .btn.disabled:hover {
-  background-color: #C8C8C8 !important;   /* GREY */
-  border-color: #C8C8C8 !important;
-  color: #6B6B6B !important;
-  box-shadow: none !important;
-  cursor: not-allowed !important;
-}
-
-/* Outline button behavior */
-.btn-outline-primary,
-.btn-outline-secondary,
-.btn-outline-info,
-.btn-outline-success,
-.btn-outline-warning,
-.btn-outline-danger,
-.btn-outline-dark,
-.btn-outline-light {
-  color: #000000 !important;               /* BLACK TEXT */
-  border-color: #F4A259 !important;
-}
-
-.btn-outline-primary:hover {
-  background-color: #F4A259 !important;    /* ORANGE FILL */
-  color: #000000 !important;               /* BLACK TEXT */
-}
-
-pre.shiny-text-output,
-pre.shiny-text-output.monospace {
-  background-color: #0A0F18 !important;   /* Dark inner background */
-  color: #FFFFFF !important;              /* White text */
-  border: 2px solid #F4A259 !important;   /* Orange border */
-  padding: 8px 12px !important;
-  border-radius: 6px !important;
-  font-family: JetBrains Mono, monospace !important;
-}
-
-/* Optional: highlight when hovered or focused */
-pre.shiny-text-output:hover {
-  border-color: #FFB733 !important;       /* Lighter orange hover */
-  box-shadow: 0 0 6px rgba(255,165,0,0.4) !important;
-}
-
-
-
-
-  /* Inputs */
-  .form-control, .selectize-input {
-    background-color: #0F1624 !important;
-    color: #FFFFFF !important;
-    border-color: #1E2A3A !important;
-  }
-
-  .form-control:focus, .selectize-input.focus {
-    border-color: #F4A259 !important;
-    box-shadow: 0 0 6px rgba(255, 77, 166, 0.4) !important;
-  }
-
-  /* >>>>> CARD COLORS UPDATED (BLUE) <<<<< */
-
-
-
-
-.card {
-  color: #FFFFFF !important;
-
-
-  overflow: auto;
-
-
-}
-
-/* Keep card headers white */
-
-.card-header,
-.card-header *,
-.bslib-card-header,
-.bslib-card-header *,
-.bslib-card-header-title {
-  /* Scales with the window width (min 1.25rem, max 2rem) so the titles fit on one line */
-  font-size: clamp(1.25rem, 1.9vw, 2rem) !important;
-  font-weight: 700 !important;
-  line-height: 1.2 !important;   /* relative to the font size, so wrapped titles don't overlap */
-}
-
-/* Card titles on one line; they wrap only in small windows (below 992px) */
-@media (min-width: 992px) {
-  .card-header > div:first-child {
-    white-space: nowrap !important;
-  }
-}
-
-
-
-  /* ---------- NAV BAR: white background + black text ---------- */
-.navbar, .navbar-nav, .navbar-brand {
-  background-color: #FFFFFF !important;
-  color: #000000 !important;
-}
-
-.navbar .nav-link,
-.navbar .navbar-brand,
-.navbar .navbar-nav .nav-link {
-  color: #000000 !important;
-}
-
-/* Hover effect */
-.navbar .nav-link:hover {
-  color: #F4A259 !important;  /* optional orange hover */
-}
-
-/* ---------- NAV TABS (the page_navbar panels) ---------- */
-.nav-tabs {
-  background-color: #FFFFFF !important;
-  border-bottom: 1px solid #CCCCCC !important;
-}
-
-.nav-tabs .nav-link {
-  color: #000000 !important;
-  background-color: #FFFFFF !important;
-  border: 1px solid #CCCCCC !important;
-}
-
-/* Hover effect */
-.nav-tabs .nav-link:hover {
-  color: #F4A259 !important;
-  background-color: #F7F7F7 !important;
-}
-
-/* Active tab styling */
-.nav-tabs .nav-link.active {
-  color: #000000 !important;
-  background-color: #FFFFFF !important;
-  border: 2px solid #F4A259 !important;   /* orange outline */
-  border-bottom: 2px solid #FFFFFF !important; /* seamless effect */
-  font-weight: bold;
-}
-
-
-/* Base table */
-table.dataTable {
-  background-color: #FFFFFF !important;
-  color: #000000 !important;
-  border-collapse: collapse !important;
-}
-
-/* Header */
-table.dataTable thead th {
-  background-color: #EAF2FF !important;   /* light blue header */
-  color: #003366 !important;
-  font-weight: 600;
-  border-bottom: 2px solid #D0D7E5 !important;
-}
-
-
-
-/* Body rows */
-table.dataTable tbody tr {
-  background-color: #FFFFFF !important;
-}
-
-/* Zebra striping — SOFT, NO ORANGE */
-table.dataTable tbody tr:nth-child(even) {
-  background-color: #F8FAFF !important;
-}
-
-/* Hover effect */
-table.dataTable tbody tr:hover {
-  background-color: #EFF4FF !important;
-}
-
-
-/* Remove Bootstrap primary color bleed */
-table.dataTable.no-footer {
-  border-bottom: 1px solid #D0D7E5 !important;
-}
-
-
-
-/* FAILED rows */
-table.dataTable tbody tr.failed-row td {
-  background-color: lightcoral !important;
-  color: black !important;
-}
-
-/* SELECTED row — must be stronger */
-
-table.dataTable tbody tr.selected,
-table.dataTable tbody tr.selected > td {
-  background: black !important;
-  --bs-table-bg: black !important;
-  --bs-table-accent-bg: black !important;
-  color: white !important;
-}
-
-/* ✅ also override hover-selected conflict */
-table.dataTable tbody tr.selected:hover,
-table.dataTable tbody tr.selected:hover > td {
-  background-color: black !important;
-  color: white !important;
-}
-
-
-
-
-/* ✅ FORCE checkbox label to stay inline */
-.form-check-label {
-  white-space: nowrap !important;
-  display: inline-flex !important;
-  flex-wrap: nowrap !important;
-}
-
-/* ✅ Ensure layout doesn't stack text */
-.form-check {
-  display: flex !important;
-  align-items: center !important;
-  flex-wrap: nowrap !important;
-}
-
-
-/* =========================================================
-   FINAL FIX — FORCE ALL KABLE TABLE TEXT TO BLACK
-   ========================================================= */
-
-
-[data-bs-theme] .card table,
-[data-bs-theme] .card table th,
-[data-bs-theme] .card table td,
-[data-bs-theme] .card table.table,
-[data-bs-theme] .card table.table th,
-[data-bs-theme] .card table.table td {
-  color: #000000 !important;
-}
-
-
-
-  "
-)
-
 
 # Echarts font
 e_common(
@@ -351,29 +80,16 @@ NORM_METHOD_LABELS <- c(
   "Without normalization" = "raw"
 )
 
-quanta_card <- function(title, ...) {
-  card(
-    card_header(
-      div(title, style = "margin-bottom: 10px;"),
-      div(style = "height:3px; background:white; width:100%;")
-    ),
-  ...)
+quanta_card <- function(title, ..., icon_name = NULL, subtitle = NULL) {
+  card(quanta_card_header(title, icon_name, subtitle), ...)
 }
 
-
-
-quanta_card_resize <- function(title, side, ...) { #"qc-left", "qc-right"
-    div(
-      id = side,
-      card(
-        card_header(
-          div(title, style = "margin-bottom: 10px;"),
-          div(style = "height:3px; background:white; width:100%;")
-        ),
-      ...)
-    )
+# A card in a resizable pane (Split.js) of the analysis tabs, e.g. side = "qc-left"
+quanta_card_resize <- function(title, side, ...) {
+  icon_name <- switch(title, Tables = "table", Figures = "chart-column", NULL)
+  div(id = side, card(quanta_card_header(title, icon_name), ...))
 }
-section <- function(title, ...) div(style = "padding: 0;", h3(title, style = "margin: 0;"), ...)
+section <- function(title, ...) div(style = "padding: 0;", h3(class = "q-section-title", title), ...)
 
 ################################################################################################
 ######################################## UI ####################################################
@@ -382,12 +98,25 @@ section <- function(title, ...) div(style = "padding: 0;", h3(title, style = "ma
 ui <-
   page_navbar(
     theme = custom_theme,
-    title = tags$img(src = "QuaNTA.jpg", height = "40px", class = "navbar-logo"),
+    title = div(
+      class = "quanta-brand",
+      div(
+        class = "quanta-brand-main",
+        tags$img(src = "QuaNTA.jpg", alt = "QuaNTA"),
+        span(class = "quanta-tagline", "Quantitative & Nontargeted Analysis")
+      ),
+      span(class = "quanta-brand-divider"),
+      tags$img(class = "quanta-brand-partner", src = "SciLifeLab_Logotype_Green_POS.png",
+               alt = "SciLifeLab")
+    ),
     window_title = "QuaNTA",   # text in the browser tab; fixes the last warning
     header = tags$head(
       tags$link(rel = "icon", type = "image/jpeg", href = "QuaNTA_square.jpg"),
       tags$script(src = "split.min.js"),
       tags$link(rel = "stylesheet", href = "fonts/fonts.css"),   # Lato, Oswald, JetBrains Mono (local)
+      # The QuaNTA design; "?v=" (the file's modification time) makes browsers load a changed file
+      tags$link(rel = "stylesheet",
+                href = paste0("quanta.css?v=", as.integer(file.mtime("www/quanta.css")))),
       shinyjs::useShinyjs(),   # Enable / disable buttons from the server
       # Start a download from the server: clicks the (hidden) download link with the given ID.
       # Used when a file is ready after a background task (external report, session data).
@@ -397,14 +126,10 @@ ui <-
           if (a) a.click();
         });
       ")),
-      # Logs of the scripts (read, process, export): scroll within the box and follow the newest
-      # lines, unless the user has scrolled up to read earlier lines
-      tags$style(HTML("
-        pre[id$='script_output'] {
-          max-height: 35vh;
-          overflow-y: auto;
-        }
-      ")),
+      upload_limit_script(),   # On SciLifeLab Serve: stop uploads above its 1000 MB limit early
+      gdpr_notice_script(),    # On SciLifeLab Serve: GDPR popup before choosing a data file
+      # Logs of the scripts (read, process, export): follow the newest lines, unless the user has
+      # scrolled up to read earlier lines (their height is set in www/quanta.css)
       tags$script(HTML("
         $(document).on('shiny:value', function(e) {
           if (!/script_output$/.test(e.name)) return;
@@ -413,106 +138,51 @@ ui <-
           var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;  // Before the update
           setTimeout(function() { if (atBottom) el.scrollTop = el.scrollHeight; }, 0);
         });
-      ")),
-      tags$style(HTML("
-        .navbar-brand img,
-        .navbar-logo {
-          height: 60px !important;
-          width: auto !important;
-          border-radius: 0 !important;   /* prevents forced rounding */
-          object-fit: contain !important;
-        }
-
-        /* Reduce navbar vertical padding */
-        .navbar, .navbar-nav .nav-link {
-          padding-top: 4px !important;
-          padding-bottom: 4px !important;
-        }
-
-        /* Optionally reduce brand/logo spacing */
-        .navbar-brand {
-          padding-top: 0 !important;
-          padding-bottom: 0 !important;
-        }
-
-        .navbar-nav .nav-link {
-          font-size: 1.2rem !important;   /* Increase text size */
-          font-weight: 500;
-        }
-
-        table.dataTable tbody tr.selected td {
-          background-color: black !important;
-          color: white !important;
-        }
-        
-        .split-pane {
-          display: flex;
-          flex-direction: row;
-          width: 100%;
-        }
-        .split-pane > div {
-          overflow: auto;   /* scroll instead of clipping when a pane gets narrow */
-          min-width: 0;      /* let flex children shrink below content width */
-        }
-        .gutter {
-          background-color: #F4A259;
-          background-repeat: no-repeat;
-          background-position: 50%;
-          cursor: col-resize;
-        }
-        .gutter.gutter-horizontal {
-          width: 8px;
-        }
       "))
     ),
     nav_panel(
-      title = HTML("Input and parameters  <strong> >> </strong>"),
+      title = quanta_step(1, "Input data\nand processing"),
+      value = "input",
       layout_columns(
         col_widths = c(4, 4, 4),
-        card(
-          card_header(
-            div(
-              "Input data settings",
-              style = "margin-bottom: 10px;" # small spacing (optional)
-            ),
-            div(
-              style = "height:3px; background:white; width:100%;"
-            )
-          ),
-          sessionLoadUI("session_data"),   # Load saved session data (.rds), R/sessionData.R
-          .hr(),
+        quanta_card(
+          "Input data settings",
+          icon_name = "folder-open",
+          subtitle = "Provide project information and input files.",
+          # Session data save / load hidden for now (very large files); the code is kept:
+          # sessionLoadUI("session_data"), .hr(),   # Load saved session data (.rds), R/sessionData.R
           msdialInfoUI("data_info")
         ),
-        card(
-          card_header(
-            div(
-              "Data processing settings",
-              style = "margin-bottom: 10px;" # small spacing (optional)
-            ),
-            div(
-              style = "height:3px; background:white; width:100%;"
-            )
-          ),
+        quanta_card(
+          "Data processing settings",
+          icon_name = "gear",
+          subtitle = "Configure processing, quality control and calibration options.",
           runReadMsdialUI("read_msdial"),
           runProcessUI("proc"),
-          sessionSaveUI("session_data"),   # Save session data (.rds), R/sessionData.R
+          # Session data save hidden for now (very large files); the code is kept:
+          # sessionSaveUI("session_data"),   # Save session data (.rds), R/sessionData.R
+          .hr(),
+          msdialInfoDownloadUI("data_info")   # Parameters and processing settings (.yml)
         ),
-
-        quanta_card("Log",
-                    div(
-                      "MS-Dial reading log:",
-                      style = "margin: 0px 0 0px 0; font-weight: 600;"
-                    ),
-                    runReadMsdialUI_2("read_msdial"),
-                    div(
-                      "Processing log:",
-                      style = "margin: 0px 0 0px 0; font-weight: 600;"
-                    ),
-                    runProcessUI_2("proc")),
+        card(
+          class = "q-log",
+          quanta_card_header(
+            "Log", "file-lines",
+            subtitle = "Processing information and the MS-DIAL reading log.",
+            actions = actionButton("clear_log", "Clear log", icon = icon("trash-can"),
+                                   class = "btn-sm-quanta")
+          ),
+          navset_underline(
+            id = "log_tabs",
+            nav_panel("MS-DIAL reading log", runReadMsdialUI_2("read_msdial")),
+            nav_panel("Processing log", runProcessUI_2("proc"))
+          )
+        )
       )
     ),
     nav_panel(
-      title = HTML("Overview  <strong> >> </strong>"),
+      title = quanta_step(2, "Data\noverview"),
+      value = "overview",
       div(
         id = "ov-split",
         class = "split-pane",
@@ -529,7 +199,7 @@ ui <-
         #Card
         quanta_card_resize("Figures", "ov-right",
                     section("The distribution of the features across m/z and retention time (2.2)",
-                            spinner(plotOutput("ggplot1_2_2"))),
+                            spinner(plotlyOutput("ggplot1_2_2", height = "540px"))),
                     section("The distribution of the features (2.2)",
                             spinner(plotOutput("ggplot2_2_2"))),
                     section("Distribution of the values (2.3)",
@@ -552,18 +222,17 @@ ui <-
       "))
     ),
     nav_panel(
-      title = HTML("Quality control and Normalization <strong> >> </strong>"),
+      title = quanta_step(3, "Quality control\nand normalization"),
+      value = "qc",
       div(
         id = "qc-split",
         class = "split-pane",
         #Card
         quanta_card_resize("Tables", "qc-left",
                     section("Internal standards (3.1)",
-                            spinner(DT::DTOutput("tb_3_1")),
-                            spinner(verbatimTextOutput("df_selected_row")),
-                            spinner(htmlOutput("text_3_1_1"))),
+                            spinner(DT::DTOutput("tb_3_1"))),
                     section("Failed internal standards (3.1.1)",
-                            htmlOutput("text_3_1_1")),
+                            spinner(htmlOutput("text_3_1_1"))),
                     section("Outlier samples (3.1.2)",
                             spinner(uiOutput("wrap_outlier")),
                             h3(
@@ -574,38 +243,46 @@ ui <-
         #Card
         quanta_card_resize("Figures", "qc-right",
                     section("Distribution of the values of individual IS features (3.1.3)",
-                            spinner(plotOutput("ggplot3_1_3")),
+                            spinner(plotlyOutput("ggplot3_1_3", height = "500px")),
                             spinner(uiOutput("remove_failedIS_outlier"))),
                     div(
-                      style = "padding: 0; display: flex; gap: 20px; align-items: flex-start;",
-                      
+                      h3("Volumetric internal standards (3.2.1.1)", style = "margin: 0 0 8px 0;"),
                       div(
-                        style = "width: 100%;",
-                        h3(
-                          "Samples by internal standards (3.2.1.1/2)",
-                          style = "margin: 0;"
-                        ),
-                        br(),
-                        radioButtons(
-                          "group_choice",
-                          "Samples by injection order:",
-                          choices = c(
-                            "Class" = "class",
-                            "Batch ID" = "batch",
-                            "Internal Standard" = "internal_std"
-                          ),
-                          selected = character(0),
-                          inline = TRUE # ✅ no selection
-                        ),
-                        spinner(uiOutput("vis_or_text_3_2_1_1"))
-                      )
+                        style = "display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end;",
+                        selectInput("vis_colour", "Colour",
+                                    choices = c("Sample group" = "group", "Batch" = "batch"),
+                                    width = "200px"),
+                        # Calibration samples have much higher values than the samples: hidden by default
+                        checkboxInput("vis_show_calibrants", "Show calibration samples", value = FALSE)
+                      ),
+                      spinner(uiOutput("vis_or_text_3_2_1_1"))
                     ),
                     div(
-                      # Only shown once a grouping is chosen above; otherwise its empty
-                      # 400px placeholder leaves a gap
-                      shiny::conditionalPanel(
-                        condition = "input.group_choice",
-                        spinner(plotlyOutput("ggplot3_2_1_2"))
+                      h3("Internal standards over the sequence (3.2.1.2)", style = "margin: 16px 0 4px 0;"),
+                      p("Two independent views: choose the colouring and the values of each, e.g. raw and",
+                        "normalized, or the same data in two colourings. Failed IS and outlier samples are",
+                        "left out."),
+                      uiOutput("best_norm_note_3"),
+                      # For both panels; calibration samples have much higher values than the samples
+                      checkboxInput("isbar_show_calibrants", "Show calibration samples", value = FALSE),
+                      # Two panels side by side; below each other in a narrow window
+                      div(
+                        style = "display: flex; flex-wrap: wrap; gap: 16px;",
+                        lapply(c("a", "b"), function(k) {
+                          div(
+                            style = "flex: 1 1 420px; min-width: 0;",
+                            div(
+                              style = "display: flex; gap: 12px; flex-wrap: wrap;",
+                              selectInput(paste0("isbar_colour_", k), "Colour",
+                                          choices = c("Sample group" = "group", "Batch" = "batch",
+                                                      "Internal standard" = "is"),
+                                          width = "200px"),
+                              selectInput(paste0("isbar_values_", k), "Values", choices = c(Raw = "raw"),
+                                          width = "200px")
+                            ),
+                            spinner(plotlyOutput(paste0("ggplot3_2_1_2", k), height = "500px"))
+                          )
+                        })
                       ),
                       h3(
                         "Comparison of normalization methods 3.2.3",
@@ -630,6 +307,31 @@ ui <-
                       ),
                       shiny::uiOutput("removed_note"),
                       spinner(DT::DTOutput("tb_3_2_4")),
+                      # QC/QA: one feature in the blanks compared to the other sample groups
+                      h3("Blanks compared to samples (3.3)", style = "margin: 16px 0 4px 0;"),
+                      p("One feature at a time: the (method) blanks in red next to the QCs, study",
+                        "samples and calibrants, with the threshold of the blank filter. Type in the",
+                        "feature box to search."),
+                      div(
+                        style = "display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;",
+                        radioButtons("blank_type", "Features",
+                                     choices = c(Targeted = "targeted", "Non-targeted" = "nontargeted",
+                                                 "Internal standards (incl. vIS)" = "is", All = "all"),
+                                     selected = "targeted", inline = TRUE),
+                        selectizeInput("blank_feature", "Feature", choices = NULL, width = "320px",
+                                       options = list(placeholder = "Type to search…")),
+                        selectInput("blank_values", "Values", choices = c(Raw = "raw"), width = "200px"),
+                        radioButtons("blank_view", "View",
+                                     choices = c("Groups" = "groups", "Per sample" = "samples"),
+                                     selected = "groups", inline = TRUE)
+                      ),
+                      div(
+                        style = "display: flex; gap: 20px; flex-wrap: wrap;",
+                        checkboxInput("blank_removed_only", "Only features removed by the blank filter",
+                                      value = FALSE),
+                        checkboxInput("blank_show_calibrants", "Show calibration samples", value = FALSE)
+                      ),
+                      spinner(plotlyOutput("ggplot3_3", height = "500px"))
                     )
                   )
       ),
@@ -649,10 +351,12 @@ ui <-
       "))
     ),
     nav_panel(
-      title = HTML("Calibration and Quantification <strong> >> </strong>"),
+      title = quanta_step(4, "Calibration\nand quantification"),
+      value = "calibration",
       layout_columns(
         col_widths = c(6, 6),
         quanta_card("Tables",
+                    uiOutput("best_norm_note_4"),
                     shiny::radioButtons(
                       inputId = "norm_method",
                       label = "Normalization method",
@@ -732,41 +436,32 @@ ui <-
                       ),
                       div(
                         style = "width: 100%;", # ✅ shorter height
-                        spinner(plotOutput("ggplot5_1")),
+                        spinner(plotlyOutput("ggplot5_1")),
                       )
                     )
                   )
       )
     ),
     nav_panel(
-      title = HTML("Reports&nbsp;📄&nbsp <strong>  </strong>"),
+      title = quanta_step(5, "Report\nexport", last = TRUE),
+      value = "reports",
       # Final normalization method: used by both reports and the exported tables. Nothing is
       # pre-selected; the generate / export buttons stay disabled until a method is chosen.
       div(
         style = "width: 40%; min-width: 320px;",
         quanta_card("Final normalization method",
+                    icon_name = "sliders",
+                    subtitle = "Used for both reports and the exported tables.",
                     spinner(uiOutput("final_norm_ui")))
       ),
       layout_columns(
         col_widths = c(9, 3),
-        card(
-          card_header(
-            div(
-              "Report",
-              style = "margin-bottom: 10px;" # small spacing (optional)
-            ),
-            div(
-              style = "height:3px; background:white; width:100%;"
-            )
-          ),
+        quanta_card(
+          "Report",
+          icon_name = "file-lines",
+          subtitle = "Generate the internal (HTML) and external (PDF) reports.",
           genReportUI("report"),
-
-
-          ###################################################################
-          spinner(uiOutput("the_report")),
-          ##############################################################
-
-
+          # Above the report: the rendered report is long and scrolls on its own
           div(
             class = "d-flex justify-content-center my-2",
             downloadButton(
@@ -775,9 +470,12 @@ ui <-
               class    = "btn btn-sm btn-primary",
               style    = "font-size:18px; padding:12px 24px;"
             )
-          )
+          ),
+          spinner(uiOutput("the_report"))
         ),
         quanta_card("Extract data",
+                    icon_name = "table",
+                    subtitle = "Export the tables of the final normalization method.",
                     # Exports the normalized, blank-subtracted and concentration tables of the
                     # final normalization method selected at the top of this panel
                     runScriptUI("export_data", label = "Export data into tables", download=T)
@@ -799,6 +497,9 @@ server <- function(input, output, session) {
 
   # Help popup (question-mark icon in the navbar)
   helpPopupServer("help")
+
+  # Message when a file above SciLifeLab Serve's upload limit is chosen
+  uploadLimitServer(input, session)
 
   # ---- 1. Private workspace of this session (deleted when the session ends) ----
   ws <- create_session_workspace(session)
@@ -825,6 +526,23 @@ server <- function(input, output, session) {
     best <- to_report_r()[["best normalization"]]
     if (is.null(best)) "loess_norm" else best
   })
+  # Which normalization was best, in QuaNTA blue (pages 3 and 4; one output per place)
+  best_norm_note <- shiny::reactive({
+    tr <- shiny::req(to_report_r())
+    rsd <- tr[["median RSD% per normalization"]]
+    basis <- tr[["median RSD% basis"]]
+    best <- best_norm_r()
+    lab <- names(NORM_METHOD_LABELS)[match(best, NORM_METHOD_LABELS)]
+    txt <- if (is.null(rsd) || is.null(basis) || is.na(basis) || is.na(rsd[best])) {
+      paste0("Best normalization: not determined (no replicates); ", lab, " is used by default.")
+    } else {
+      paste0("Best normalization: ", lab, " (lowest median RSD% of the ",
+             if (basis == "QC") "QC" else "calibration", " replicates: ", round(rsd[best], 1), "%).")
+    }
+    shiny::div(class = "q-best-norm", txt)
+  })
+  output$best_norm_note_3 <- shiny::renderUI(best_norm_note())
+  output$best_norm_note_4 <- shiny::renderUI(best_norm_note())
   # The final method used for the report and the exported tables: "auto" resolves to the best
   # Nothing is pre-selected: the user must choose (the report / export buttons stay disabled)
   final_norm_chosen_r <- shiny::reactive({
@@ -838,8 +556,16 @@ server <- function(input, output, session) {
   })
 
   # ---- 3. Child processes; each returns a reactive that changes when a run has finished ----
-  read_done <- runReadMsdialServer("read_msdial", data_info = data_info, ws = ws)
-  proc_done <- runProcessServer("proc", data_info = data_info, ws = ws)
+  clear_log <- shiny::reactive(input$clear_log)   # "Clear log" empties both logs
+  read_done <- runReadMsdialServer("read_msdial", data_info = data_info, ws = ws, clear = clear_log)
+  proc_done <- runProcessServer("proc", data_info = data_info, ws = ws, clear = clear_log)
+  # Show the log of the step that is started
+  shiny::observeEvent(input[["read_msdial-run_button"]], {
+    bslib::nav_select("log_tabs", "MS-DIAL reading log")
+  }, ignoreInit = TRUE)
+  shiny::observeEvent(input[["proc-run_button"]], {
+    bslib::nav_select("log_tabs", "Processing log")
+  }, ignoreInit = TRUE)
   # Save / load the session data (.rds); changes when data has been loaded
   session_loaded <- sessionDataServer(
     "session_data",
@@ -884,10 +610,11 @@ server <- function(input, output, session) {
   })
   
   output$download_report <- shiny::downloadHandler(
-    filename = function() paste0("Internal Report ", final_norm_method_r(), ".html"),
+    # The name of the generated file, with the time of generation
+    filename = function() basename(report_obj$report_path()),
     content = function(file) {
       path <- report_obj$report_path()
-      if (!file.exists(path)) stop("Generate the report first.")
+      if (!nzchar(path) || !file.exists(path)) stop("Generate the report first.")
       file.copy(path, file, overwrite = TRUE)
     }
   )
@@ -1177,33 +904,27 @@ server <- function(input, output, session) {
   ################################################################################################################
   ### This is figure 2.2
 
-  output$ggplot1_2_2 <- renderPlot({
-    shiny::req(raw_se_r())
-    
-    colors <- local({
-      x <- unique(util$std_type(raw_se_r()))
-      n_non_target <- sum(x == "")
-      col <- scales::hue_pal()(length(x) - n_non_target)
-      col <- rlang::set_names(col, x[x != ""])
-      if (n_non_target > 0) {
-        c(col, "grey") # grey for non-targeted
-      } else {
-        col
-      }
-    })
-    df1 <- SumExp::row_df(raw_se_r())
-    ggplot1_2_2 <- ggplot(df1) +
-      geom_point(aes(x = .rt, y = mz, color = .std_type),
-        alpha = ifelse(df1$.std_type == "", 0.1, 1)
-      ) +
-      labs(
-        x = show$label_if_has(df1$.rt),
-        y = show$label_if_has(df1$mz),
-        color = show$label_if_has(df1$.std_type),
-      ) +
-      scale_color_manual(values = colors)
-
-    ggplot1_2_2
+  # m/z vs retention time map, the same as in the internal report. Before processing, features
+  # are coloured by type; after processing, targeted compounds by their outcome (for the final
+  # normalization method if chosen, otherwise the best one)
+  output$ggplot1_2_2 <- plotly::renderPlotly({
+    se <- shiny::req(raw_se_r())   # Not inside `row_df()`: S4 dispatch turns `req()` into an error
+    rd <- SumExp::row_df(se)
+    quiet <- function(expr) tryCatch(expr, error = function(e) NULL)   # Not processed (yet)
+    tr <- quiet(to_report_r())
+    calib_rows <- removed <- NULL
+    m <- if (isTRUE(quiet(final_norm_chosen_r()))) quiet(final_norm_method_r()) else quiet(best_norm_r())
+    if (!is.null(tr) && length(m) == 1) {
+      blk <- util$mat_id_of_blank_subtracted(m)
+      lst <- quiet(proc_r()[[blk]])
+      calib_rows <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), lst), function(x) {
+        tibble::as_tibble(SumExp::row_df(x$concn), rownames = "feature_id") |>
+          dplyr::select(feature_id, to_export, has_proper_range)
+      }))
+      rem <- tr[["removed features"]]
+      if (!is.null(rem)) removed <- rem[rem$mat_id == m & rem$targeted, ]
+    }
+    show$plotly_mz_rt_map(show$mz_rt_outcome(rd, calib_rows, removed), height = 520)
   })
 
 
@@ -1264,6 +985,8 @@ server <- function(input, output, session) {
     df <- df |>
       dplyr::select(feature_name, .rt, mz, rsd, num_zeros) |>
       dplyr::mutate(
+        .rt = round(.rt, 2) |> labelled::copy_labels_from(.rt),   # RT with 2 decimals
+        mz = round(mz, 5) |> labelled::copy_labels_from(mz),       # m/z with 5 decimals
         num_zeros = ifelse(num_zeros == 0, "", num_zeros) |>
           labelled::copy_labels_from(num_zeros)
       )
@@ -1321,83 +1044,22 @@ server <- function(input, output, session) {
       )
   })
 
-  output$df_selected_row <- renderPrint({
-    req(pre_norm_se_r())
-    
-    all_rts <- util$retention_time(pre_norm_se_r())
-    overall_rt_range <- range(all_rts)
-    targetted_rt_range <- range(all_rts[util$is_targeted_feature(pre_norm_se_r())])
-    rt <- range(all_rts[util$is_internal_std(pre_norm_se_r())])
-
-
-    box::use(projlib / proc[count_zeros_per_feature])
-
-
-    df <- SumExp::row_df(internal_std_se_r()) |>
-      dplyr::mutate(
-        num_zeros = count_zeros_per_feature(internal_std_se_r()[["raw"]]),
-        rsd = show$compute_rsd_per_feature(internal_std_se_r()[["raw"]]),
-      )
-    # Table of internal standard features
-    # kable_internal_std <- function(se) {
-    df <- df |>
-      dplyr::select(feature_name, .rt, mz, rsd, num_zeros) |>
-      dplyr::mutate(
-        num_zeros = ifelse(num_zeros == 0, "", num_zeros) |>
-          labelled::copy_labels_from(num_zeros)
-      )
-
-    df <- data.frame(df,
-      check.names = FALSE
+  # The IS selected in table 3.1: box plot per sample group and scatter plot along the injection
+  # order, the same as in the internal report (all samples; outliers drawn as crosses)
+  output$ggplot3_1_3 <- plotly::renderPlotly({
+    se <- internal_std_se_r()
+    ii <- shiny::req(input$tb_3_1_rows_selected)   # Nothing to draw before a row is selected
+    cd <- SumExp::col_df(se)
+    smp <- tibble::as_tibble(cd) |> dplyr::mutate(group = show$sample_group(cd))
+    is_out <- to_report_r()[["is outlier sample"]]
+    show$plotly_is_distribution(
+      y = unname(se[["raw"]][ii, ]),
+      smp = smp,
+      name = SumExp::row_df(se)$feature_name[ii],
+      outlier = if (is.null(is_out)) rep(FALSE, ncol(se)) else unname(is_out[colnames(se)] %in% TRUE),
+      failed = isTRUE(to_report_r()[["is failed internal std."]][[ii]]),
+      height = 480
     )
-
-
-    selected <- input$tb_3_1_rows_selected
-
-
-    if (length(selected)) {
-      df[selected, ]
-    } else {
-      "Click on a row above."
-    }
-  })
-  box::use(patchwork)
-  box_scatter_plot_of_one_feature <- function(se, ii, widths, classes_color) {
-    feature_name <- SumExp::row_df(se)$feature_name[ii]
-    se_tbl <- SumExp::as_tibble(se[ii, ])
-    # Box plot
-    p1 <- ggplot(se_tbl) +
-      geom_boxplot(aes(x = Class, y = raw, fill = Class)) +
-      scale_fill_manual(values = classes_color) +
-      labs(title = feature_name, y = "Peak area") +
-      theme(legend.position = "none") + # No legend for fill
-      # Rotate x-axis labels
-      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-      scale_y_log10()
-    # Scatter plot across injection order
-    p2 <- ggplot(se_tbl) +
-      geom_point(aes(x = injection_order, y = raw, color = Class)) +
-      scale_color_manual(values = classes_color) +
-      labs(title = "", y = "", x = "Injection order") +
-      theme(legend.position = "none") + # No legend for fill
-      # No y-axis labels
-      theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
-      scale_y_log10()
-    # Requires patchwork package
-    p1 + p2 + patchwork::plot_layout(widths = widths)
-  }
-
-
-  output$ggplot3_1_3 <- renderPlot({
-    se_show <- internal_std_se_r()
-    selected <- shiny::req(input$tb_3_1_rows_selected)   # Nothing to draw before a row is selected
-    ggplot3_1_3 <- box_scatter_plot_of_one_feature(
-      se_show,
-      selected,
-      widths = c(0.3, 0.7),
-      classes_color = colors_of_classes()
-    )
-    ggplot3_1_3
   })
 
 
@@ -1429,6 +1091,8 @@ server <- function(input, output, session) {
     df <- df |>
       dplyr::select(feature_name, .rt, mz, rsd, num_zeros) |>
       dplyr::mutate(
+        .rt = round(.rt, 2) |> labelled::copy_labels_from(.rt),   # RT with 2 decimals
+        mz = round(mz, 5) |> labelled::copy_labels_from(mz),       # m/z with 5 decimals
         num_zeros = ifelse(num_zeros == 0, "", num_zeros) |>
           labelled::copy_labels_from(num_zeros)
       )
@@ -1636,125 +1300,162 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is for Figure in 3.2.1.1
-
+  ### This is for Figure in 3.2.1.1: one tab per volumetric internal standard (vIS), the same
+  ### plot as in the internal report (raw peak areas of all samples)
 
   output$vis_or_text_3_2_1_1 <- renderUI({
-    norm_se <- to_report_r()[["normalized"]]
-    is_vIS <- util$std_type(norm_se) == "vIS"
-    mat_ids_to_compare <- c("raw")
-
-    if (any(is_vIS)) {
-      df_show <- norm_se[is_vIS, ] |>
-        show$df_for_injection_order(mat_ids_to_compare)
-      df_show <- as.data.frame(df_show,
-        check.names = FALSE
-      )
-      ggplot3_2_1_1 <- plotly::ggplotly(
-        show$ggplot_col_injection_order(df_show,
-          fill = feature_name
-        ) +
-          labs(title = "Volumetric internal standards") +
-          # Skip the legend. Too long feature names make the plots too narrow.
-          theme(legend.position = "none")
-      )
-
-      output$ggplot3_2_1_1 <- renderPlotly({
-        ggplot3_2_1_1
-      })
-      plotlyOutput("ggplot3_2_1_1")
-    } else {
-      HTML("<h4 style='color:orange;'>No volumetric internal standards found.</h4>")
+    se <- shiny::req(raw_se_r())
+    vis <- which(util$std_type(se) %in% "vIS")
+    if (length(vis) == 0) {
+      return(HTML("<h4 style='color:orange;'>No volumetric internal standards found.</h4>"))
     }
-  })
-
-
-  output$tb_test <- DT::renderDataTable({
-    norm_se <- to_report_r()[["normalized"]]
-    df_show <- norm_se[util$is_internal_std(norm_se), ] |>
-      show$df_for_injection_order(mat_ids_to_compare) |>
-      dplyr::mutate(
-        batch_id = factor(batch_id) |> # Discrete color scale
-          labelled::copy_labels_from(batch_id)
-      )
-
-    df_show <- as.data.frame(df_show,
-      check.names = FALSE
+    cd <- SumExp::col_df(se)
+    smp <- tibble::as_tibble(cd) |> dplyr::mutate(group = show$sample_group(cd))
+    # The plots without the calibration samples unless asked for (the RSD% table has all samples)
+    keep <- isTRUE(input$vis_show_calibrants) | cd$.ctrl_cat != "CalCurve"
+    plots <- lapply(vis, function(i) {
+      nm <- SumExp::row_df(se)$feature_name[i]
+      list(name = nm, plot = show$plotly_vis_bars(unname(se[["raw"]][i, keep]), smp[keep, ], nm,
+                                                  colour_by = input$vis_colour %||% "group"))
+    })
+    # RSD% of the vIS within groups of samples, as in the internal report
+    rsd <- show$vis_rsd_table(se[["raw"]][vis, , drop = FALSE], SumExp::row_df(se)$feature_name[vis], cd) |>
+      dplyr::mutate(Grouping = factor(Grouping), Group = factor(Group))
+    rsd_tbl <- DT::datatable(rsd, rownames = FALSE, filter = "top",
+                             options = list(pageLength = 10, scrollX = TRUE, dom = "rtip"))   # Column filters only
+    shiny::tagList(
+      if (length(plots) == 1) plots[[1]]$plot else
+        do.call(shiny::tabsetPanel, lapply(plots, \(x) shiny::tabPanel(x$name, x$plot))),
+      shiny::h5("RSD% of the volumetric internal standards", style = "margin-top: 1.2em;"),
+      shiny::helpText("Raw peak areas, all samples (also outliers), within groups of samples."),
+      rsd_tbl
     )
-    DT::datatable(
-      df_show,
-      options = list(
-        scrollX = TRUE,
-        lengthChange = FALSE,
-        searching = FALSE,
-        paging = FALSE, # remove Previous/Next
-        info = FALSE, # remove "Showing X to Y of Z entries"
-        dom = "t",
-        headerCallback = JS(
-          "function(thead){",
-          "$(thead).find('th').css({'color': 'green',
-                                            'font-weight': 'bold'});", "}"
-        ),
-        columnDefs = list(
-          list(className = "dt-center", targets = "_all") # <--- centers all text
-        )
-      )
-    ) |>
-      DT::formatStyle(
-        columns = names(df_show),
-        color = "#000000",
-        backgroundColor = "#FFFFFF",
-        target = "cell"
-      ) |>
-      DT::formatStyle(
-        names(df_show),
-        backgroundColor = "#F8FAFF",
-        target = "row"
-      )
   })
 
 
   ################################################################################################################
-  ### This is for Figure in 3.2.1.2
-  output$ggplot3_2_1_2 <- renderPlotly({
+  ### This is for Figure in 3.2.1.2: two independent stacked bar plots of the internal standards,
+  ### the same as the internal report's "Internal standards over the sequence"
+
+  # Internal standards after the QC steps (failed IS and outlier samples removed)
+  # (and the calibration samples unless asked for)
+  is_bars_se_r <- shiny::reactive({
     norm_se <- to_report_r()[["normalized"]]
-    is_vIS <- util$std_type(norm_se) == "vIS"
-    mat_ids_to_compare <- c("raw", "loess_norm")
-
-    df_show <- norm_se[util$is_internal_std(norm_se), ] |>
-      show$df_for_injection_order(mat_ids_to_compare) |>
-      dplyr::mutate(
-        batch_id = factor(batch_id) |> # Discrete color scale
-          labelled::copy_labels_from(batch_id)
-      )
-
-    df_show <- as.data.frame(df_show,
-      check.names = FALSE
-    )
-    df_show$Class <- factor(df_show$Class)
-    df_show$batch_id <- factor(df_show$batch_id)
-    df_show$feature_name <- factor(df_show$feature_name)
-    shiny::req(input$group_choice)
-    if (input$group_choice == "class") {
-      plotly::ggplotly(
-        show$ggplot_col_injection_order(df_show, fill = Class) +
-          labs(title = "Internal standards")
-      )
-    } else if (input$group_choice == "batch") {
-      plotly::ggplotly(
-        show$ggplot_col_injection_order(df_show, fill = batch_id) +
-          labs(title = "Internal standards")
-      )
-    } else if (input$group_choice == "internal_std") {
-      plotly::ggplotly(
-        show$ggplot_col_injection_order(df_show, fill = feature_name) +
-          labs(title = "Internal standards") +
-          # Skip the legend. Too long feature names make the plots too narrow.
-          theme(legend.position = "none")
-      )
+    keep <- isTRUE(input$isbar_show_calibrants) | util$ctrl_smpl_cat(norm_se) != "CalCurve"
+    norm_se[util$is_internal_std(norm_se), keep]
+  })
+  # Values to choose from: raw and the normalization methods in the data
+  shiny::observe({
+    labs <- c(raw = "Raw", closest_norm = "Closest RT", loess_norm = "LOESS", mvis_norm = "Multivariate (PCA)")
+    avail <- labs[names(labs) %in% names(is_bars_se_r())]
+    choices <- stats::setNames(names(avail), avail)
+    best <- tryCatch(best_norm_r(), error = function(e) NULL)
+    defaults <- c(a = "raw", b = if (!is.null(best) && best %in% choices) best else choices[[min(2, length(choices))]])
+    for (k in c("a", "b")) {
+      cur <- shiny::isolate(input[[paste0("isbar_values_", k)]])
+      shiny::updateSelectInput(session, paste0("isbar_values_", k), choices = choices,
+                               selected = if (!is.null(cur) && cur %in% choices && cur != "raw") cur else defaults[[k]])
     }
   })
+  for (k in c("a", "b")) {
+    local({
+      k <- k
+      output[[paste0("ggplot3_2_1_2", k)]] <- plotly::renderPlotly({
+        se <- is_bars_se_r()
+        m <- shiny::req(input[[paste0("isbar_values_", k)]])
+        shiny::req(m %in% names(se))
+        labs <- c(raw = "Raw", closest_norm = "Closest RT", loess_norm = "LOESS", mvis_norm = "Multivariate (PCA)")
+        show$plotly_is_bars(se, m, colour_by = shiny::req(input[[paste0("isbar_colour_", k)]]),
+                            title = paste("Internal standards —", labs[[m]]), height = 480)
+      })
+    })
+  }
 
+  ################################################################################################################
+  ### This is for Figure 3.3 (QC/QA): one feature in the blanks compared to the other sample groups,
+  ### with the threshold of the blank filter. The data before blank filtering (all features).
+
+  blank_cmp_se_r <- shiny::reactive({
+    se <- to_report_r()[["normalized"]]
+    shiny::req(se, any(util$ctrl_smpl_cat(se) == "Blank"))
+    se
+  })
+  # Feature type and label of each feature: names, or "Unk_<m/z>_<RT>" for non-targeted features
+  blank_features_r <- shiny::reactive({
+    se <- blank_cmp_se_r()   # Evaluated before the S4 method (a `req()` inside it would be an error)
+    rd <- SumExp::row_df(se)
+    std <- rd$.std_type
+    type <- dplyr::case_when(
+      std %in% "vIS" ~ "is",                 # Volumetric IS with the internal standards
+      util$is_internal_std(std) ~ "is",
+      util$is_targeted_feature(std) ~ "targeted",
+      TRUE ~ "nontargeted"
+    )
+    tibble::tibble(feature_id = rownames(rd), type = type,
+                   label = ifelse(type == "nontargeted", sprintf("Unk_%.4f_%.2f", rd$mz, rd$.rt),
+                                  rd$feature_name))
+  })
+  # Features removed by the blank filter for the chosen values (matrix)
+  blank_removed_r <- shiny::reactive({
+    rem <- to_report_r()[["removed features"]]
+    m <- shiny::req(input$blank_values)
+    if (is.null(rem)) return(character(0))
+    rem$feature_id[rem$mat_id == m & rem$reason == "Blank filter"]
+  })
+  # Values to choose from: raw and the normalization methods in the data
+  shiny::observe({
+    labs <- c(raw = "Raw", closest_norm = "Closest RT", loess_norm = "LOESS", mvis_norm = "Multivariate (PCA)")
+    se <- blank_cmp_se_r()
+    avail <- labs[names(labs) %in% names(se)]
+    cur <- shiny::isolate(input$blank_values)
+    shiny::updateSelectInput(session, "blank_values", choices = stats::setNames(names(avail), avail),
+                             selected = if (!is.null(cur) && cur %in% names(avail)) cur else "raw")
+  })
+  # Features to choose from (server-side search in the dropdown)
+  shiny::observe({
+    f <- blank_features_r()
+    keep <- if (input$blank_type == "all") TRUE else f$type == input$blank_type
+    if (isTRUE(input$blank_removed_only)) keep <- keep & f$feature_id %in% blank_removed_r()
+    f <- f[keep, ]
+    f <- f[order(f$label), ]
+    if (nrow(f) == 0) {   # E.g. no non-targeted features in the data: say so in the box
+      shiny::updateSelectizeInput(session, "blank_feature", choices = character(0), selected = character(0),
+                                  options = list(placeholder = "No features of this kind"))
+      return()
+    }
+    cur <- shiny::isolate(input$blank_feature)
+    shiny::updateSelectizeInput(session, "blank_feature", server = TRUE,
+                                choices = stats::setNames(f$feature_id, f$label),
+                                selected = if (!is.null(cur) && cur %in% f$feature_id) cur else f$feature_id[1],
+                                options = list(placeholder = "Type to search…"))
+  })
+  output$ggplot3_3 <- plotly::renderPlotly({
+    se <- blank_cmp_se_r()
+    shiny::validate(shiny::need(isTruthy(input$blank_feature), "No features of this kind in the data."))
+    fid <- input$blank_feature
+    m <- shiny::req(input$blank_values)
+    shiny::req(fid %in% rownames(se), m %in% names(se))
+    cd <- SumExp::col_df(se)
+    keep <- isTRUE(input$blank_show_calibrants) | cd$.ctrl_cat != "CalCurve"
+    smp <- tibble::as_tibble(cd[keep, ]) |> dplyr::mutate(group = show$sample_group(cd[keep, ]))
+    p <- to_report_r()[["params"]]
+    f <- blank_features_r()
+    removed <- fid %in% blank_removed_r()
+    subtitle <- if (!isTRUE(p$blank_filter)) {
+      "Blank filter not used in this processing"
+    } else if (removed) {
+      "<span style='color:#c23636'><b>Removed by the blank filter</b></span>"
+    } else {
+      "<span style='color:#2E9E5B'><b>Kept by the blank filter</b></span>"
+    }
+    labs <- c(raw = "Raw peak area", closest_norm = "Closest RT normalized",
+              loess_norm = "LOESS normalized", mvis_norm = "Multivariate (PCA) normalized")
+    show$plotly_blank_comparison(
+      y = unname(se[[m]][fid, keep]), smp = smp, name = f$label[match(fid, f$feature_id)],
+      factor = p$blank_filter_factor %||% 5, view = input$blank_view, subtitle = subtitle,
+      y_title = labs[[m]]
+    )
+  })
 
   ################################################################################################################
   ### This is for figure 3.2.3
@@ -1820,12 +1521,17 @@ server <- function(input, output, session) {
     df_to_show <- data.frame(df_to_show,
       check.names = FALSE
     )
+    df_to_show$QC <- factor(df_to_show$QC)   # A dropdown filter of the QC groups
+    # Scrolls within a box; filters on the QC group and the feature (search) columns only
     DT::datatable(
       df_to_show,
+      rownames = FALSE,
+      filter = "top",
       options = list(
         scrollX = TRUE,
+        scrollY = "400px",
+        scrollCollapse = TRUE,
         lengthChange = FALSE,
-        searching = FALSE,
         paging = FALSE, # remove Previous/Next
         info = FALSE, # remove "Showing X to Y of Z entries"
         dom = "t",
@@ -1835,7 +1541,8 @@ server <- function(input, output, session) {
                                             'font-weight': 'bold'});", "}"
         ),
         columnDefs = list(
-          list(className = "dt-center", targets = "_all") # <--- centers all text
+          list(className = "dt-center", targets = "_all"), # <--- centers all text
+          list(searchable = FALSE, targets = seq_len(ncol(df_to_show) - 2) + 1)   # Values: no filter
         )
       )
     ) |>
@@ -1927,7 +1634,7 @@ server <- function(input, output, session) {
                        sum(show_df$Type == "Targeted"), " targeted, ",
                        sum(show_df$Type != "Targeted"), " non-targeted)"),
       options = list(scrollX = TRUE, scrollY = "300px", paging = FALSE, info = FALSE,
-                     dom = "ft")   # Search box: find a feature
+                     dom = "t")
     )
   })
 
@@ -2135,7 +1842,9 @@ server <- function(input, output, session) {
       # Prepare data of the selected batch. Rows are in the order of `rownames(calcurve)`, which
       # the figures use to find the selected chemical.
       se <- calib_batch_proc_r()$calcurve
-      limit_df <- SumExp::row_df(se) |>
+      batch <- shiny::isolate(input$calib_batch)
+      rd <- SumExp::row_df(se)
+      limit_df <- rd |>
         dplyr::select(
           min_c_conc,
           max_c_conc,
@@ -2145,7 +1854,28 @@ server <- function(input, output, session) {
           src_calcurve
         ) |>
         tibble::as_tibble(rownames = "feature_id") |>
-        dplyr::mutate(batch = shiny::isolate(input$calib_batch))
+        dplyr::mutate(
+          batch = batch,
+          # Why the curve is not valid, kept or replaced by the global one (data processed by
+          # older versions have no reasons)
+          reason = show$calib_issue_text(rd),
+          has_reason = !is.null(rd$range_issue),
+          is_kept = rd$kept_calcurve %in% TRUE
+        )
+      # Detected (signal at or above the LOD signal) / quantified (exported: a value at or above
+      # the LLOQ) in any study sample of the batch
+      concn <- calib_batch_proc_r()$concn
+      rd_q <- SumExp::row_df(concn)[limit_df$feature_id, , drop = FALSE]
+      study <- util$extract_ctrl_smpl_cat(concn, "")[limit_df$feature_id, ]
+      sig <- study[[util$src_mat_id_for_conc(concn)]]
+      if (isTRUE(to_report_r()[["params"]][["log_calibration"]])) sig <- log1p(sig)   # As the limits
+      detected <- rowSums(sig >= rd_q$lod_signal, na.rm = TRUE) > 0
+      limit_df$detection <- dplyr::case_when(
+        !(rd_q$has_proper_range %in% TRUE) ~ "",   # No curve: the reason says why
+        !detected ~ "Not detected in any study sample",
+        !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
+        TRUE ~ ""
+      )
       # Select the same chemical as before the batch / normalization method changed
       prev_id <- shiny::isolate(calib_feature_id())   # NULL until a chemical has been selected
       preselect <- if (is.null(prev_id)) NA_integer_ else match(prev_id, limit_df$feature_id)
@@ -2156,7 +1886,13 @@ server <- function(input, output, session) {
         dplyr::rename(min_c = min_c_conc, max_c = max_c_conc) |>
         dplyr::mutate(
           lod = ifelse(is.na(lod), "N.A.", as.character(lod)),
-          min_c = ifelse(is.na(min_c), "No valid pts.", as.character(min_c)),
+          min_c = dplyr::case_when(
+            is.na(min_c) ~ "No valid pts.",
+            # A curve kept although not valid can start below its LLOQ, or have none
+            is_kept & is.na(lloq) ~ paste0("None (curve from ", min_c, ")"),
+            is_kept & lloq != min_c ~ paste0(lloq, " (curve from ", min_c, ")"),
+            TRUE ~ as.character(min_c)
+          ),
 
           # ✅ flags for coloring
           is_bad = !has_proper_range,
@@ -2164,10 +1900,17 @@ server <- function(input, output, session) {
           # Calibration curve used for quantification: "Batch", "Global" or "None"
           calibration = dplyr::coalesce(src_calcurve, "None"),
           Note = dplyr::case_when(
+            has_reason ~ reason,
             max_c == 0 ~ "All zero",
             is.na(max_c) ~ paste0("<", min_cal_points ," valid pts."),
             !has_proper_range ~ "Excluded",
             TRUE ~ ""
+          ),
+          # With the detection in the study samples
+          Note = dplyr::case_when(
+            Note == "" ~ detection,
+            detection == "" ~ Note,
+            TRUE ~ paste0(Note, "; ", detection)
           ),
           max_c = dplyr::case_when(
             max_c == -9 ~ "No valid max",
@@ -2187,7 +1930,8 @@ server <- function(input, output, session) {
           Note,
           is_global,
           is_bad,
-          is_removed
+          is_removed,
+          is_kept
         )
 
       # Targeted compounds removed before calibration (blank filter / QC RSD% filter) are listed
@@ -2205,14 +1949,14 @@ server <- function(input, output, session) {
             Note = ifelse(rem$reason == "QC RSD%",
                           paste0("Removed: QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
                           "Removed: blank filter"),
-            is_global = FALSE, is_bad = FALSE, is_removed = TRUE
+            is_global = FALSE, is_bad = FALSE, is_removed = TRUE, is_kept = FALSE
           ))
         }
       }
 
       show_df <- as.data.frame(show_df, check.names = FALSE)
       # Positions of the helper columns in the DataTable (0 is the row name column)
-      i_flag <- match(c("is_global", "is_bad", "is_removed"), names(show_df))
+      i_flag <- match(c("is_global", "is_bad", "is_removed", "is_kept"), names(show_df))
 
       # --------------------------------------------------------
       DT::datatable(
@@ -2228,12 +1972,12 @@ server <- function(input, output, session) {
           # Hide the helper columns
           columnDefs = list(list(targets = i_flag, visible = FALSE)),
 
-          # Row colors: red = no proper calibration range, blue = global calibration curve,
-          # grey = removed before calibration
+          # Row colors: red = no proper calibration range, orange = curve kept although not
+          # valid, blue = global calibration curve, grey = removed before calibration
           rowCallback = JS(sprintf("
           function(row, data) {
-            var is_global = data[%d], is_bad = data[%d], is_removed = data[%d];
-            var color = is_removed ? '#D9D9D9' : (is_bad ? 'lightcoral' : (is_global ? 'lightblue' : null));
+            var is_global = data[%d], is_bad = data[%d], is_removed = data[%d], is_kept = data[%d];
+            var color = is_removed ? '#D9D9D9' : (is_bad ? 'lightcoral' : (is_kept ? '#FFD9A0' : (is_global ? 'lightblue' : null)));
             if (color) {
               $('td', row).each(function() {
                 this.style.setProperty('background-color', color, 'important');
@@ -2241,7 +1985,7 @@ server <- function(input, output, session) {
               });
             }
           }
-        ", i_flag[1], i_flag[2], i_flag[3]))
+        ", i_flag[1], i_flag[2], i_flag[3], i_flag[4]))
         )
       )
     }
@@ -2282,6 +2026,9 @@ server <- function(input, output, session) {
         dplyr::rename(.cc_pt = util$spiked_conc_pts_name) |>
         dplyr::mutate(
           c_type = dplyr::case_when(
+            # The LOD level is also the LLOQ (the start of the curve): its own colour, as it
+            # would otherwise be one of the points within the limits
+            .cc_pt == lod & .cc_pt == lloq & .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "LOD = LLOQ",
             .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "Within limits",
             .cc_pt == lod ~ "LOD",
             .cc_pt == 0 ~ "Cal0",
@@ -2293,6 +2040,7 @@ server <- function(input, output, session) {
       # Data of the chemical selected in table 4.2
       dfm <- calcurve_to_show_df[calcurve_to_show_df$.row_id == calib_selected_feature_r(), ]
       shiny::req(nrow(dfm) > 0)
+      sel_row_df <- SumExp::row_df(calcurve_lst[[1]])[calib_selected_feature_r(), , drop = FALSE]
 
       ############################################
       # Plot function
@@ -2309,7 +2057,15 @@ server <- function(input, output, session) {
             )
           )
 
-        facet_fill <- if (any(!dfm$has_proper_range)) "lightcoral" else "lightgray"
+        facet_fill <- if (!isTRUE(sel_row_df$has_proper_range)) "lightcoral" else
+          if (isTRUE(sel_row_df$kept_calcurve)) "#FFD9A0" else "lightgray"
+        # Why the curve of the selected batch is not valid, kept or replaced by the global one,
+        # under the name
+        reason <- show$calib_issue_text(sel_row_df)
+        if (nzchar(reason)) dfm$feature_name <- paste0(dfm$feature_name, "\n", reason)
+        # No quantifiable sample: the full range is shown (where they could have been quantified)
+        range_note <- show$calib_range_note(sel_row_df)
+        if (nzchar(range_note)) dfm$feature_name <- paste0(dfm$feature_name, "\n", range_note)
 
         ggplot(dfm, aes(x = .cc_pt, y = .data[[y]])) +
 
@@ -2331,6 +2087,7 @@ server <- function(input, output, session) {
           ) +
           scale_color_manual(values = c(
             "Within limits" = "green4",
+            "LOD = LLOQ" = "#E8B730",   # Yellow
             "Out-of-range" = "gray",
             "Cal0" = "red",
             "LOD" = "blue"
@@ -2363,7 +2120,9 @@ server <- function(input, output, session) {
       p_main <- calcurve_plot(dfm)
 
       if (log_scale) {
-        p_main <- p_main + scale_x_log10() + scale_y_log10()
+        p_main <- p_main + scale_x_log10() + scale_y_log10(labels = show$label_e)
+      } else {
+        p_main <- p_main + scale_y_continuous(labels = show$label_e)   # Scientific, as elsewhere
       }
 
       ############################################
@@ -2407,6 +2166,11 @@ server <- function(input, output, session) {
       shiny::req(feature_id %in% rownames(concn_se))
       se_selected <- concn_se[rownames(concn_se) == feature_id, ]
 
+      # Why the curve is not valid, kept or replaced by the global one ("" if used as is), and
+      # whether the full range is shown as no sample is quantifiable
+      reason <- show$calib_issue_text(SumExp::row_df(se_selected))
+      range_note <- show$calib_range_note(SumExp::row_df(se_selected))
+      reason <- paste(c(reason, range_note)[nzchar(c(reason, range_note))], collapse = " · ")
       if (!isTRUE(SumExp::row_df(se_selected)$has_proper_range)) {
 
 
@@ -2419,7 +2183,8 @@ server <- function(input, output, session) {
             yaxis = list(visible = FALSE),
             annotations = list(
               list(
-                text = "Not detected / quantified in samples",
+                text = paste0("No valid calibration curve<br><span style='font-size:16px'>",
+                              htmltools::htmlEscape(sub("^Not valid: ", "", reason)), "</span>"),
                 x = 0.5,
                 y = 0.5,
                 xref = "paper",
@@ -2440,10 +2205,20 @@ server <- function(input, output, session) {
         )
         ############################################
         # ✅ Convert to plotly
-        plotly::ggplotly(p, tooltip = "text") |>
+        p_ly <- plotly::ggplotly(p, tooltip = "text") |>
           plotly::layout(
-            margin = list(t = 50, b = 100, l = 50, r = 50)
+            margin = list(t = if (nzchar(reason)) 80 else 50, b = 100, l = 50, r = 50)
           )
+        if (nzchar(reason)) {
+          # Added to the annotations of ggplotly (facet labels)
+          p_ly <- plotly::plotly_build(p_ly)
+          p_ly$x$layout$annotations <- c(p_ly$x$layout$annotations, list(list(
+            text = htmltools::htmlEscape(reason), x = 0, y = 1.06, xref = "paper", yref = "paper",
+            xanchor = "left", yanchor = "bottom", showarrow = FALSE,
+            font = list(size = 13, color = if (isTRUE(SumExp::row_df(se_selected)$kept_calcurve)) "#B26A00" else "#2F5BEA")
+          )))
+        }
+        p_ly
       }
     }
   })
@@ -2451,11 +2226,11 @@ server <- function(input, output, session) {
   ################################################################################################################
   ### This is for Figrue 5.1
 
-  output$ggplot5_1 <- renderPlot({
+  output$ggplot5_1 <- renderPlotly({
     shiny::req(to_report_r())
 
     if (shiny::req(is_target_mode())) {
-      log_scale <- to_report_r()[["params"]][["log_calibration"]]
+      log_scale <- isTRUE(to_report_r()[["params"]][["log_calibration"]])
 
       # ------------------------------------------------------------
       # Prepare data of the selected batch and chemical (by feature ID, not by name)
@@ -2465,56 +2240,27 @@ server <- function(input, output, session) {
       df1 <- show_df[show_df$.row_id == feature_id, ]
 
       # ------------------------------------------------------------
-      # ✅ ✅ DATA VALIDATION (IMPORTANT)
-      if (
-        is.null(df1) ||
-          nrow(df1) == 0
-      ) {
-        # ✅ Show message plot instead of empty plot
-        ggplot() +
-          annotate(
-            "text",
-            x = 0.5,
-            y = 0.5,
-            label = "Not detected / quantified in samples",
-            size = 10,
-            color = "gray"
-          ) +
-          theme_void()
+      # No concentrations: a message instead of an empty plot
+      if (is.null(df1) || nrow(df1) == 0 || all(is.na(df1$conc))) {
+        plotly::plot_ly() |>
+          plotly::layout(
+            xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
+            annotations = list(list(text = "Not detected / quantified in samples", x = 0.5, y = 0.5,
+                                    xref = "paper", yref = "paper", showarrow = FALSE,
+                                    font = list(size = 24, color = "gray")))
+          )
       } else {
         # ------------------------------------------------------------
-        # Normal plot
-        p <- ggplot(df1) +
-          geom_boxplot(
-            aes(x = Class, y = conc, fill = Class, color = Class),
-            outlier.shape = NA
-          ) +
-          geom_point(
-            aes(x = Class, y = conc, fill = Class, color = Class),
-            position = position_jitter(width = 0.2),
-            size = 1.8,
-            alpha = 0.7
-          ) +
-          labs(
-            title = df1$feature_name[1],
-            x = labelled::get_label_attribute(df1$Class),
-            y = labelled::get_label_attribute(df1$conc)
-          ) +
-          theme(
-            axis.text.x = element_text(angle = 90, hjust = 1),
-            legend.position = "none"
-          ) +
-          scale_fill_manual(values = colors_of_classes()) +
-          scale_color_manual(values = colors_of_classes())
-
-        # ✅ Safe log scale (avoid disappearing plots)
-        if (log_scale) {
-          p <- p + scale_y_continuous(
-            trans = scales::pseudo_log_trans(base = 10)
-          )
-        }
-
-        p
+        # Box per class; points of the values replaced by the LOD/LLOQ rules coloured as in
+        # the exported tables. Hover for the sample; Linear/Log buttons
+        hover <- paste0("<b>", df1$sample_name, "</b><br>", df1$Class, " · batch ", df1$batch_id,
+                        " · inj. ", df1$injection_order, "<br>conc. ", signif(df1$conc, 4),
+                        " (", show$imputed_kind(df1$conc, df1$lloq), ")")
+        show$plotly_conc_by_class(
+          conc = df1$conc, lloq = df1$lloq, cats = as.character(df1$Class),
+          cat_colors = colors_of_classes(), hover = hover, name = df1$feature_name[1],
+          y_title = labelled::get_label_attribute(df1$conc) %||% "Concentration", log = log_scale
+        )
       }
     }
   })

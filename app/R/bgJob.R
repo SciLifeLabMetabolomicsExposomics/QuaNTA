@@ -64,7 +64,9 @@ run_bg_rscript <- function(session, ws, script, job, progress_message, on_done, 
 #' @param log The log lines passed to `on_done()` of [run_bg_rscript()].
 #' @export
 bg_error_message <- function(log) {
+  log <- log[!grepl("^Execution halted", log)]   # Rscript's closing line adds nothing for users
   i <- grep("^Error|error:", log)
   if (length(i) == 0) return(paste(utils::tail(log, 3), collapse = " "))
-  paste(log[i[1]:min(length(log), i[1] + 2)], collapse = " ")
+  msg <- paste(log[i[1]:min(length(log), i[1] + 2)], collapse = " ")
+  sub("^Error( in [^:]*)?:\\s*", "", msg)   # "Error: ..." -> "..."
 }

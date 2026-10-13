@@ -104,6 +104,67 @@ get_three_section_indices <- function(msdial_file) {
   )
 }
 
+#' Required feature columns of a MS-DIAL output file
+#'
+#' Exact, case-sensitive names. A character vector of alternatives means one of them.
+#' @export
+required_feature_columns <- list(
+  "Alignment ID",
+  "Metabolite name",
+  c("Average Mz", "Quant mass"),
+  "Average Rt(min)",
+  "Comment"
+)
+
+#' Check the feature columns of a MS-DIAL output file
+#'
+#' Only columns whose names match exactly (including upper/lower case) are used; similar columns,
+#' e.g. "Comment_NEW" or "comment", are ignored. Stops with an explanation when a required column
+#' is missing or present more than once, so that no other column can be used by mistake. Similar
+#' but ignored columns are reported as a message.
+#'
+#' @param msdial_file Path to the MS-DIAL output file
+#' @param indices The indices of the feature columns (the 1st section, see
+#'   [get_three_section_indices()])
+#' @returns The names of the feature columns, invisibly
+#' @export
+check_feature_columns <- function(msdial_file, indices) {
+  header <- strsplit(readLines(msdial_file, n = 5L, warn = FALSE)[5L], "\t", fixed = TRUE)[[1L]]
+  header <- gsub('^"|"$', "", trimws(header[indices], whitespace = "[\r\n]"))
+  similar_to <- function(name) {
+    header[grepl(tolower(name), tolower(header), fixed = TRUE) & !header %in% unlist(required_feature_columns)]
+  }
+  quote <- function(x) paste0('"', x, '"', collapse = ", ")
+  problems <- character()
+  for (req in required_feature_columns) {
+    n_found <- vapply(req, function(r) sum(header == r), integer(1))
+    alt <- if (length(req) > 1) paste0(" (or ", quote(req[-1]), ")") else ""
+    if (sum(n_found) == 0) {
+      similar <- unique(unlist(lapply(req, similar_to)))
+      problems <- c(problems, paste0(
+        "Missing column ", quote(req[1]), alt, ".",
+        if (length(similar) > 0) paste0(" Similar column(s) found but not used: ", quote(similar), ".") else ""
+      ))
+    } else if (any(n_found > 1)) {
+      problems <- c(problems, paste0("Column ", quote(req[n_found > 1]), " is present ", max(n_found),
+                                     " times; it must be present exactly once."))
+    } else if (sum(n_found > 0) > 1) {
+      problems <- c(problems, paste0("Both ", quote(req[n_found > 0]), " are present; keep only one of them."))
+    }
+  }
+  if (length(problems) > 0) {
+    stop("The feature columns of the MS-DIAL file are not as expected:\n  - ",
+         paste(problems, collapse = "\n  - "),
+         "\nColumn names must match exactly, including upper/lower case.", call. = FALSE)
+  }
+  ignored <- unique(unlist(lapply(unlist(required_feature_columns), similar_to)))
+  if (length(ignored) > 0) {
+    message("Note: column(s) ", quote(ignored), " are similar to required columns but not used ",
+            "(only exact names are used: ", quote(unlist(required_feature_columns)), ").")
+  }
+  invisible(header)
+}
+
 #' Fetch sample information from the first 5 lines
 #'
 #' @param msdial_file Path to the MS-DIAL output file
@@ -193,16 +254,55 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
 
 # -----  EXPORT DATA  ----------------------------------------------------------
 
+#' Maximum number of decimals of concentrations and peak areas in the exported tables
+.max_decimals <- 3L
+#' Decimals of retention times and m/z values in the exported tables, by column name
+.rt_columns <- c("Average Rt(min)", "Target IS (Rt)")
+.rt_decimals <- 2L
+.mz_columns <- "Average Mz"
+.mz_decimals <- 5L
+
+#' Round the retention times and m/z values of a table (columns named as in MS-DIAL files)
+.round_rt_mz <- function(df) {
+  for (cc in intersect(.rt_columns, names(df))) {
+    if (is.numeric(df[[cc]])) df[[cc]] <- round(df[[cc]], .rt_decimals)
+  }
+  for (cc in intersect(.mz_columns, names(df))) {
+    if (is.numeric(df[[cc]])) df[[cc]] <- round(df[[cc]], .mz_decimals)
+  }
+  df
+}
+
 #' Find the number of decimal places for rounding
-#' 
+#'
 #' The number of decimal places is determined by the median of the log10 of the absolute
-#' values. The maximum number of decimal places is 4.
+#' values (4 significant digits at the median), at most `.max_decimals`.
 .find_rounding_decimal_places <- function(x) {
   x <- abs(x)
   x[x == 0] <- NA
   logx <- log10(x)
   m <- stats::median(logx, na.rm = TRUE)
-  max(0, -floor(m) + 4)
+  if (is.na(m)) return(.max_decimals)
+  min(.max_decimals, max(0, -floor(m) + 4))
+}
+
+#' Columns of text that hold numbers as numbers
+#'
+#' MS-DIAL writes "null" for missing values, so that columns such as "Reference RT" are read as
+#' text and would be stored as text in Excel. A text column is converted when all its values,
+#' apart from missing ones ("", "null", "NA", "NaN", "N/A"), are numbers.
+#'
+#' @param df A data frame
+#' @returns `df` with the converted columns
+.numbers_as_numeric <- function(df) {
+  df[] <- lapply(df, function(x) {
+    if (!is.character(x)) return(x)
+    y <- trimws(x)
+    y[y %in% c("", "null", "NA", "NaN", "N/A")] <- NA_character_
+    num <- suppressWarnings(as.numeric(y))
+    if (any(!is.na(y)) && all(is.na(y) | !is.na(num))) num else x
+  })
+  df
 }
 
 #' Get sample information rows
@@ -272,26 +372,34 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
     rowNames = TRUE
   )
 
-  # Convert to integer format for columns in `sinfo`
-  i_to_update <- which(rownames(sinfo) %in% c("Injection Order", "Given Batch ID"))
-  for (ii in i_to_update) {
-    row_as_int <- as.integer(sinfo[ii, ])
-
+  # Rows of numbers (e.g. injection order, batch ID) as numbers, not text
+  for (ii in seq_len(nrow(sinfo))) {
+    row_num <- .numbers_as_numeric(data.frame(x = sinfo[ii, ]))$x
+    if (!is.numeric(row_num)) next
     .write_data_wb_sheet(
-      x = as.data.frame(t(row_as_int)),
+      x = as.data.frame(t(row_num)),
       startCol = ncol(feat_tbl) + 1L,
       startRow = ii,
       colNames = FALSE
     )
   }
 
-  # Write feature data table
-  df_x <- .append_matrix_with_feature_table(sumexp, mat_id, feat_tbl)
+  # Write feature data table; feature information with numbers as numbers
+  df_x <- .append_matrix_with_feature_table(sumexp, mat_id, feat_tbl) |>
+    .numbers_as_numeric() |>
+    .round_rt_mz()
   .write_data_wb_sheet(
     x = df_x,
     startRow = nrow(sinfo) + 1,
     colNames = TRUE
   )
+  # R2 always with 3 decimals (numbers formatted "0.000", e.g. 0.950)
+  i_r2 <- which(names(df_x) %in% c("R2", "Average R2"))
+  if (length(i_r2) > 0 && nrow(df_x) > 0) {
+    openxlsx::addStyle(wb, sheetName, openxlsx::createStyle(numFmt = "0.000"),
+                       rows = nrow(sinfo) + 1 + seq_len(nrow(df_x)), cols = i_r2,
+                       gridExpand = TRUE, stack = TRUE)
+  }
   return(wb)
 }
 
@@ -300,13 +408,29 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
   sumexp[, !util$is_calcurve_sample(sumexp)]
 }
 
-#' Reorder the samples as QC first and blank last
+#' Batch IDs as sortable numbers ("2" before "10")
+.batch_rank <- function(sumexp) {
+  b <- as.character(SumExp::col_df(sumexp)[["batch_id"]])
+  match(b, stringr::str_sort(unique(b), numeric = TRUE))
+}
+
+#' Injection order as numbers
+.injection_order <- function(sumexp) {
+  suppressWarnings(as.numeric(as.character(SumExp::col_df(sumexp)[["injection_order"]])))
+}
+
+#' Reorder the samples as QCs first (leftmost columns), then the study samples and the blanks
+#' last (rightmost columns); within each, by batch and injection order
 .reorder_samples_as_qc_first <- function(sumexp) {
-  batch_ids <- as.character(SumExp::col_df(sumexp)[["batch_id"]])
-  is_qc <- util$ctrl_smpl_cat(sumexp) == "QC"
-  is_blank <- util$ctrl_smpl_cat(sumexp) == "Blank"
-  ord <- order(batch_ids, !is_qc, is_blank)  # TRUE is larger. 
+  cat <- util$ctrl_smpl_cat(sumexp)
+  rank_cat <- ifelse(cat == "QC", 1L, ifelse(cat == "Blank", 3L, 2L))
+  ord <- order(rank_cat, .batch_rank(sumexp), .injection_order(sumexp))
   sumexp[, ord]
+}
+
+#' Reorder the samples by batch and injection order (the order of the measurements)
+.reorder_samples_by_injection <- function(sumexp) {
+  sumexp[, order(.batch_rank(sumexp), .injection_order(sumexp))]
 }
 
 #' Export data with the feature table to a Excel `xlsx` file
@@ -389,7 +513,7 @@ export_data_with_feature_table_xlsx <- function(sumexp_lst,
 #'
 #' @export
 tbl_chemical_summary <- function(sumexp) {
-  # Non-control samples only
+  # Study samples only (no QCs, blanks or calibration samples)
   sumexp <- util$extract_ctrl_smpl_cat(sumexp, "")
   # Information about the chemicals
   chemicals <- SumExp::row_df(sumexp) |>
@@ -397,7 +521,8 @@ tbl_chemical_summary <- function(sumexp) {
     dplyr::rename(chem_name = "feature_name")
   # Concentration
   mat <- sumexp[["conc"]]
-  mat_ge_lloq <- ifelse(mat >= chemicals$lloq, mat, NA_real_)
+  # Measured values at or above the LLOQ, for the min/median/mean/max
+  mat_ge_lloq <- measured_conc(sumexp)
   # Signal matrix
   mat_signal <- sumexp[[util$src_mat_id_for_conc(sumexp)]]
   # No need but to be safe
@@ -424,7 +549,7 @@ tbl_chemical_summary <- function(sumexp) {
       median = apply(mat_ge_lloq, 1, .skip_all_na, fun = stats::median),
       mean = apply(mat_ge_lloq, 1, .skip_all_na, fun = mean),
       min = apply(mat_ge_lloq, 1, .skip_all_na, fun = min),
-      max = apply(mat, 1, .skip_all_na, fun = max),
+      max = apply(mat_ge_lloq, 1, .skip_all_na, fun = max),
     )
   
   # Write an equation for the calibration curve model
@@ -469,6 +594,23 @@ tbl_chemical_summary <- function(sumexp) {
     )
 }
 
+#' Measured concentrations of the study samples, for the statistics (min, median, mean, max)
+#'
+#' Values at or above the LLOQ that were not replaced by the LOD/LLOQ rules (unchanged from
+#' `conc0`; e.g. a value set to the LLOQ is left out); QCs, blanks and calibration samples are
+#' left out.
+#'
+#' @param sumexp A [`SumExp::SumExp`] object with the `conc` (and `conc0`) matrices and the `lloq`
+#'   per chemical
+#' @returns A matrix of the study samples: the measured values, otherwise `NA`
+#' @export
+measured_conc <- function(sumexp) {
+  sumexp <- util$extract_ctrl_smpl_cat(sumexp, "")
+  mat <- sumexp[["conc"]]
+  measured <- if ("conc0" %in% names(sumexp)) mat == sumexp[["conc0"]] else TRUE
+  ifelse(mat >= SumExp::row_df(sumexp)$lloq & measured, mat, NA_real_)
+}
+
 #' One summary chemical table across batches
 .summary_chemical_table <- function(sumexp_lst, is_closest_norm = FALSE) {
   stopifnot(inherits(sumexp_lst, "SumExp") || is.list(sumexp_lst))
@@ -503,7 +645,17 @@ tbl_chemical_summary <- function(sumexp) {
       n_d_s = paste0("(", n_det, "/", n_samples, ")"),
       n_q_s = paste0("(", n_quant, "/", n_samples, ")"),
       model_r2 = round(model_r2, 3),
-    ) 
+    )
+  # Average and median over the measured values of all batches together (not of the batches'
+  # averages); each batch's values are those of its own calibration
+  measured_all <- do.call(cbind, lapply(sumexp_lst, \(se) {
+    m <- measured_conc(se)
+    rownames(m) <- SumExp::row_df(se)$alignment_id
+    m[as.character(tbl$alignment_id), , drop = FALSE]
+  }))
+  stat <- function(fun) apply(measured_all, 1, \(x) if (all(is.na(x))) NA_real_ else fun(x, na.rm = TRUE))
+  tbl$mean_all <- round(stat(mean), .max_decimals)
+  tbl$median_all <- round(stat(stats::median), .max_decimals)
   # Tidy up the table
   out <- tbl |>
     dplyr::select(
@@ -515,6 +667,8 @@ tbl_chemical_summary <- function(sumexp) {
       "Samples (d/n)" = n_d_s,
       "Quantified (q/n)" = n_q_s,
       "Concentration" = unit,
+      "Avg. Conc." = mean_all,
+      "Median Conc." = median_all,
       "Average R2" = model_r2,
       "Calibration per batch" = calib_per_batch,
     )
@@ -539,7 +693,7 @@ tbl_chemical_summary <- function(sumexp) {
       n_d_s = paste0("(", n_det, "/", n_samples, ")"),
       n_q_s = paste0("(", n_quant, "/", n_samples, ")"),
       model_r2 = round(model_r2, 3),
-      dplyr::across(c(min, max, mean), ~ round(.x, 4)),
+      dplyr::across(c(lod, lloq, min, max, mean, median), ~ round(.x, .max_decimals)),
     )
   out <- tbl |> 
     dplyr::select(
@@ -556,6 +710,7 @@ tbl_chemical_summary <- function(sumexp) {
       "Min Conc." = min,
       "Max Conc." = max,
       "Avg. Conc." = mean,
+      "Median Conc." = median,
       "R2" = model_r2,
       "Model" = best_model,
       "Equation" = eqn,
@@ -609,56 +764,141 @@ tbl_chemical_summary <- function(sumexp) {
   chem_col <- chem_col |> 
     dplyr::mutate(
       Slope = purrr::map2(Equation, Model, ~ get_slope(eqn = .x, model = .y)) |>
-        unlist()
+        unlist() |>
+        round(.max_decimals)
     )
   return(chem_col)
 }
 
-#' Add style to the values that are adjusted to fct times LLOQ
-.add_fct_lloq_adjusted_style <- function(wb, sheet, sumexp, fct, col_offset, row_offset, style) {
+#' Values replaced after calibration by the LOD/LLOQ rules: colour (as in the reports) and meaning
+#' per replacement, given as the fraction of the LLOQ
+.imputed_styles <- tibble::tribble(
+  ~code, ~fill,     ~meaning,
+  1/4,   "#FAAFAF", "Below the LOD: replaced by LLOQ/4",
+  1/2,   "#FCEACF", "Between the LOD and the LLOQ: replaced by LLOQ/2",
+  1,     "#D3EBF2", "Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ",
+)
+
+#' Matrix of the replaced values: the fraction of the LLOQ (see `.imputed_styles`), 0 if not
+#' replaced
+#'
+#' @param sumexp A [`SumExp::SumExp`] object with the `conc` matrix and the `lloq` per chemical
+.imputed_codes <- function(sumexp) {
+  conc <- sumexp[["conc"]]
   lloq <- SumExp::row_df(sumexp)$lloq
-  
-  for (ii in seq_len(nrow(sumexp))) {
-    i_adjusted <- which(sumexp[["conc"]][ii, ] == (lloq[ii] * fct))
-    if (length(i_adjusted) > 0) {
-      openxlsx::addStyle(
-        wb = wb,
-        sheet = sheet,
-        style = style,
-        rows = ii + row_offset,
-        cols = i_adjusted + col_offset
-      )
-    }
+  code <- matrix(0, nrow(conc), ncol(conc), dimnames = dimnames(conc))
+  for (f in .imputed_styles$code) {
+    code[!is.na(conc) & !is.na(lloq) & conc == lloq * f] <- f
+  }
+  labelled::set_label_attribute(code, "Replaced value (fraction of the LLOQ)")
+}
+
+#' Colour the replaced values of a worksheet written by `.write_data_to_new_worksheet()`
+#'
+#' @param sumexp The data written, with the `imputed` matrix from `.imputed_codes()`
+#' @param feat_tbl The feature table written with it
+.add_imputed_styles <- function(wb, sheet, sumexp, feat_tbl) {
+  code <- sumexp[["imputed"]]
+  # Position of the chemicals and samples in the sheet
+  df_x <- .append_matrix_with_feature_table(sumexp, "conc", feat_tbl)
+  i_row <- match(SumExp::row_df(sumexp)$alignment_id, df_x$`Alignment ID`) +
+    nrow(.get_sample_info_rows(sumexp)) + 1L     # "+ 1L" for the sample ID row
+  col_offset <- ncol(feat_tbl)
+  for (ii in seq_len(nrow(.imputed_styles))) {
+    idx <- which(code == .imputed_styles$code[ii], arr.ind = TRUE)
+    if (nrow(idx) == 0) next
+    openxlsx::addStyle(
+      wb = wb, sheet = sheet, style = openxlsx::createStyle(fgFill = .imputed_styles$fill[ii]),
+      rows = i_row[idx[, 1]], cols = idx[, 2] + col_offset, gridExpand = FALSE, stack = TRUE
+    )
   }
 }
 
+#' Add a worksheet that explains the colours and the order of the samples
+.add_legend_worksheet <- function(wb, with_calibrants) {
+  openxlsx::addWorksheet(wb, "Legend")
+  legend <- data.frame(Colour = "", Meaning = .imputed_styles$meaning)
+  openxlsx::writeData(wb, "Legend", legend)
+  for (ii in seq_len(nrow(.imputed_styles))) {
+    openxlsx::addStyle(wb, "Legend", openxlsx::createStyle(fgFill = .imputed_styles$fill[ii]),
+                       rows = ii + 1L, cols = 1L)
+  }
+  notes <- c(
+    "Concentrations of the blank-subtracted, normalized data; values replaced by the LOD/LLOQ rules are coloured.",
+    "Blank samples: concentrations of their normalized data WITHOUT blank subtraction (\"Blank subtracted\" row: Not subtracted).",
+    if (with_calibrants) {
+      "All samples, including the calibration samples, by batch and injection order."
+    } else {
+      "QC samples first (left), then the study samples and the blanks last (right); by batch and injection order within each."
+    },
+    paste0("Concentrations and peak areas have at most ", .max_decimals, " decimals, retention times ",
+           .rt_decimals, " and m/z values ", .mz_decimals, ".")
+  )
+  openxlsx::writeData(wb, "Legend", data.frame(Notes = notes), startRow = nrow(legend) + 3L)
+  openxlsx::setColWidths(wb, "Legend", cols = 1:2, widths = c(10, 100))
+}
+
+#' The concentrations of the samples together with those of the calibration samples and blanks
+#'
+#' @param concn The quantified samples of one batch, with the `conc` matrix
+#' @param calcurve,blank `NULL`, or the calibration samples / blank samples of the batch, with the
+#'   `conc` matrix
+#' @returns A [`SumExp::SumExp`] object with the `conc` matrix of all these samples and the chemical
+#'   information (`row_df`) and metadata of `concn`
+.combine_samples <- function(concn, calcurve = NULL, blank = NULL) {
+  # The same sample information in all batches (needed to merge them)
+  cols <- intersect(c("sample_name", "Class", "sample_type", ".ctrl_cat", "injection_order",
+                      "batch_id", "org_batch_id", "blank_source", "calibration"),
+                    names(SumExp::col_df(concn)))
+  lab <- labelled::get_label_attribute(concn[["conc"]])
+  part <- function(se) {
+    cd <- as.data.frame(SumExp::col_df(se))
+    for (cc in setdiff(cols, names(cd))) cd[[cc]] <- NA
+    cd <- cd[, cols, drop = FALSE]
+    cd[] <- lapply(cd, \(x) if (is.factor(x)) as.character(x) else x)
+    labelled::var_label(cd) <- NULL
+    SumExp::SumExp(
+      conc = labelled::set_label_attribute(se[["conc"]][rownames(concn), , drop = FALSE], lab),
+      col_df = cd, row_df = SumExp::row_df(concn), metadata = SumExp::metadata(concn)
+    )
+  }
+  parts <- list(part(concn))
+  if (!is.null(calcurve) && "conc" %in% names(calcurve)) {
+    # Only the calibration samples of the batch (a batch without its own holds all of them)
+    batch_of <- function(se) as.character(SumExp::col_df(se)[["batch_id"]])
+    calcurve <- calcurve[, batch_of(calcurve) %in% batch_of(concn)]
+    if (ncol(calcurve) > 0) parts <- c(list(part(calcurve)), parts)
+  }
+  if (!is.null(blank) && "conc" %in% names(blank) && ncol(blank) > 0) {
+    parts <- c(parts, list(part(blank)))
+  }
+  out <- do.call(cbind, parts)
+  SumExp::metadata(out) <- SumExp::metadata(concn)
+  out
+}
+
 #' Write one table for one SumExp object to a worksheet
-.write_one_sumexp_to_new_worksheet <- function(wb, sheetName, sumexp, is_closest_norm, fct_styles) {
+#'
+#' @param sumexp The quantified samples, for the summary of the chemicals
+#' @param data_se The data to write (the same chemicals), with the `imputed` matrix
+.write_one_sumexp_to_new_worksheet <- function(wb, sheetName, sumexp, is_closest_norm, data_se) {
   # Drop all features that are not to be exported per batch
-  se <- sumexp[SumExp::row_df(sumexp)$to_export, ]
-  
+  to_export <- SumExp::row_df(sumexp)$to_export
+  se <- sumexp[to_export, ]
+  data_se <- data_se[to_export, ]
+
   # Prepare the chemical summary table per batch
   chem_col <- .per_batch_summary_chemical_table(se, is_closest_norm) |>
     .append_slope()
 
   .write_data_to_new_worksheet(
-    wb = wb, 
-    sheetName = sheetName, 
-    sumexp = se,
+    wb = wb,
+    sheetName = sheetName,
+    sumexp = data_se,
     mat_id = "conc",
     feat_tbl = chem_col
-  ) 
-  
-  sinfo <- .get_sample_info_rows(sumexp)
-  col_offset <- ncol(chem_col)
-  row_offset <- nrow(sinfo) + 1L   # "+ 1L" for the sample ID row
-
-  for (ii in seq_len(nrow(fct_styles))) {
-    fct <- fct_styles$fct[ii]
-    style <- fct_styles$style[[ii]]
-    stopifnot(inherits(style, "Style"))
-    .add_fct_lloq_adjusted_style(wb, sheetName, se, fct, col_offset, row_offset, style)
-  }
+  )
+  .add_imputed_styles(wb, sheetName, data_se, chem_col)
 }
 
 #' Export the concentration table
@@ -668,9 +908,15 @@ tbl_chemical_summary <- function(sumexp) {
 #' @param file Path to the output file
 #' @param is_closest_norm A logical value indicating whether to include the closest internal
 #'   standard information in the exported table.
+#' @param calcurve_lst `NULL` for the samples without the calibration samples, in the order QCs,
+#'   study samples, blanks. Or a list of the calibration samples of each batch (as `sumexp_lst`),
+#'   for all samples including the calibration samples, in the order of injection.
+#' @param blank_lst `NULL`, or a list of the quantified blank samples of each batch (as
+#'   `sumexp_lst`; `NULL` for a batch without blanks)
 #' @export
-export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE) {
-  
+export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE, calcurve_lst = NULL,
+                                      blank_lst = NULL) {
+
   stopifnot(is.list(sumexp_lst))
   for (ii in seq_along(sumexp_lst)) {
     se <- sumexp_lst[[ii]]
@@ -679,20 +925,18 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE)
            "The ", ii, "-th element is a ", class(se), ".")
     }
   }
+  with_calibrants <- !is.null(calcurve_lst)
+  reorder <- if (with_calibrants) .reorder_samples_by_injection else .reorder_samples_as_qc_first
   # Leave only the features to export in any batch
   in_any <- sapply(sumexp_lst, \(se) SumExp::row_df(se)$to_export)
   in_any <- rowSums(in_any) > 0L
   sumexp_lst <- lapply(sumexp_lst, \(se) se[in_any, ])
-  # Reorder the samples as QC first
-  sumexp_lst <- lapply(sumexp_lst, \(se) .reorder_samples_as_qc_first(se))
-  
-  # Setting up stylization for excel documents
-  fct_styles <- tibble::tribble(
-    ~fct, ~style,
-    1/2,  openxlsx::createStyle(fgFill = "#FCEACF"), # Half of LLOQ
-    1/4,  openxlsx::createStyle(fgFill = "#FAAFAF"), # Quarter of LLOQ
-    1,    openxlsx::createStyle(fgFill = "#D3EBF2"), # LLOQ
-  )
+  # The data to write per batch, with the replaced values (`imputed`) for the colours
+  data_lst <- lapply(stats::setNames(nm = names(sumexp_lst)), function(b) {
+    se <- .combine_samples(sumexp_lst[[b]], calcurve_lst[[b]], blank_lst[[b]])
+    se[["imputed"]] <- .imputed_codes(se)
+    reorder(se)
+  })
 
   wb <- openxlsx::createWorkbook()
 
@@ -703,34 +947,33 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE)
       sheetName = paste("Batch", names(sumexp_lst)[1L]),
       sumexp = sumexp_lst[[1L]],
       is_closest_norm = is_closest_norm,
-      fct_styles = fct_styles
+      data_se = data_lst[[1L]]
     )
-    openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
-
   } else {  # Multiple batches
     # Summary table for all batches
     sum_all_batches <- .summary_chemical_table(sumexp_lst, is_closest_norm)
     # SumExp object with all batches
-    merged_se <- .merge_sumexp_objs_with_identical_features(sumexp_lst)
+    merged_se <- .merge_sumexp_objs_with_identical_features(data_lst) |> reorder()
     .write_data_to_new_worksheet(
-      wb = wb, 
-      sheetName = "Full", 
-      sumexp = merged_se, 
-      mat_id = "conc", 
+      wb = wb,
+      sheetName = "Full",
+      sumexp = merged_se,
+      mat_id = "conc",
       feat_tbl = sum_all_batches
     )
-    
+    .add_imputed_styles(wb, "Full", merged_se, sum_all_batches)
+
     # Write per-batch tables
     for (ii in seq_along(sumexp_lst)) {
-      se <- sumexp_lst[[ii]]
       .write_one_sumexp_to_new_worksheet(
         wb = wb,
         sheetName = paste("Batch", names(sumexp_lst)[ii]),
-        sumexp = se,
+        sumexp = sumexp_lst[[ii]],
         is_closest_norm = is_closest_norm,
-        fct_styles = fct_styles
+        data_se = data_lst[[ii]]
       )
     }
-    openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
   }
+  .add_legend_worksheet(wb, with_calibrants)
+  openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
 }

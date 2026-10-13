@@ -16,36 +16,6 @@ runProcessUI <- function(uiId) {
         white-space: nowrap;
       }
     ")),
-    # Option for keeping all calibration points (even though outside range)
-    shiny::checkboxInput(
-      inputId = ns("optimize_cal_points"),
-      label = "Optimize cal curves to exclude points outside sample range",
-      value = FALSE,
-      width = "100%"
-    ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
-    
-    #
-    shiny::checkboxInput(
-      inputId = ns("set_minimum_number"),
-      label = "Minimum number of cal points necessary to use cal curve?",
-      value = FALSE,
-      width = "100%"
-    ),
-    shiny::conditionalPanel(
-      condition = "input.set_minimum_number == true",
-      ns = ns,
-      shiny::numericInput(
-        inputId = ns("min_cal_points"),
-        label = shiny::tags$span(
-          "Set minimum number of cal points per curve",
-          style = "white-space: nowrap;"
-        ),
-        value = 3,
-        min = 3,
-        step = 1
-      )
-    ),
     # JS handler to enable/disable weight options
     shiny::tags$script(HTML("
       Shiny.addCustomMessageHandler('toggleWeightOptions', function(message) {
@@ -57,40 +27,42 @@ runProcessUI <- function(uiId) {
         }
       });
     ")),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
-    # Quality control: outlier removal
+    settings_group(
+    "Quality control", "chart-simple",
+    # Outlier removal
     shiny::checkboxInput(
       inputId = ns("rm_outlier"),
-      label = "Quality control: remove outlier samples",
+      label = label_tip("Remove outlier samples",
+                        paste("A sample is removed when more than 20% of the internal standards deviate",
+                              "by more than 3 SD from their mean (log scale).")),
       value = TRUE,
       width = "100%"
     ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
-    shiny::checkboxInput(
-      inputId = ns("log_calibration"),
-      label = HTML("Log scale for calibration curve fitting"),
-      value = FALSE,
-      width = "100%"
-      
-    ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
     shiny::checkboxInput(
       inputId = ns("blank_filter"),
-      label = "Quality control: blank filtering",
+      label = label_tip("Blank filtering",
+                        paste("A feature is kept when its maximum or mean in the samples is above the",
+                              "factor times its mean in the blanks.")),
       value = TRUE,
     ),
-    shiny::numericInput(
-      inputId = ns("blank_filter_factor"),
-      label = "Blank filtering factor",
-      value = 5,
-      min = 0,
+    # Only shown when blank filtering is selected (as the other options with settings)
+    shiny::conditionalPanel(
+      condition = "input.blank_filter == true",
+      ns = ns,
+      shiny::numericInput(
+        inputId = ns("blank_filter_factor"),
+        label = "Blank filtering factor",
+        value = 5,
+        min = 0,
+      )
     ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
     # QC RSD% filter: remove features with a high RSD% among the QC replicates (after
     # normalization and blank subtraction)
     shiny::checkboxInput(
       inputId = ns("rsd_filter"),
-      label = "Quality control: remove features with QC RSD% above a threshold",
+      label = label_tip("Remove features with QC RSD% above a threshold",
+                        paste("After normalization and blank subtraction. The RSD% is computed within",
+                              "each QC group; with several groups, their median is used.")),
       value = FALSE,
       width = "100%"
     ),
@@ -126,11 +98,90 @@ runProcessUI <- function(uiId) {
           value = 30, min = 1, max = 80, step = 1
         )
       )
+    )
     ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
+    settings_group(
+    "Calibration", "chart-line",
+    # Option for keeping all calibration points (even though outside range)
+    shiny::checkboxInput(
+      inputId = ns("optimize_cal_points"),
+      label = label_tip("Optimize calibration curves to exclude points outside the sample range",
+                        paste("Calibration points above the highest sample signal are left out of the",
+                              "curve, keeping at least 3 points. Without any sample or QC at or above",
+                              "the LLOQ, the full range is kept.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::checkboxInput(
+      inputId = ns("set_minimum_number"),
+      label = label_tip("Minimum number of calibration points per curve",
+                        paste("A curve always needs at least 3 calibration levels (from the LLOQ",
+                              "upwards); this is the default. Tick to require more.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::conditionalPanel(
+      condition = "input.set_minimum_number == true",
+      ns = ns,
+      shiny::numericInput(
+        inputId = ns("min_cal_points"),
+        label = shiny::tags$span(
+          "Set minimum number of cal points per curve",
+          style = "white-space: nowrap;"
+        ),
+        value = 3,
+        min = 3,
+        step = 1
+      )
+    ),
+    shiny::checkboxInput(
+      inputId = ns("keep_all_calcurves"),
+      label = label_tip("Keep all calibration curves",
+                        paste("Compounds whose calibration range is not valid (e.g. no level above the",
+                              "LLOQ signal, or too few levels) keep a curve from the LLOQ (or the lowest",
+                              "level) to the highest level. A batch still uses a valid global curve when",
+                              "there is one. The reports show why each curve was not valid.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::checkboxInput(
+      inputId = ns("r2_filter"),
+      label = label_tip("Minimum R² of the calibration curves",
+                        paste("A compound whose calibration curve has a lower R² is considered failed:",
+                              "no concentrations, not exported (kept and marked with 'Keep all",
+                              "calibration curves'). The reports and tables show the reason.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::conditionalPanel(
+      condition = "input.r2_filter == true",
+      ns = ns,
+      shiny::numericInput(
+        inputId = ns("min_r2"),
+        label = "Minimum R² (0-1)",
+        value = 0.99, min = 0, max = 1, step = 0.005
+      )
+    ),
+    shiny::checkboxInput(
+      inputId = ns("linear_only"),
+      label = label_tip("Linear models only",
+                        paste("Fit only linear calibration curves (with the chosen weighting), even when",
+                              "a quadratic curve would fit better.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::checkboxInput(
+      inputId = ns("log_calibration"),
+      label = label_tip("Log scale for calibration curve fitting",
+                        "Fit on log-transformed concentrations and signals (weighting 1 only)."),
+      value = FALSE,
+      width = "100%"
+    ),
     shiny::radioButtons(
       inputId = ns("weight"),
-      label = "Weighting method",
+      label = label_tip("Weighting method",
+                        paste("Largest R²: per compound, the weighting (1, 1/x, 1/x²) and model",
+                              "(linear or quadratic) with the best fit.")),
       selected = "largestR2",
       inline = TRUE,   # ✅ add this
       choiceValues = list("largestR2", "1", "1_div_x", "1_div_x2"),
@@ -141,10 +192,11 @@ runProcessUI <- function(uiId) {
         shiny::HTML(paste0("1/x", shiny::tags$sup("2")))
       ),
     ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
     shiny::radioButtons(
       inputId = ns("llox_method"),
-      label = "LOD/LLOQ method",
+      label = label_tip("LOD/LLOQ method",
+                        paste("LOD: the lowest calibration level whose mean signal is above the",
+                              "threshold with factor 3; LLOQ: with factor 10.")),
       selected = "pt_signal_mean_plus_sd",
       choiceValues = list("pt_signal_mean", "pt_signal_mean_plus_sd"),
       choiceNames = list(
@@ -152,15 +204,16 @@ runProcessUI <- function(uiId) {
         shiny::HTML(paste0("pt. > mean", shiny::tags$sub("Cal0"), " + 3 (or 10) * StdDev", shiny::tags$sub("Cal0")))
       ),
     ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
     # RSD% 20% threshold for LLOQ
     shiny::checkboxInput(
       inputId = ns("use_rsd20"),
-      label = "Use RSD% 20% threshold for LLOQ",
+      label = label_tip("Use RSD% 20% threshold for LLOQ",
+                        "The replicates at the LLOQ level must also have an RSD% of at most 20%."),
       value = TRUE,
+    )
     ),
-    shiny::tags$hr(style = "border-top: 10px solid #FFFFFF; margin: 10px 0;"),
-    shiny::actionButton(ns("run_button"), label = "Process data")
+    shiny::hr(class = "q-divider"),
+    shiny::actionButton(ns("run_button"), label = "Process data", icon = shiny::icon("play"))
 
   )
 }
@@ -187,7 +240,7 @@ runProcessUI_2 <- function(uiId) {
 #'
 #' @param serverId A string that identifies the server module.
 #' @export
-runProcessServer <- function(serverId, data_info, ws) {
+runProcessServer <- function(serverId, data_info, ws, clear = NULL) {
   
   shiny::moduleServer(serverId, function(input, output, session) {
     # Disable/enable weight options based on log_calibration
@@ -202,6 +255,11 @@ runProcessServer <- function(serverId, data_info, ws) {
         updateRadioButtons(session, "weight", selected = "1")
       }
     })
+    # The minimum number of calibration points is 3 unless set (the hidden field would keep
+    # a value set before)
+    shiny::observeEvent(input$set_minimum_number, {
+      if (!isTRUE(input$set_minimum_number)) shiny::updateNumericInput(session, "min_cal_points", value = 3)
+    })
   })
   runScriptServer(
     serverId,
@@ -210,6 +268,10 @@ runProcessServer <- function(serverId, data_info, ws) {
     param_ids = c(
       "optimize_cal_points",
       "min_cal_points",
+      "keep_all_calcurves",
+      "r2_filter",
+      "min_r2",
+      "linear_only",
       "rm_outlier",
       "log_calibration",
       "weight",
@@ -223,7 +285,8 @@ runProcessServer <- function(serverId, data_info, ws) {
       "rsd_max_nontargeted"
     ),
     data_info = data_info,
-    ws = ws
+    ws = ws,
+    clear = clear
   )
 }
 

@@ -4,12 +4,15 @@
 # with the lowest median QC RSD%, determined by `process.R`):
 # 1. Normalized data of overall features including non-targets
 # 2. Blank subtracted normalized data of overall features
-# 3. Concentration data of targeted features (blank subtracted)
-# 
+# 3. Concentration data of targeted features (blank subtracted): QC samples, study samples and
+#    blanks, in this order
+# 4. The same with all samples, including the calibration samples, in the order of injection
+#
 # Output file names are based on the input file name and normalization method.
 # 1. (base name).(normalized method).norm.xlsx
 # 2. (base name).(normalized method).norm_blk.xlsx
 # 3. (base name).(normalized method).conc.xlsx
+# 4. (base name).(normalized method).conc_all.xlsx
 # ------------------------------------------------------------------------------------------- #
 
 # Load packages and project local libraries
@@ -47,15 +50,16 @@ if (IS_TARGET_MODE) {
 # Output files
 FILE$o <- local({
   # Copy the basename of the input file to the output file names
-  # "(base name).(normalized method).conc.xlsx", "().norm.xlsx" and "().norm_blk.xlsx"
-  b <- basename(user_inputs$input_file) |> 
+  # "(base name).(normalized method).conc.xlsx", "().conc_all.xlsx", "().norm.xlsx" and
+  # "().norm_blk.xlsx"
+  b <- basename(user_inputs$input_file) |>
     tools::file_path_sans_ext()    # Without extension
   ns <- stringr::str_remove(mat_ids_to_export, "_norm")
   paste_file_name <- function(x, p) {
     file.path(user_inputs$table_dir, paste0(b, ".", x, ".", p, ".xlsx"))
   }
   out_data <- if (IS_TARGET_MODE) {
-    c("norm", "norm_blk", "conc")
+    c("norm", "norm_blk", "conc", "conc_all")
   } else {
     c("norm", "norm_blk")
   }
@@ -97,9 +101,12 @@ blk_mat_id <- util$mat_id_of_blank_subtracted(mat_id)
 is_closest_norm <- mat_id == "closest_norm"
 cat("Exporting", mat_id, "data.\n")
 
+# Internal standards (IS) and volumetric internal standards (vIS) are not exported
+is_std <- function(se) util$is_internal_std(se) | util$std_type(se) %in% "vIS"
+
 # Normalized data
 norm_se <- to_report[["normalized"]]
-se <- norm_se[! util$is_internal_std(norm_se), ]   # Remove internal standards
+se <- norm_se[!is_std(norm_se), ]
 msdial$export_data_with_feature_table_xlsx(
   sumexp_lst = se,
   mat_id = mat_id,
@@ -111,7 +118,7 @@ cat(glue::glue("{mat_id} data has been saved to {basename(FILE$o$norm[[ii]])}.")
 
 # Blank subtracted normalized data
 msdial$export_data_with_feature_table_xlsx(
-  sumexp_lst = to_report[["normalized - blank"]],   # Already removed internal standards
+  sumexp_lst = lapply(to_report[["normalized - blank"]], \(se) se[!is_std(se), ]),
   mat_id = blk_mat_id,
   org_feature_table = org_feature_table,
   out_file = FILE$o$norm_blk[[ii]],
@@ -124,22 +131,45 @@ if (IS_TARGET_MODE) {
   proc_se_lst <- readRDS(FILE$i$proc)
   # Concentration has been computed on the blank subtracted data
   lst_proc <- lapply(proc_se_lst[[blk_mat_id]], \(ea) ea[["concn"]])
+  # Blank samples, quantified without blank subtraction (NULL for a batch without blanks, and
+  # for data processed by older versions)
+  blank_lst <- lapply(proc_se_lst[[blk_mat_id]], \(ea) ea[["blank"]])
+  # QC samples, study samples and blanks
   msdial$export_concentration_xlsx(
     sumexp_lst = lst_proc,
     file = FILE$o$conc[[ii]],
-    is_closest_norm = is_closest_norm
+    is_closest_norm = is_closest_norm,
+    blank_lst = blank_lst
   )
   cat(glue::glue("{mat_id} concentration data has been saved to {basename(FILE$o$conc[[ii]])}."), "\n")
+  # All samples, including the calibration samples
+  msdial$export_concentration_xlsx(
+    sumexp_lst = lst_proc,
+    file = FILE$o$conc_all[[ii]],
+    is_closest_norm = is_closest_norm,
+    calcurve_lst = lapply(proc_se_lst[[blk_mat_id]], \(ea) ea[["calcurve"]]),
+    blank_lst = blank_lst
+  )
+  cat(glue::glue("{mat_id} concentration data of all samples (with the calibration samples)",
+                 " has been saved to {basename(FILE$o$conc_all[[ii]])}."), "\n")
 }
 
 # CSV copies ----------
 # One CSV per worksheet, with the same layout as the sheet:
-# "(base name).(method).(norm|norm_blk|conc).(sheet).csv"
+# "(base name).(method).(norm|norm_blk|conc|conc_all).(sheet).csv" (not the "Legend" sheet)
 xlsx_files <- unlist(lapply(FILE$o, \(x) x[[ii]]))
 for (xlsx in xlsx_files[file.exists(xlsx_files)]) {
-  for (sheet in openxlsx::getSheetNames(xlsx)) {
+  for (sheet in setdiff(openxlsx::getSheetNames(xlsx), "Legend")) {
     tbl <- openxlsx::read.xlsx(xlsx, sheet = sheet, colNames = FALSE,
                                skipEmptyRows = FALSE, skipEmptyCols = FALSE)
+    # R2 always with 3 decimals (as the "0.000" format of the xlsx), below its header cell
+    for (hit in which(as.matrix(tbl) %in% c("R2", "Average R2"))) {
+      r <- (hit - 1) %% nrow(tbl) + 1
+      k <- (hit - 1) %/% nrow(tbl) + 1
+      below <- seq_len(nrow(tbl)) > r
+      v <- suppressWarnings(as.numeric(tbl[below, k]))
+      tbl[below, k] <- ifelse(is.na(v), tbl[below, k], sprintf("%.3f", v))
+    }
     csv <- paste0(tools::file_path_sans_ext(xlsx), ".", gsub("[^A-Za-z0-9_-]+", "_", sheet), ".csv")
     utils::write.table(tbl, csv, sep = ",", na = "", row.names = FALSE, col.names = FALSE,
                        qmethod = "double", fileEncoding = "UTF-8")

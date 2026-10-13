@@ -4,6 +4,7 @@ params:
   log_calibration: false
   interactive_plot: false      # No need here but needed by `report-internal.qmd`
   project_title: "Test"
+  generated_at: ""             # Time of generation, set by the app (also in the file name)
 title: "Report on `r params$project_title`"
 format:
   pdf:
@@ -16,6 +17,16 @@ format:
       - margin=20mm
       - heightrounded
     mainfont: Lato
+    include-in-header:
+      # The QuaNTA and SciLifeLab logos above the title on the title page
+      text: |
+        \usepackage{graphicx}
+        \makeatletter
+        \AtBeginDocument{\let\quanta@title\@title
+          \def\@title{\includegraphics[height=1.5cm]{logos/QuaNTA_logo.png}\hspace{1.2cm}%
+            \raisebox{0.3cm}{\includegraphics[height=0.85cm]{logos/SciLifeLab_logo.png}}\\[1.8cm]%
+            \quanta@title}}
+        \makeatother
 ---
 
 ```{r}
@@ -97,10 +108,10 @@ summary_tbl <- lapply(concn_lst, msdial$tbl_chemical_summary) |>
   dplyr::mutate( # Tidy up the table
     chem_name = stringr::str_trunc(chem_name, 40),
     perc_detf = round(100 * n_det / n_samples, 1),
-    model_r2 = round(model_r2, 3),
-    dplyr::across(
-      c(median, mean, min, max),
-      ~ round(.x, 4)
+    model_r2 = ifelse(is.na(model_r2), NA_character_, sprintf("%.3f", model_r2)),   # Always 3 decimals
+    dplyr::across(   # At most 3 decimals, as in the exported tables
+      c(median, mean, min, max, lod, lloq),
+      ~ round(.x, 3)
     ),
     dplyr::across(
       c(median, mean, min, max, lod, lloq),
@@ -111,6 +122,7 @@ summary_tbl <- lapply(concn_lst, msdial$tbl_chemical_summary) |>
 
 # Project Information
 
+* Report generated: `r if (nzchar(params$generated_at)) params$generated_at else format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")`
 * User: `r user_inputs$user`
 * University: `r user_inputs$university`
 * Project: `r user_inputs$project_title`
@@ -337,18 +349,23 @@ for (batch_id in names(concn_lst)) {
         show$coord_zoom_in_by_cc(n_cc = 3, mat_id = MAT_ID_IN_CALIB) +
         labs(title = "Zoom-in (3 cal. pts.)")
     }
-    # Distribution of the concentration by class
-    x_df <- SumExp::as_tibble(x_se)
-    p3 <- ggplot(x_df) +
-      geom_boxplot(aes(x = Class, y = conc, color = Class, fill = Class)) +
+    # Distribution of the concentration by class; points of the values replaced by the LOD/LLOQ
+    # rules coloured as in the exported tables
+    x_df <- SumExp::as_tibble(x_se) |>
+      dplyr::mutate(kind = show$imputed_kind(conc, lloq))
+    p3 <- ggplot(x_df, aes(x = Class, y = conc)) +
+      geom_boxplot(aes(fill = Class), color = "grey30", alpha = 0.5, outlier.shape = NA) +
+      geom_jitter(aes(color = kind), width = 0.2, height = 0, size = 1.2) +
       labs(
         x = show$label_if_has(x_df$Class, "Class"),
         y = show$label_if_has(x_df$conc, "Concentration"),
+        color = NULL
       ) +
       theme(axis.text.x = element_text(angle = 90, hjust = 1)) + # Vertical x-axis
-      theme(legend.position = "none") + # No legend
-      scale_y_log10() +
-      scale_color_manual(values = COLORS_OF_CLASSES) +
+      theme(legend.position = "bottom") +
+      guides(fill = "none", color = guide_legend(nrow = 2)) +
+      scale_y_log10(labels = show$label_e) +   # Scientific notation, as the other plots
+      scale_color_manual(values = show$imputed_colors, drop = TRUE) +
       scale_fill_manual(values = COLORS_OF_CLASSES)
 
     # Text in the box

@@ -879,9 +879,29 @@ find_calib_lim_pts_and_llox_from_llox_signal <- function(sumexp,
   max_c_conc <- max_conc_for_curve(mat_m, mat_q) |>
     make_sure_to_have_enough_calcurve_pts(min_c_conc, conc_pts, min_n, enough_n)
   stopifnot(identical(names(min_c_conc), names(max_c_conc)))
+  # Why a chemical has no valid calibration range (NA: valid), in the order of the checks above
+  n_from_lloq <- vapply(lloq, \(l) if (is.na(l)) 0L else sum(conc_pts >= l), integer(1))
+  range_issue <- dplyr::case_when(
+    rowSums(mat_m > lloq_signal, na.rm = TRUE) == 0 ~
+      "No calibration level above the LLOQ signal",
+    is.na(lloq) ~ "No calibration level above the LLOQ signal with RSD% <= 20%",
+    max_c_conc %in% 0 ~ "No signal in the samples",
+    is.na(max_c_conc) ~ sprintf("Only %d calibration level(s) from the LLOQ upwards (minimum %d)",
+                                n_from_lloq, min_n),
+    TRUE ~ NA_character_
+  )
+  # No study sample or QC at or above the LLOQ (signal below the mean signal of the LLOQ level):
+  # the full calibration range, from the LLOQ to the highest level, instead of one cut at the
+  # highest sample (`enough_n`), to show where the chemical could have been quantified
+  mat_sq <- util$exclude_ctrl_smpl_cat(se_lst$quant, excl_cat = "Blank")[[mat_id]]
+  max_in_sq <- suppressWarnings(apply(mat_sq, 1, max, na.rm = TRUE))
+  no_quant_samples <- !is.na(lloq) & !(max_in_sq >= avg_signal_at_lloq)
+  no_quant_samples[is.na(no_quant_samples)] <- FALSE
+  full <- no_quant_samples & !is.na(max_c_conc)
+  max_c_conc[full] <- max(conc_pts)
   # data.frame for SumExp::row_df, instead of tibble
   limits_df <- data.frame(min_c_conc, max_c_conc, lod, lloq, avg_signal_at_lloq,
-                          lod_signal, lloq_signal)
+                          lod_signal, lloq_signal, range_issue, no_quant_samples)
   stopifnot(identical(rownames(limits_df), rownames(sumexp)))
   SumExp::row_df(sumexp) <- cbind(SumExp::row_df(sumexp), limits_df)
   sumexp
@@ -909,6 +929,33 @@ has_proper_calibration_range <- function(sumexp) {
   # Not enough calibration curve samples to make a calibration curve
   not_enough <- is.na(max_c_conc)
   !(no_valid_conc | all_zero | no_max_conc | not_enough)
+}
+
+#' Calibration range of curves kept despite an invalid range (`--keep_all_calcurves`)
+#'
+#' The range runs from the LLOQ (without an LLOQ: the lowest calibration level above zero) up to
+#' the highest calibration level, and is extended downwards to have at least `min_n` levels.
+#'
+#' @param sumexp A [`SumExp::SumExp`] object with the calibration curve limits added by
+#'   [find_calib_lim_pts_and_llox_from_llox_signal()]
+#' @param rows A logical vector: the chemicals (rows) whose range is set
+#' @param min_n Required minimum number of concentrations for the calibration curve
+#'
+#' @returns `sumexp` with `min_c_conc` and `max_c_conc` set for `rows`
+#' @md
+#' @export
+force_calibration_range <- function(sumexp, rows, min_n) {
+  conc_pts <- util$spiked_conc_pts(sumexp)
+  conc_pts <- sort(unique(conc_pts[!is.na(conc_pts) & conc_pts > 0]))
+  n <- length(conc_pts)
+  rd <- SumExp::row_df(sumexp)
+  i_min <- match(rd$lloq, conc_pts)
+  i_min[is.na(i_min)] <- 1L
+  i_min <- pmin(i_min, max(1L, n - min_n + 1L))
+  rd$min_c_conc[rows] <- conc_pts[i_min[rows]]
+  rd$max_c_conc[rows] <- conc_pts[n]
+  SumExp::row_df(sumexp) <- rd
+  sumexp
 }
 
 #' Replace values outside the concentration range with NA
@@ -967,6 +1014,7 @@ replace_outside_concentration_range_with_na.SumExp <- function(x, mat_id) {
 #'   - `1/x`: Inverse of the concentration
 #'   - `1/x2`: Inverse of the concentration squared
 #' @param penalty_quadratic The penalty for the quadratic models
+#' @param linear_only Whether to fit linear models only (no quadratic ones)
 #'
 #' @returns A list with the best model, the name of it, the R2 values of all models, and the
 #'   number of unique concentrations. The best model is chosen as the model with the highest R2
@@ -983,7 +1031,8 @@ NULL
 fit_and_test_calcurve_model <- function(conc,
                                         signal,
                                         weight_method = "largestR2",
-                                        penalty_quadratic = 0) {
+                                        penalty_quadratic = 0,
+                                        linear_only = FALSE) {
   # If no signal return NA
   if (all(is.na(signal) | signal == 0)) {
     return(NA)
@@ -1004,8 +1053,9 @@ fit_and_test_calcurve_model <- function(conc,
   lmodels <- lapply(weights_alt, \(w) linear_calcurve_model(conc, signal, weights = w))
   names(lmodels) <- paste("linear", names(lmodels), sep = "-")
 
-  qmodels <- lapply(weights_alt, \(w) quadratic_calcurve_model(conc, signal, weights = w))
-  names(qmodels) <- paste("quadratic", names(qmodels), sep = "-")
+  # Quadratic models only when not restricted to linear ones (`--linear_only`)
+  qmodels <- if (linear_only) list() else lapply(weights_alt, \(w) quadratic_calcurve_model(conc, signal, weights = w))
+  if (length(qmodels) > 0) names(qmodels) <- paste("quadratic", names(qmodels), sep = "-")
 
   models <- c(lmodels, qmodels)
   r2s <- sapply(models, \(x) suppressWarnings(summary(x$inv_mod)$r.squared))
@@ -1084,6 +1134,24 @@ compute_concentration <- function(sumexp, mat_id, log_scale = FALSE) {
 
 ##  POST CALIBRATION  --------------------------------------
 
+#' Replace the values of a concentration matrix where a condition holds
+#'
+#' Where the condition or the replacement is `NA` (e.g. no LLOQ for a calibration curve kept by
+#' `--keep_all_calcurves`), the value is kept.
+#'
+#' @param c_mat A concentration matrix (chemicals in rows)
+#' @param cond A logical matrix of the same size
+#' @param value The replacement, one per chemical (row)
+#' @returns `c_mat` with the replaced values and its labels
+.replace_where <- function(c_mat, cond, value) {
+  value <- matrix(value, nrow = nrow(c_mat), ncol = ncol(c_mat))
+  cond <- cond & !is.na(value)
+  cond[is.na(cond)] <- FALSE
+  out <- c_mat
+  out[cond] <- value[cond]
+  labelled::copy_labels(c_mat, out)
+}
+
 #' Replace the values below the LLOQ and LOD
 #'
 #' @param sumexp A [`SumExp::SumExp`] object
@@ -1101,12 +1169,10 @@ replace_below_lod_lloq <- function(sumexp, conc_mat_id) {
   lod <- SumExp::row_df(sumexp)[, "lod"]
   lloq <- SumExp::row_df(sumexp)[, "lloq"]
 
-  out <- c_mat
   # Replace the values below LLOQ with half of the LLOQ
-  out <- ifelse(c_mat < lloq, lloq / 2, out)
+  out <- .replace_where(c_mat, c_mat < lloq, lloq / 2)
   # Replace the values below LOD with 1/4 of the LLOQ
-  out <- ifelse(c_mat < lod, lloq / 4, out)
-  out <- labelled::copy_labels(c_mat, out)
+  out <- .replace_where(out, c_mat < lod, lloq / 4)
   sumexp[[conc_mat_id]] <- out
   sumexp
 }
@@ -1132,9 +1198,7 @@ replace_conc_whose_signal_below_lloq <- function(sumexp, conc_mat_id) {
   avg_signal_at_lloq <- SumExp::row_df(sumexp)[["avg_signal_at_lloq"]]
 
   # Replace the values below LLOQ with half of the LLOQ
-  out <- ifelse(signal_mat < avg_signal_at_lloq & c_mat >= lod, lloq / 2, c_mat)
-  out <- labelled::copy_labels(c_mat, out)
-  sumexp[[conc_mat_id]] <- out
+  sumexp[[conc_mat_id]] <- .replace_where(c_mat, signal_mat < avg_signal_at_lloq & c_mat >= lod, lloq / 2)
   sumexp
 }
 
@@ -1158,9 +1222,7 @@ replace_conc_whose_signal_above_lloq <- function(sumexp, conc_mat_id) {
   avg_signal_at_lloq <- SumExp::row_df(sumexp)[["avg_signal_at_lloq"]]
 
   # Replace the values above LLOQ with LLOQ
-  out <- ifelse(signal_mat >= avg_signal_at_lloq & c_mat < lloq, lloq, c_mat)
-  out <- labelled::copy_labels(c_mat, out)
-  sumexp[[conc_mat_id]] <- out
+  sumexp[[conc_mat_id]] <- .replace_where(c_mat, signal_mat >= avg_signal_at_lloq & c_mat < lloq, lloq)
   sumexp
 }
 
@@ -1183,9 +1245,7 @@ replace_conc_whose_signal_below_lod <- function(sumexp, conc_mat_id) {
   lloq <- SumExp::row_df(sumexp)[["lloq"]]
   lod_signal <- SumExp::row_df(sumexp)[["lod_signal"]]
 
-  out <- ifelse(signal_mat < lod_signal, lloq / 4, c_mat)
-  out <- labelled::copy_labels(c_mat, out)
-  sumexp[[conc_mat_id]] <- out
+  sumexp[[conc_mat_id]] <- .replace_where(c_mat, signal_mat < lod_signal, lloq / 4)
   sumexp
 }
 

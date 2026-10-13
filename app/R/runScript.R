@@ -27,12 +27,18 @@ runScriptUI <- function(uiId, label, download=FALSE) {
 
 # Shared implementation --------------------------------------------------------------------
 
-.runScriptCore <- function(serverId, script_path, what, param_ids, data_info, ws, extra_args) {
+.runScriptCore <- function(serverId, script_path, what, param_ids, data_info, ws, extra_args,
+                           clear = NULL) {
   shiny::moduleServer(serverId, function(input, output, session) {
     output_txt <- shiny::reactiveVal("")
     proc <- shiny::reactiveVal(NULL)
     done_at <- shiny::reactiveVal(NULL)   # Set every time a run has finished
     started_at <- shiny::reactiveVal(NULL)   # To report the elapsed time
+    # Log time in front of each non-empty line
+    stamp <- function(lines) ifelse(nzchar(trimws(lines)), paste0(format(Sys.time(), "[%H:%M:%S]  "), lines), "")
+
+    # "Clear log" (a reactive from the app, e.g. a button); a running job keeps logging
+    if (!is.null(clear)) shiny::observeEvent(clear(), output_txt(""), ignoreInit = TRUE)
 
     shiny::observeEvent(input[["run_button"]], {
       old <- proc()
@@ -69,9 +75,9 @@ runScriptUI <- function(uiId, label, download=FALSE) {
         )
         proc(p)
         started_at(Sys.time())
-        output_txt(paste(what, "is running...\nTime:", Sys.time(), "\n"))
+        output_txt(paste0(stamp(paste(what, "is running ...")), "\n"))
       }, error = function(e) {
-        output_txt(paste("Error running script:", conditionMessage(e), sep = "\n"))
+        output_txt(paste0(stamp(paste("Error running script:", conditionMessage(e))), "\n"))
         proc(NULL)
       })
     })
@@ -90,26 +96,18 @@ runScriptUI <- function(uiId, label, download=FALSE) {
         err <- p$read_all_error_lines()
       }
       shiny::isolate({
-        txt <- paste0(output_txt(), "#")
+        # New lines with the time they were received
         lines <- c(out, err)
-        if (length(lines) > 0) txt <- paste(txt, paste(lines, collapse = "\n"), "", sep = "\n")
         if (!alive) {
           status <- p$get_exit_status()
-          txt <- paste(
-            txt,
-            if (identical(status, 0L)) {
-              "Finished."
-            } else {
-              paste0("Script ended with exit status ", status, ". See the messages above. ",
-                     "(Non-target data intentionally stops before calibration.)")
-            },
-            paste("Elapsed time:", format_elapsed(started_at())),
-            sep = "\n"
-          )
+          lines <- c(lines,
+                     if (identical(status, 0L)) "Finished." else
+                       paste0("Script ended with exit status ", status, ". See the messages above."),
+                     paste("Elapsed time:", format_elapsed(started_at())))
           proc(NULL)
           done_at(Sys.time())
         }
-        output_txt(txt)
+        if (length(lines) > 0) output_txt(paste0(output_txt(), paste(stamp(lines), collapse = "\n"), "\n"))
       })
     })
 
@@ -161,12 +159,15 @@ find_box_root <- function() {
 #' @param param_ids IDs of this module's inputs passed to the script as `--id=value`.
 #' @param data_info The `reactiveValues` returned by [msdialInfoServer()].
 #' @param ws The session workspace from [create_session_workspace()].
+#' @param clear Optional reactive (e.g. a "Clear log" button); its changes empty the log.
 #'
 #' @returns A reactive that changes every time a run has finished (use it to invalidate
 #'   downstream reactives that load the results).
 #' @export
-runScriptServer <- function(serverId, script_path, what, param_ids = NULL, data_info, ws) {
-  .runScriptCore(serverId, script_path, what, param_ids, data_info, ws, extra_args = NULL)
+runScriptServer <- function(serverId, script_path, what, param_ids = NULL, data_info, ws,
+                            clear = NULL) {
+  .runScriptCore(serverId, script_path, what, param_ids, data_info, ws, extra_args = NULL,
+                 clear = clear)
 }
 
 #' Same as [runScriptServer()] for the export script, with the normalization method and a zip download
@@ -187,10 +188,11 @@ runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data
         paste0("QuaNTA_tables_", norm_method(), "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip")
       },
       content = function(file) {
-        # Only the tables of the selected method: "(base name).(method).(norm|norm_blk|conc).xlsx"
-        # and their CSV copies "(base name).(method).(norm|norm_blk|conc).(sheet).csv"
+        # Only the tables of the selected method:
+        # "(base name).(method).(norm|norm_blk|conc|conc_all).xlsx" and their CSV copies
+        # "(base name).(method).(norm|norm_blk|conc|conc_all).(sheet).csv"
         method <- sub("_norm$", "", norm_method())
-        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc)(\\.[^.]+)?\\.(xlsx|csv)$")
+        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc|conc_all)(\\.[^.]+)?\\.(xlsx|csv)$")
         files <- list.files(ws$tables, pattern = pattern, full.names = TRUE)
         if (length(files) == 0) stop("No exported tables of this method yet. Run the export first.")
         zip::zip(zipfile = file, files = files, mode = "cherry-pick")

@@ -1,0 +1,270 @@
+# Calibration
+
+```{r}
+#| label: calib-data
+CAL_MAT <- util$mat_id_in_calibration(BLK)
+gcal <- tr[["global calibration"]][[BLK]]
+multi_batch <- length(batch_ids) > 1 && !is.null(gcal)
+in_log <- isTRUE(tr$params$log_calibration)
+name2id <- setNames(smp$sample_id, smp$sample_name)
+
+curve_grid <- function(lloq, uloq) {
+  if (in_log) exp(seq(log(lloq), log(uloq), length.out = 120)) else
+    sort(unique(c(seq(lloq, uloq, length.out = 100), seq(lloq, min(lloq * 10, uloq), length.out = 40))))
+}
+# Curve from the coefficients of the fit of signal on concentration
+curve_from_coef <- function(cf, lloq, uloq) {
+  if (is.null(cf) || !is.finite(lloq) || !is.finite(uloq)) return(NULL)
+  x <- curve_grid(lloq, uloq); xx <- if (in_log) log(x) else x
+  y <- cf[1] + cf[2] * xx + if (length(cf) > 2) cf[3] * xx^2 else 0
+  if (in_log) y <- expm1(y)
+  list(x = sig(x), y = sig(y))
+}
+model_label <- function(nm) if (is.null(nm) || is.na(nm)) NULL else sub("_div_", "/", nm)
+
+global_view <- function(fid) {
+  i <- match(fid, gcal$limits$feature_id)
+  if (is.na(i)) return(NULL)
+  L <- gcal$limits[i, ]
+  okc <- !is.na(gcal$cal_signal[fid, ]) & !is.na(gcal$cal_conc)
+  xs <- gcal$conc0[fid, ]; ys <- gcal$signal[fid, ]; oks <- !is.na(xs) & !is.na(ys)
+  list(src = if (isTRUE(L$has_proper_range)) "Global" else "None",
+       why = show$calib_issue_text(L, batch_view = FALSE), kept = isTRUE(L$kept_calcurve),
+       nq = show$calib_range_note(L),
+       lod = sig(L$lod), lloq = sig(L$lloq), uloq = sig(L$max_c_conc),
+       model = model_label(L$model), r2 = if (is.na(L$r2)) NULL else round(L$r2, 3),
+       # Also a curve that is not valid (e.g. R² below the minimum), when it was fitted
+       curve = curve_from_coef(L$coef[[1]], L$lloq, L$max_c_conc),
+       cal = list(x = sig(gcal$cal_conc[okc]), y = sig(gcal$cal_signal[fid, okc]),
+                  u = as.integer(gcal$cal_used[fid, okc]), s = unname(s_idx[id2name[names(which(okc))]])),
+       smp = list(x = sig(xs[oks]), y = sig(ys[oks]), s = unname(s_idx[id2name[names(which(oks))]])))
+}
+batch_view <- function(x, fid) {
+  if (!fid %in% rownames(x$concn)) return(NULL)
+  rd <- SumExp::row_df(x$concn)[fid, ]
+  cc <- x$calcurve[fid, ]; cs <- x$concn[fid, ]
+  ccd <- SumExp::col_df(cc); csd <- SumExp::col_df(cs)
+  ok_c <- !is.na(cc[[BLK]][1, ]) & !is.na(ccd$c_conc)
+  xs <- cs[["conc0"]][1, ]; ys <- cs[[CAL_MAT]][1, ]; ok_s <- !is.na(xs) & !is.na(ys)
+  m <- rd$calcurve_model[[1]]
+  # Points used for the curve; for a batch using the global curve, those used by the global fit
+  used <- !is.na(cc[[CAL_MAT]][1, ok_c])
+  if (isTRUE(rd$src_calcurve == "Global") && !is.null(gcal)) {
+    used <- gcal$cal_used[fid, name2id[ccd$sample_name[ok_c]]]
+  }
+  has_m <- is.list(m) && !is.null(m$best_model_name)
+  list(src = if (is.na(rd$src_calcurve)) "None" else rd$src_calcurve,
+       why = show$calib_issue_text(rd), kept = isTRUE(rd$kept_calcurve),
+       nq = show$calib_range_note(rd),
+       lod = sig(rd$lod), lloq = sig(rd$lloq), uloq = sig(rd$max_c_conc),
+       model = if (has_m) model_label(m$best_model_name) else NULL,
+       r2 = if (has_m) round(m$R2s[[m$best_model_name]], 3) else NULL,
+       # Also a curve that is not valid (e.g. R² below the minimum), when it was fitted
+       curve = if (has_m) curve_from_coef(unname(stats::coef(m$inv_model)), rd$lloq, rd$max_c_conc) else NULL,
+       cal = list(x = sig(ccd$c_conc[ok_c]), y = sig(cc[[BLK]][1, ok_c]), u = as.integer(used),
+                  s = unname(s_idx[ccd$sample_name[ok_c]])),
+       smp = list(x = sig(xs[ok_s]), y = sig(ys[ok_s]), s = unname(s_idx[csd$sample_name[ok_s]])))
+}
+# Removed compounds have no calibration: show their calibration points (normalized signal)
+cal_cols <- util$ctrl_smpl_cat(norm_all) == "CalCurve"
+cal_conc <- util$spiked_conc_pts(norm_all)
+removed_view <- function(fid, batch = NULL) {
+  keep <- cal_cols
+  if (!is.null(batch)) keep <- keep & as.character(SumExp::col_df(norm_all)$batch_id) == batch
+  list(src = "None", cal = list(x = sig(cal_conc[keep]), y = sig(norm_all[[MAT]][fid, keep]),
+                                u = rep(0L, sum(keep)), s = unname(s_idx[SumExp::col_df(norm_all)$sample_name[keep]])))
+}
+
+# View name -> batch ID ("Global": the global curve of all batches)
+view_ids <- c(if (multi_batch) c(Global = "Global"), setNames(batch_ids, batch_label(batch_ids)))
+view_names <- names(view_ids)
+tcomps <- feat |> filter(type == "Targeted") |> arrange(feature_name)
+in_calib_ids <- rownames(lst[[1]]$concn)
+cal_data <- lapply(seq_len(nrow(tcomps)), function(k) {
+  fid <- tcomps$feature_id[k]
+  in_calib <- fid %in% in_calib_ids
+  v <- lapply(view_names, function(nm) {
+    if (!in_calib) return(removed_view(fid, if (nm == "Global") NULL else view_ids[[nm]]))
+    if (nm == "Global") global_view(fid) else batch_view(lst[[view_ids[[nm]]]], fid)
+  })
+  names(v) <- view_names
+  note <- if (!in_calib) {
+    r <- removed_tgt$reason[match(fid, removed_tgt$feature_id)]
+    paste("Removed before calibration:", if (is.na(r)) "no signal" else r)
+  } else if (!any(vapply(v, \(x) !is.null(x) && x$src != "None", logical(1)))) {
+    "No valid calibration range in any batch or globally"
+  } else ""
+  list(name = tcomps$feature_name[k], note = note, v = v)
+})
+```
+
+## Calibration samples
+
+```{r}
+smp |> mutate(conc = util$spiked_conc_pts(raw)) |>
+  filter(category == "CalCurve") |>
+  count(conc, Batch = batch_label(as.character(batch_id))) |>
+  tidyr::pivot_wider(names_from = Batch, values_from = n, values_fill = 0) |>
+  mutate(Total = rowSums(across(-conc))) |>
+  arrange(conc) |>
+  mutate(conc = format(conc, scientific = FALSE, drop0trailing = TRUE, trim = TRUE)) |>
+  rename(!!paste0("Concentration [", unit, "]") := conc) |>
+  knitr::kable(align = "l") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
+
+## Limits and models
+
+One row per compound and curve. *IS* is the internal standard assigned to the compound (closest in
+retention time), used by the Closest RT normalization. *Reason* tells why a curve is not valid (red
+rows), why a batch uses the global curve, or why a curve was kept although it is not valid (orange
+rows; option "Keep all calibration curves"`r if (isTRUE(tr$params$keep_all_calcurves)) ", selected for this report" else ", not selected for this report"`).
+
+```{r}
+is_of <- SumExp::row_df(lst[[1]]$concn) |> tibble::as_tibble(rownames = "feature_id") |>
+  select(feature_id, IS = closest_istd)
+lim_tbl <- purrr::map_dfr(cal_data, function(cd) {
+  purrr::map_dfr(names(cd$v), function(nm) {
+    v <- cd$v[[nm]]
+    if (is.null(v) || startsWith(cd$note, "Removed")) return(NULL)
+    tibble(Compound = cd$name, Curve = nm, `Curve used` = v$src,
+           Status = if (v$src == "None") "Not valid" else if (isTRUE(v$kept)) "Kept (not valid)" else
+             if (nm != "Global" && v$src == "Global") "Global curve used" else "Valid",
+           Reason = sub("^(Not valid|Kept although not valid): ", "", v$why %||% ""),
+           LOD = v$lod %||% NA, LLOQ = v$lloq %||% NA, ULOQ = v$uloq %||% NA,
+           Model = v$model %||% NA, `R²` = v$r2 %||% NA)
+  })
+}) |>
+  left_join(transmute(tcomps, Compound = feature_name, feature_id), by = "Compound") |>
+  left_join(is_of, by = "feature_id") |> select(-feature_id) |>
+  mutate(Curve = factor(Curve, levels = view_names), `Curve used` = factor(`Curve used`),
+         Status = factor(Status))
+# Red: no valid calibration curve for the compound (in that curve); orange: kept although not valid
+dt(lim_tbl) |>
+  DT::formatRound("R²", digits = 3) |>   # Always 3 decimals (also 0.950)
+  DT::formatStyle("Status", target = "row",
+                  backgroundColor = DT::styleEqual(c("Not valid", "Kept (not valid)"), c(FAILED_BG, KEPT_BG)))
+```
+
+## Calibration models
+
+```{r}
+r2_long <- purrr::map_dfr(batch_ids, function(b) {
+  rd <- SumExp::row_df(lst[[b]]$concn)
+  purrr::map_dfr(seq_len(nrow(rd)), function(i) {
+    m <- rd$calcurve_model[[i]]
+    if (!is.list(m) || is.null(m$R2s_adj) || !isTRUE(rd$has_proper_range[i]) || !identical(rd$src_calcurve[i], "Batch")) return(NULL)
+    tibble(batch = batch_label(b), model = sub("_div_", "/", names(m$R2s_adj)), r2 = m$R2s_adj,
+           best = names(m$R2s_adj) == m$best_model_name)
+  })
+})
+```
+
+::: {.panel-tabset}
+
+### Adjusted R² per model type
+
+```{r}
+#| fig-height: 4.5
+if (nrow(r2_long) == 0) note("No batch-wise calibration curves (all batches use the global curve).") else
+ggplot(r2_long, aes(model, r2, fill = batch)) +
+  geom_boxplot(outlier.size = .5) +
+  coord_cartesian(ylim = c(max(0, quantile(r2_long$r2, .02, na.rm = TRUE)), 1)) +
+  labs(x = NULL, y = "Adjusted R² (quadratic penalized)", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+### Chosen model
+
+```{r}
+#| fig-height: 4
+best <- if (nrow(r2_long) == 0) tibble(curve = character(), model = character(), n = integer()) else
+  r2_long |> filter(best) |> count(curve = batch, model)
+if (multi_batch) best <- bind_rows(best, gcal$limits |> filter(has_proper_range) |>
+                                     count(model = sub("_div_", "/", model)) |> mutate(curve = "Global"))
+ggplot(best, aes(n, model, fill = curve)) + geom_col(position = "dodge") +
+  labs(x = "Number of compounds", y = NULL, fill = NULL)
+```
+
+:::
+
+## Calibration curves per compound
+
+One interactive plot for all targeted compounds, also those without a valid calibration or removed
+by a filter. Choose the compound and the curve`r if (multi_batch) ": **Global** (all batches) or a batch. A batch view shows the curve used for that batch (its own, or the global one if the batch fell back to it), its calibration points and its samples" else ""`. Click legend entries to hide or show groups;
+hover over a point for its details. When no sample or QC is at or above the LLOQ, the curve covers
+the full calibration range (from the LLOQ to the highest level), to show where the compound could have
+been quantified; a note says so. The zero calibrant (Cal0) is shown as blue diamonds (linear axes only:
+a concentration of 0 has no place on a log axis).
+
+```{r}
+#| results: asis
+cat('<div class="viewer" id="cv">',
+    '<div class="controls"><input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
+    '<button type="button" class="next">&#9654;</button>',
+    '<label>Curve <select class="view"></select></label>',
+    '<label><input type="checkbox" class="log"> Log axes</label></div>',
+    '<div class="info"></div><div class="plot" style="height:560px;"></div></div>',
+    '<script>window.CALVIEW = ',
+    to_json(list(views = view_names, comps = cal_data, unit = unit,
+                 y_lab = "Normalized, blank-subtracted signal")),
+    ';</script>', sep = "")
+```
+
+## Concentrations per compound
+
+The concentrations of each compound in all samples of all batches, per class: a box per class and
+the samples as points. Points of values replaced by the LOD/LLOQ rules are coloured as in the exported
+tables (red: below the LOD, LLOQ/4; yellow: below the LLOQ, LLOQ/2; blue: set to the LLOQ). Hover over a
+point for the sample; switch between linear and log axis.
+
+```{r}
+#| results: asis
+# One entry per compound with concentrations; samples by index in the shared sample table
+conc_q <- conc_long |> filter(!is.na(conc)) |>
+  mutate(kind = as.integer(show$imputed_kind(conc, lloq)) - 1L)
+conc_data <- conc_q |> group_by(feature_name) |> group_split() |> lapply(function(d) {
+  list(name = d$feature_name[1], s = unname(s_idx[d$sample_name]), y = sig(d$conc), k = d$kind)
+})
+class_cols <- vapply(sort(unique(conc_q$Class)), function(cl) {
+  g <- smp$group[match(cl, smp$Class)]
+  unname(if (g %in% names(group_colors)) group_colors[[g]] else "#999999")
+}, character(1))
+cat('<div class="viewer" id="concv">',
+    '<div class="controls"><input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
+    '<button type="button" class="next">&#9654;</button>',
+    '<label><input type="checkbox" class="log"> Log scale</label></div>',
+    '<div class="plot" style="height:480px;"></div></div>',
+    '<script>window.CONCVIEW = ',
+    to_json(list(comps = conc_data, kinds = names(show$imputed_colors),
+                 kind_colors = unname(show$imputed_colors), class_colors = as.list(class_cols),
+                 unit = unit)),
+    ';</script>', sep = "")
+```
+
+### Average and median per compound {.unnumbered}
+
+Statistics of the study samples only (no QCs), from the measured values at or above the LLOQ: values
+replaced by the LOD/LLOQ rules are left out, as in the exported tables. *All batches* pools the measured
+values of all batches; *n* is the number of these values. Concentrations in `r unit`.
+
+```{r}
+# Measured values (as `msdial$measured_conc()` of the exports): study samples, at or above the
+# LLOQ, not replaced (unchanged from conc0)
+meas <- conc_long |>
+  filter(.ctrl_cat == "", !is.na(conc), conc >= lloq, conc == conc0) |>
+  mutate(Batch = batch_label(as.character(batch_id)))
+conc_stats <- function(d) summarise(d, n = n(), Average = round(mean(conc), 3),
+                                    Median = round(stats::median(conc), 3),
+                                    Min = round(min(conc), 3), Max = round(max(conc), 3), .groups = "drop")
+stats_tbl <- bind_rows(
+  meas |> group_by(Compound = feature_name) |> conc_stats() |> mutate(Batch = "All batches"),
+  if (length(batch_ids) > 1) meas |> group_by(Compound = feature_name, Batch) |> conc_stats()
+) |>
+  select(Compound, Batch, n, Average, Median, Min, Max) |>
+  arrange(Compound, Batch != "All batches", Batch) |>
+  mutate(Batch = factor(Batch, levels = c("All batches", batch_label(batch_ids))))
+if (nrow(stats_tbl) == 0) note("No measured concentrations at or above the LLOQ in the study samples.") else
+  dt(stats_tbl, search = FALSE)
+```
+

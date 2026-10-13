@@ -42,12 +42,17 @@ render_in_private_copy <- function(job) {
   # 2. Render into the session's report directory
   dir.create(job$out_dir, recursive = TRUE, showWarnings = FALSE)
   rel_out <- as.character(fs::path_rel(job$out_dir, start = job$work_dir))
+  # Time of generation under the title (title page of the PDF, title block of the HTML)
+  generated_at <- job$execute_params$generated_at
+  subtitle <- if (length(generated_at) == 1 && nzchar(generated_at)) {
+    c("--metadata", paste0("subtitle:Report generated: ", generated_at))
+  }
   quarto::quarto_render(
     file.path(job$work_dir, job$qmd),
     output_format = job$output_format,
     output_file = job$out_name,
     execute_params = job$execute_params,
-    quarto_args = c("--output-dir", rel_out)
+    quarto_args = c("--output-dir", rel_out, subtitle)
   )
   out <- file.path(job$out_dir, job$out_name)
   if (!file.exists(out)) stop("The report was not created: ", out)

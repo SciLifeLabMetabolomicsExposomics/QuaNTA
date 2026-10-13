@@ -22,6 +22,30 @@ option_list <- rlang::list2(
     help = "Quality control: remove outlier samples [default: %default]"
   ),
   optparse::make_option(
+    c("--keep_all_calcurves"),
+    type = "logical", default = FALSE,
+    help = paste(
+      "Keep the calibration curves of chemicals without a valid calibration range (e.g. too few",
+      "levels above the LLOQ), with a range from the LLOQ (or lowest level) to the highest level",
+      "[default: %default]"
+    )
+  ),
+  optparse::make_option(
+    c("--r2_filter"),
+    type = "logical", default = FALSE,
+    help = "Calibration curves with an R2 below `--min_r2` are not valid [default: %default]"
+  ),
+  optparse::make_option(
+    c("--min_r2"),
+    type = "double", default = 0.99,
+    help = "Minimum R2 of a calibration curve, with `--r2_filter` [default: %default]"
+  ),
+  optparse::make_option(
+    c("--linear_only"),
+    type = "logical", default = FALSE,
+    help = "Fit linear calibration models only, no quadratic ones [default: %default]"
+  ),
+  optparse::make_option(
     c("--log_calibration"),
     type = "logical", default = FALSE,
     help = "Log scale for calibration curve fitting [default: %default]"
@@ -89,6 +113,10 @@ cat(
   "\nProcessing parameters:\n",
   "  - Optimize cal points: ", params$optimize_cal_points, "\n",
   "  - Minimum number of cal points: ", params$min_cal_points, "\n",
+  "  - Keep all calibration curves: ", params$keep_all_calcurves, "\n",
+  "  - Linear models only: ", params$linear_only, "\n",
+  "  - Minimum R2 of calibration curves: ",
+  if (isTRUE(params$r2_filter)) params$min_r2 else "none", "\n",
   "  - Outlier removal:", params$rm_outlier, "\n",
   "  - Log scale for calibration:", params$log_calibration, "\n",
   "  - Weight method:", params$weight, "\n",
@@ -107,6 +135,8 @@ cat(
 stopifnot(
   "`--rsd_filter_scope` must be `both`, `targeted` or `nontargeted`." =
     params$rsd_filter_scope %in% c("both", "targeted", "nontargeted"),
+  "The minimum R2 must be between 0 and 1." =
+    !isTRUE(params$r2_filter) || (params$min_r2 >= 0 && params$min_r2 <= 1),
   "The maximum QC RSD% must be between 0 and 80." =
     all(c(params$rsd_max_targeted, params$rsd_max_nontargeted) >= 0 &
           c(params$rsd_max_targeted, params$rsd_max_nontargeted) <= 80)
@@ -400,6 +430,11 @@ for (batch_id in unique(batch_ids)) {
   )
 }
 
+# The blank samples themselves (normalized, not blank subtracted), quantified after calibration
+# for the exported concentration tables
+blank_samples_se <- proc_sumexp[, util$ctrl_smpl_cat(proc_sumexp) == "Blank"]
+SumExp::col_df(blank_samples_se)[["blank_source"]] <- rep("Not subtracted", ncol(blank_samples_se))
+
 # Global blank subtraction for failed batches.
 proc_sumexp <- proc$add_blank_subtracted_sumexp(
   sumexp = proc_sumexp,
@@ -478,7 +513,7 @@ mark_completed_and_save_to_report <- function() {
 if (IS_NON_TARGET_MODE) {
   warning("NO CALIBRATION under non-target mode.")
   mark_completed_and_save_to_report()
-  proc$stop_quietly()
+  quit(save = "no", status = 0)   # Done: a normal exit, so that the app reports success
 }
 
 if (params$log_calibration) cat("Log scale for calibration curve fitting is applied.\n")
@@ -489,6 +524,52 @@ if (has_multiple_batches) {
 }
 
 ##  CALIBRATION FUNCTION  ----------------------------------
+
+#' Concentrations from the signal in `se[[mat_id]]` (in the scale of the fit) with the fitted
+#' models (`calcurve_model`) and limits in `row_df(se)`, and the LOD/LLOQ rules
+#'
+#' @returns `se` with the matrices `conc0` (before the rules) and `conc`
+quantify_conc <- function(se, mat_id, in_log) {
+  se[["conc0"]] <- proc$compute_concentration(se, mat_id, log_scale = in_log) |>
+    labelled::set_label_attribute("Concentration before filtering")
+  # [[conc0]] is the unfiltered reference; [[conc]] gets the LOD/LLOQ replacements below
+  se[["conc"]] <- se[["conc0"]]
+  se <- util$save_src_mat_id_for_conc(se, mat_id)
+  # Replace concentrations below LOD/LLOQ; rows are kept intact to preserve data structure
+  se <- se |>
+    proc$replace_below_lod_lloq(conc_mat_id = "conc") |>
+    proc$replace_conc_whose_signal_below_lloq(conc_mat_id = "conc") |>
+    proc$replace_conc_whose_signal_above_lloq(conc_mat_id = "conc") |>
+    proc$replace_conc_whose_signal_below_lod(conc_mat_id = "conc")
+  # Curves kept although not valid can lack an LLOQ (no replacements then): no negative values
+  neg <- se[["conc"]] < 0 & SumExp::row_df(se)$kept_calcurve
+  neg[is.na(neg)] <- FALSE
+  se[["conc"]][neg] <- 0
+  se
+}
+
+#' Concentrations of the blank samples of a batch, from their normalized signal WITHOUT blank
+#' subtraction, with the final calibration of the batch (its own curves, or the global ones)
+#'
+#' @param blank_se The blank samples of the batch (before blank subtraction)
+#' @param concn_se The quantified samples of the batch (`row_df` with the models and limits)
+#' @param mat_id_to_calib The ID of the blank-subtracted matrix used for calibration
+#' @returns A `SumExp` object of the blanks with `conc0` and `conc` (same chemicals as `concn_se`)
+quantify_blanks <- function(blank_se, concn_se, mat_id_to_calib) {
+  in_log <- isTRUE(params$log_calibration)
+  mat_id <- util$mat_id_in_calibration(mat_id_to_calib)
+  src_mat_id <- to_blk_subt[match(mat_id_to_calib, mat_ids_after_blk_subt)]   # Not subtracted
+  se <- blank_se[rownames(concn_se), ]
+  SumExp::row_df(se) <- SumExp::row_df(concn_se)
+  sig <- se[[src_mat_id]]
+  se[[mat_id]] <- if (in_log) log1p(sig) else sig
+  se <- quantify_conc(se, mat_id, in_log)
+  if (in_log) se[[mat_id]] <- expm1(se[[mat_id]])   # Restore to original scale
+  # Chemicals not exported have no concentrations, as for the samples
+  se[["conc"]] <- util$extract_with_na(se[["conc"]], i = SumExp::row_df(se)$to_export, j = TRUE) |>
+    labelled::set_label_attribute(labelled::get_label_attribute(concn_se[["conc"]]))
+  se
+}
 
 # Separated as a function to be used for both per-batch and global-mode calibration
 quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
@@ -522,9 +603,20 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     enough_n = if (params$optimize_cal_points) 3 else Inf
   )
   
-  # Exclude chemicals without a valid calibration range; return early if none qualify
+  # Exclude chemicals without a valid calibration range; return early if none qualify.
+  # `range_issue` tells why a range is not valid. With `--keep_all_calcurves`, those chemicals keep
+  # a curve (`kept_calcurve`) over a forced range, and count as having a proper range below.
   has_proper_range <- proc$has_proper_calibration_range(qt_se)
-  SumExp::row_df(qt_se) <- cbind(SumExp::row_df(qt_se), has_proper_range)
+  rd <- SumExp::row_df(qt_se)
+  rd$range_issue[has_proper_range] <- NA_character_
+  rd$range_issue[!has_proper_range & is.na(rd$range_issue)] <- "No valid calibration range"
+  SumExp::row_df(qt_se) <- rd
+  kept_calcurve <- !has_proper_range & isTRUE(params$keep_all_calcurves)
+  if (any(kept_calcurve)) {
+    qt_se <- proc$force_calibration_range(qt_se, kept_calcurve, params$min_cal_points)
+  }
+  has_proper_range <- has_proper_range | kept_calcurve
+  SumExp::row_df(qt_se) <- cbind(SumExp::row_df(qt_se), has_proper_range, kept_calcurve)
   if (sum(has_proper_range) == 0) { # No chemicals with a valid range
     return(list(done = FALSE, data = qt_se))
   }
@@ -549,7 +641,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   # Fit the calibration curve
   e <- list(
     cc_se = calcurve_se, mat_id = mat_id, in_log = in_log, w_method = params$weight,
-    util = util, proc = proc
+    linear_only = isTRUE(params$linear_only), util = util, proc = proc
   ) |>
     list2env(parent = baseenv()) # To make sure all required objects are listed here
   calcurve_models <- local(envir = e, { # Isolated scope; intermediates do not leak out
@@ -566,7 +658,8 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
         c_concs,
         signal = cc_se[[mat_id]][ii, ],
         weight_method = w_method,
-        penalty_quadratic = 0.01
+        penalty_quadratic = 0.01,
+        linear_only = linear_only
       )
     })
     names(out) <- rownames(cc_se)
@@ -575,32 +668,63 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   SumExp::row_df(concn_se) <- SumExp::row_df(concn_se) |>
     dplyr::mutate(calcurve_model = calcurve_models)
   if (in_log) calcurve_se[[mat_id]] <- expm1(calcurve_se[[mat_id]]) # expm1(x) = exp(x) - 1
-  
-  concn_se[["conc0"]] <- proc$compute_concentration(concn_se, mat_id, log_scale = in_log) |>
-    labelled::set_label_attribute("Concentration before filtering")
-  # [[conc0]] is the unfiltered reference; [[conc]] will be NA-replaced below
-  concn_se[["conc"]] <- concn_se[["conc0"]]
-  concn_se <- util$save_src_mat_id_for_conc(concn_se, mat_id)
-  # Set concentrations below LOD/LLOQ to NA; rows are kept intact to preserve data structure
-  concn_se <- concn_se |>
-    proc$replace_below_lod_lloq(conc_mat_id = "conc") |>
-    proc$replace_conc_whose_signal_below_lloq(conc_mat_id = "conc") |>
-    proc$replace_conc_whose_signal_above_lloq(conc_mat_id = "conc") |>
-    proc$replace_conc_whose_signal_below_lod(conc_mat_id = "conc") 
+
+  # Minimum R2 (--r2_filter, --min_r2): a curve fitted with a lower R2 is not valid, i.e. no
+  # concentrations and not exported; with --keep_all_calcurves it is kept (and marked) instead
+  r2_failed <- rep(FALSE, length(calcurve_models))
+  if (isTRUE(params$r2_filter)) {
+    r2 <- vapply(calcurve_models, \(m) {
+      if (is.list(m)) unname(m$R2s[[m$best_model_name]]) else NA_real_
+    }, numeric(1))
+    low_r2 <- !is.na(r2) & r2 < params$min_r2 & has_proper_range & !kept_calcurve
+    if (any(low_r2)) {
+      issue <- sprintf("R² %.3f below the minimum %.3f", r2[low_r2], params$min_r2)
+      keep <- isTRUE(params$keep_all_calcurves)
+      set_r2_issue <- function(se) {
+        rd <- SumExp::row_df(se)
+        rd$range_issue[low_r2] <- issue
+        if (keep) rd$kept_calcurve[low_r2] <- TRUE else rd$has_proper_range[low_r2] <- FALSE
+        SumExp::row_df(se) <- rd
+        se
+      }
+      concn_se <- set_r2_issue(concn_se)
+      calcurve_se <- set_r2_issue(calcurve_se)
+      if (!keep) r2_failed <- low_r2
+      cat(sum(low_r2), "calibration curve(s) with R² below", params$min_r2,
+          if (keep) "(kept)." else "(not valid).", "\n")
+    }
+  }
+
+  quantify <- function(se) quantify_conc(se, mat_id, in_log)
+  concn_se <- quantify(concn_se)
   labelled::label_attribute(concn_se) <- signal_mat_label
   if (in_log) concn_se[[mat_id]] <- expm1(concn_se[[mat_id]]) # Restore to original scale
-  
-  # Flag chemicals where no study sample exceeded the LLOQ; these are excluded from exports
+  # The calibration samples too (back-calculated, all points), for the export with all samples
+  cc_conc <- local({
+    se <- calcurve_se
+    SumExp::row_df(se) <- dplyr::mutate(SumExp::row_df(se), calcurve_model = calcurve_models)
+    se[[mat_id]] <- if (in_log) log1p(se[[mat_id_to_calib]]) else se[[mat_id_to_calib]]
+    quantify(se)
+  })
+  calcurve_se[["conc0"]] <- cc_conc[["conc0"]]
+
+  # Flag chemicals where no study sample exceeded the LLOQ; these are excluded from exports.
+  # Curves kept by `--keep_all_calcurves` without an LLOQ are exported when they have a model.
   non_qc_conc <- util$exclude_ctrl_smpl_cat(concn_se, "QC")[["conc"]]
   any_above_lloq <- non_qc_conc > SumExp::row_df(concn_se)[, "lloq"]
   has_ex <- rowSums(any_above_lloq) > 0
   has_ex[is.na(has_ex)] <- FALSE
+  kept_no_lloq <- SumExp::row_df(concn_se)$kept_calcurve & is.na(SumExp::row_df(concn_se)$lloq)
+  has_ex[kept_no_lloq] <- !is.na(calcurve_models[kept_no_lloq])
+  has_ex[r2_failed] <- FALSE   # Below the minimum R2: no concentrations
   SumExp::row_df(concn_se)[["to_export"]] <- has_ex
   # Set concentrations of non-exported chemicals to NA
   unit <- SumExp::metadata(concn_se)$concentration_unit
   concn_se[["conc"]] <- util$extract_with_na(concn_se[["conc"]], i = has_ex, j = TRUE) |>
     labelled::set_label_attribute(paste0("Concentration [", unit, "]"))
-  
+  calcurve_se[["conc"]] <- util$extract_with_na(cc_conc[["conc"]], i = has_ex, j = TRUE) |>
+    labelled::set_label_attribute(paste0("Concentration [", unit, "]"))
+
   return(list(
     done = TRUE,
     calcurve = calcurve_se, # Calibration-curve samples with range metadata; no fitted models
@@ -642,6 +766,50 @@ calcurve_replicate_issue <- function(qt_se, params) {
 # Calibration used per batch, collected for the reports. One row per matrix ID and batch
 calibration_per_batch <- list()
 
+#' A compact copy of the global calibration (all batches) for the reports
+#'
+#' Kept for every chemical, also those calibrated batch-wise, so that the reports can show the
+#' global curve next to the batch curves. Plain matrices and the model coefficients only: the
+#' fitted models themselves (closures holding their data) would make the saved files large.
+#'
+#' @returns A list of `limits` (a tibble per chemical, with the model name, R2 and coefficients
+#'   `coef` of the fit of signal on concentration), the calibration points (`cal_signal`,
+#'   `cal_used`, `cal_conc`) and the quantified samples (`conc0`, `signal`); matrices have
+#'   chemicals in rows and sample IDs in columns.
+compact_global_calibration <- function(cal, mat_id_to_calib) {
+  mat_id <- util$mat_id_in_calibration(mat_id_to_calib)
+  rd <- SumExp::row_df(cal$concn)
+  model_info <- lapply(rd$calcurve_model, function(m) {
+    if (!is.list(m) || is.null(m$best_model_name)) {
+      return(list(model = NA_character_, r2 = NA_real_, coef = NULL))
+    }
+    list(model = m$best_model_name, r2 = unname(m$R2s[[m$best_model_name]]),
+         coef = unname(stats::coef(m$inv_model)))
+  })
+  limits <- tibble::tibble(
+    feature_id = rownames(cal$concn),
+    feature_name = rd$feature_name,
+    has_proper_range = rd$has_proper_range,
+    range_issue = rd$range_issue,          # Why the range is not valid (NA: valid)
+    kept_calcurve = rd$kept_calcurve,      # Kept despite `range_issue` (--keep_all_calcurves)
+    no_quant_samples = rd$no_quant_samples,   # No sample or QC at or above the LLOQ: full range
+    lod = rd$lod, lloq = rd$lloq, max_c_conc = rd$max_c_conc,
+    model = vapply(model_info, `[[`, "", "model"),
+    r2 = vapply(model_info, `[[`, 0, "r2"),
+    coef = lapply(model_info, `[[`, "coef")   # Intercept, conc (, conc^2); log scale if fitted so
+  )
+  list(
+    log_scale = isTRUE(params$log_calibration),
+    limits = limits,
+    cal_signal = cal$calcurve[[mat_id_to_calib]],
+    cal_used = !is.na(cal$calcurve[[mat_id]]),   # Points within the calibration range
+    cal_conc = stats::setNames(SumExp::col_df(cal$calcurve)$c_conc, colnames(cal$calcurve)),
+    conc0 = cal$concn[["conc0"]],
+    signal = cal$concn[[mat_id]]
+  )
+}
+to_report[["global calibration"]] <- list()
+
 ##  CALIBRATION  -------------------------------------------
 
 # Collect the output. "mat_id_to_calib" -> "batch_id" -> list of "calcurve" and "concn"
@@ -667,6 +835,8 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
     )
     SumExp::row_df(cal_global$calcurve)[["src_calcurve"]] <- src_global
     SumExp::row_df(cal_global$concn)[["src_calcurve"]] <- src_global
+    to_report[["global calibration"]][[mat_id_to_calib]] <-
+      compact_global_calibration(cal_global, mat_id_to_calib)
   } else {
     warning(
       "  NO Valid calibration points for any chemical in all samples.",
@@ -710,21 +880,30 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
       src_calcurve <- dplyr::if_else(has_proper_range, "Batch", NA_character_)
       SumExp::row_df(cal_batch$calcurve)[["src_calcurve"]] <- src_calcurve
       SumExp::row_df(cal_batch$concn)[["src_calcurve"]] <- src_calcurve
-      # If any chemical has no proper range in the batch calibration, try to use global calibration
-      if (cal_global$done && sum(!has_proper_range) > 0) {
-        global_has_proper_range <- SumExp::row_df(batch_in_global$calcurve)[, "has_proper_range"]
+      # If any chemical has no proper range in the batch calibration (or only a curve kept by
+      # `--keep_all_calcurves`), try to use the global calibration
+      kept_b <- SumExp::row_df(cal_batch$calcurve)[, "kept_calcurve"]
+      if (cal_global$done && sum(!has_proper_range | kept_b) > 0) {
+        rd_global <- SumExp::row_df(batch_in_global$calcurve)
         # Only global calibration has proper range, replace with global calibration
-        in_only_global <- !has_proper_range & global_has_proper_range
+        in_only_global <- (!has_proper_range | kept_b) & rd_global$has_proper_range & !rd_global$kept_calcurve
         if (sum(in_only_global) > 0) {
           batch_in_only_global <- lapply(batch_in_global, \(x) x[in_only_global, ])
+          # Why the batch's own curve is not used (kept with the global curve info below)
+          batch_issue <- SumExp::row_df(cal_batch$concn)$range_issue[in_only_global]
 
           # Replace the values in the batch calibration with the global calibration
-          cal_batch$concn[["conc"]][in_only_global, ] <- batch_in_only_global$concn[["conc"]]
-          cal_batch$concn[["conc0"]][in_only_global, ] <- batch_in_only_global$concn[["conc0"]]
-          
+          for (m in c("conc", "conc0")) {
+            cal_batch$concn[[m]][in_only_global, ] <- batch_in_only_global$concn[[m]]
+            cal_batch$calcurve[[m]][in_only_global, ] <- batch_in_only_global$calcurve[[m]]
+          }
+
           #Replacing information with global curve info
           SumExp::row_df(cal_batch$concn)[in_only_global, ] <- SumExp::row_df(batch_in_only_global$concn)
           SumExp::row_df(cal_batch$calcurve)[in_only_global, ] <- SumExp::row_df(batch_in_only_global$calcurve)
+          for (part in c("concn", "calcurve")) {
+            SumExp::row_df(cal_batch[[part]])$range_issue[in_only_global] <- batch_issue
+          }
         }
       }
       lst_proc[[mat_id_to_calib]][[batch_id]] <- cal_batch
@@ -758,10 +937,20 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
       }
     }
 
+    # The blank samples of the batch, quantified with its final calibration (without blank
+    # subtraction)
+    in_batch <- as.character(SumExp::col_df(blank_samples_se)[["batch_id"]]) == batch_id
+    if (!is.null(lst_proc[[mat_id_to_calib]][[batch_id]]) && any(in_batch)) {
+      lst_proc[[mat_id_to_calib]][[batch_id]]$blank <- quantify_blanks(
+        blank_samples_se[, in_batch], lst_proc[[mat_id_to_calib]][[batch_id]]$concn, mat_id_to_calib
+      )
+    }
+
     # Tag the samples of the batch with the calibration used: "Batch", "Batch + Global"
     # (some chemicals from the global calibration) or "Global" (batch calibration not possible)
     if (!is.null(lst_proc[[mat_id_to_calib]][[batch_id]])) {
-      for (part in c("calcurve", "concn")) {
+      parts <- intersect(c("calcurve", "concn", "blank"), names(lst_proc[[mat_id_to_calib]][[batch_id]]))
+      for (part in parts) {
         n_smpl <- ncol(lst_proc[[mat_id_to_calib]][[batch_id]][[part]])   # Can be 0 for "calcurve"
         SumExp::col_df(lst_proc[[mat_id_to_calib]][[batch_id]][[part]])[["calibration"]] <-
           rep(batch_cal, n_smpl)

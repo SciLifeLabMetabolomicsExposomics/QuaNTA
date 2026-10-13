@@ -13,16 +13,17 @@
 #' @export
 runReadMsdialUI <- function(uiId) {
   ns <- shiny::NS(uiId)
-  shiny::tagList(
+  settings_group(
+    "Processing", "layer-group",
     # `per batch processing` options
     shiny::checkboxInput(
       inputId = ns("per_batch"),
-      label = "Process data per batch?",
+      label = label_tip("Process data per batch",
+                        paste("Blank subtraction and calibration per batch (Batch ID). A batch without",
+                              "enough calibration replicates uses the global curve of all batches.")),
       value = TRUE,
     ),
-    shiny::actionButton(ns("run_button"), "Read MS-Dial output files")
-
-
+    shiny::actionButton(ns("run_button"), "Read MS-DIAL output file", icon = shiny::icon("file-import"))
   )
 }
 
@@ -47,13 +48,14 @@ runReadMsdialUI_2 <- function(uiId) {
 #' @param serverId A string that identifies the server module.
 #'
 #' @export
-runReadMsdialServer <- function(serverId, data_info, ws) {
+runReadMsdialServer <- function(serverId, data_info, ws, clear = NULL) {
   runScriptServer(serverId,
                   script_path = "scripts/read-msdial.R",
-                  what = "User data information saved successfully.\nRead MS-Dial",
+                  what = "Reading the MS-DIAL file",
                   param_ids = c("per_batch"),
                   data_info = data_info,
-                  ws = ws)
+                  ws = ws,
+                  clear = clear)
 }
 
 #' A Shiny app to run a script and display the output, for testing purposes
