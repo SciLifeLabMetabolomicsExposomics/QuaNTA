@@ -393,6 +393,23 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
     startRow = nrow(sinfo) + 1,
     colNames = TRUE
   )
+  # Concentrations without a value below the LOD / LLOQ: "n.d." / "n.q." (text) in their cells,
+  # written per run of neighbouring cells of a chemical (the other cells stay numbers)
+  if (mat_id == "conc") {
+    flag <- .llox_flag_text(sumexp)
+    i_row <- match(SumExp::row_df(sumexp)$alignment_id, df_x$`Alignment ID`) + nrow(sinfo) + 1L
+    for (r in which(rowSums(!is.na(flag)) > 0)) {
+      js <- which(!is.na(flag[r, ]))
+      for (run in split(js, cumsum(c(1L, diff(js) != 1L)))) {
+        .write_data_wb_sheet(
+          x = as.data.frame(t(unname(flag[r, run]))),
+          startCol = ncol(feat_tbl) + run[1L],
+          startRow = i_row[r],
+          colNames = FALSE
+        )
+      }
+    }
+  }
   # R2 always with 3 decimals (numbers formatted "0.000", e.g. 0.950)
   i_r2 <- which(names(df_x) %in% c("R2", "Average R2"))
   if (length(i_r2) > 0 && nrow(df_x) > 0) {
@@ -521,6 +538,9 @@ tbl_chemical_summary <- function(sumexp) {
     dplyr::rename(chem_name = "feature_name")
   # Concentration
   mat <- sumexp[["conc"]]
+  # Samples with a concentration, or "n.d." / "n.q." instead of one
+  has_result <- !is.na(mat)
+  if ("conc_flag" %in% names(sumexp)) has_result <- has_result | !is.na(sumexp[["conc_flag"]])
   # Measured values at or above the LLOQ, for the min/median/mean/max
   mat_ge_lloq <- measured_conc(sumexp)
   # Signal matrix
@@ -543,7 +563,7 @@ tbl_chemical_summary <- function(sumexp) {
     dplyr::mutate(
       n_det = rowSums(mat_signal >= lod_signal, na.rm = TRUE),
       n_quant = rowSums(mat >= lloq, na.rm = TRUE),
-      n_samples = rowSums(!is.na(mat)),
+      n_samples = rowSums(has_result),
     ) |>
     dplyr::mutate(
       median = apply(mat_ge_lloq, 1, .skip_all_na, fun = stats::median),
@@ -771,16 +791,22 @@ measured_conc <- function(sumexp) {
 }
 
 #' Values replaced after calibration by the LOD/LLOQ rules: colour (as in the reports) and meaning
-#' per replacement, given as the fraction of the LLOQ
+#' per replacement, given as the fraction of the LLOQ. `flag` and `meaning_flag`: the same values
+#' when they are not replaced but reported as "n.d." / "n.q." (`--impute_llox` FALSE)
 .imputed_styles <- tibble::tribble(
-  ~code, ~fill,     ~meaning,
-  1/4,   "#FAAFAF", "Below the LOD: replaced by LLOQ/4",
-  1/2,   "#FCEACF", "Between the LOD and the LLOQ: replaced by LLOQ/2",
-  1,     "#D3EBF2", "Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ",
+  ~code, ~fill,     ~flag,  ~meaning,                                            ~meaning_flag,
+  1/4,   "#FAAFAF", "n.d.", "Below the LOD: replaced by LLOQ/4",                 "n.d.: not detected (below the LOD), no value",
+  1/2,   "#FCEACF", "n.q.", "Between the LOD and the LLOQ: replaced by LLOQ/2",  "n.q.: not quantified (between the LOD and the LLOQ), no value",
+  1,     "#D3EBF2", NA,     "Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ",
+                            "Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ",
 )
 
+#' Whether the values below the LOD / LLOQ were replaced (`TRUE`, also for data processed by older
+#' versions) or reported as "n.d." / "n.q."
+.llox_imputed <- function(sumexp) !isFALSE(SumExp::metadata(sumexp)$llox_imputed)
+
 #' Matrix of the replaced values: the fraction of the LLOQ (see `.imputed_styles`), 0 if not
-#' replaced
+#' replaced. Values reported as "n.d." / "n.q." have the code of the replacement they replace.
 #'
 #' @param sumexp A [`SumExp::SumExp`] object with the `conc` matrix and the `lloq` per chemical
 .imputed_codes <- function(sumexp) {
@@ -790,7 +816,24 @@ measured_conc <- function(sumexp) {
   for (f in .imputed_styles$code) {
     code[!is.na(conc) & !is.na(lloq) & conc == lloq * f] <- f
   }
+  flag <- .llox_flag_text(sumexp)
+  for (ii in which(!is.na(.imputed_styles$flag))) {
+    code[flag %in% .imputed_styles$flag[ii]] <- .imputed_styles$code[ii]
+  }
   labelled::set_label_attribute(code, "Replaced value (fraction of the LLOQ)")
+}
+
+#' "n.d." / "n.q." where a concentration has no value because it is below the LOD / LLOQ,
+#' otherwise `NA` (a matrix as `conc`)
+.llox_flag_text <- function(sumexp) {
+  conc <- sumexp[["conc"]]
+  out <- matrix(NA_character_, nrow(conc), ncol(conc), dimnames = dimnames(conc))
+  if ("conc_flag" %in% names(sumexp)) {
+    flag <- sumexp[["conc_flag"]]
+    keep <- !is.na(flag) & is.na(conc)
+    out[keep] <- as.character(flag[keep])
+  }
+  out
 }
 
 #' Colour the replaced values of a worksheet written by `.write_data_to_new_worksheet()`
@@ -815,16 +858,21 @@ measured_conc <- function(sumexp) {
 }
 
 #' Add a worksheet that explains the colours and the order of the samples
-.add_legend_worksheet <- function(wb, with_calibrants) {
+.add_legend_worksheet <- function(wb, with_calibrants, imputed = TRUE) {
   openxlsx::addWorksheet(wb, "Legend")
-  legend <- data.frame(Colour = "", Meaning = .imputed_styles$meaning)
+  legend <- data.frame(Colour = "", Meaning = if (imputed) .imputed_styles$meaning else .imputed_styles$meaning_flag)
   openxlsx::writeData(wb, "Legend", legend)
   for (ii in seq_len(nrow(.imputed_styles))) {
     openxlsx::addStyle(wb, "Legend", openxlsx::createStyle(fgFill = .imputed_styles$fill[ii]),
                        rows = ii + 1L, cols = 1L)
   }
   notes <- c(
-    "Concentrations of the blank-subtracted, normalized data; values replaced by the LOD/LLOQ rules are coloured.",
+    if (imputed) {
+      "Concentrations of the blank-subtracted, normalized data; values replaced by the LOD/LLOQ rules are coloured."
+    } else {
+      paste("Concentrations of the blank-subtracted, normalized data. Values below the LOD / LLOQ are not replaced:",
+            "they are reported as n.d. / n.q. (text, no value) and left out of the averages and medians.")
+    },
     "Blank samples: concentrations of their normalized data WITHOUT blank subtraction (\"Blank subtracted\" row: Not subtracted).",
     if (with_calibrants) {
       "All samples, including the calibration samples, by batch and injection order."
@@ -857,8 +905,11 @@ measured_conc <- function(sumexp) {
     cd <- cd[, cols, drop = FALSE]
     cd[] <- lapply(cd, \(x) if (is.factor(x)) as.character(x) else x)
     labelled::var_label(cd) <- NULL
+    conc <- se[["conc"]][rownames(concn), , drop = FALSE]
+    # "n.d." / "n.q." of the values below the LOD / LLOQ (none for older processed data)
+    flag <- .llox_flag_text(se)[rownames(concn), , drop = FALSE]
     SumExp::SumExp(
-      conc = labelled::set_label_attribute(se[["conc"]][rownames(concn), , drop = FALSE], lab),
+      conc = labelled::set_label_attribute(conc, lab), conc_flag = flag,
       col_df = cd, row_df = SumExp::row_df(concn), metadata = SumExp::metadata(concn)
     )
   }
@@ -974,6 +1025,6 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE,
       )
     }
   }
-  .add_legend_worksheet(wb, with_calibrants)
+  .add_legend_worksheet(wb, with_calibrants, imputed = .llox_imputed(sumexp_lst[[1L]]))
   openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
 }

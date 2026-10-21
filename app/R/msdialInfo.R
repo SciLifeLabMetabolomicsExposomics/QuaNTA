@@ -32,13 +32,15 @@ msdialInfoUI <- function(uiId) {
                          value = "", width = "100%"),
     .hr(),
     shiny::textInput(ns("concentration_unit"), "Concentration unit", value = "", width = "100%"),
-    shiny::strong("MS-DIAL output file"),
+    shiny::strong("Data file"),
     shiny::uiOutput(ns("upload_hint")),   # Mentions the upload limit only on SciLifeLab Serve
     shiny::fileInput(
       ns("input_file_upload"),
       label = NULL,
       buttonLabel = "Browse",
       placeholder = "No file selected",
+      # Only the file dialog's filter; the server checks the type too (`upload_type_problem()`)
+      accept = c(".txt", ".gz", ".zip"),
       width = "100%"
     ),
     shiny::verbatimTextOutput(ns("input_file_out"), placeholder = TRUE)
@@ -52,9 +54,9 @@ msdialInfoUI <- function(uiId) {
 #'
 #' @inheritParams msdialInfoUI
 #' @export
-msdialInfoDownloadUI <- function(uiId) {
-  shiny::downloadButton(shiny::NS(uiId)("download_params"),
-                        "Download parameters and processing settings (.yml)")
+msdialInfoDownloadUI <- function(uiId, label = "Download parameters and processing settings (.yml)",
+                                 class = NULL) {
+  shiny::downloadButton(shiny::NS(uiId)("download_params"), label, class = class)
 }
 
 #' MS-DIAL User Information Server for Shiny
@@ -91,6 +93,19 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
     # Compressed uploads (.gz, .zip) are decompressed in a background process.
     shiny::observeEvent(input$input_file_upload, {
       up <- input$input_file_upload
+      # Only a .txt file, or a .gz / .zip with one .txt file inside (checked when decompressing);
+      # another file keeps the earlier data
+      problem <- upload_type_problem(up$name)
+      if (!is.null(problem)) {
+        shiny::showModal(shiny::modalDialog(
+          title = "This file cannot be used as the data file",
+          shiny::p(problem),
+          shiny::p("Upload the data export as a .txt file, or compressed as a .gz or .zip file with one",
+                   ".txt file inside. A parameters file (.yml) is loaded with \"Load parameters file\" above."),
+          easyClose = TRUE
+        ))
+        return()
+      }
       # A new file makes all earlier results stale (data, exported tables, reports)
       unlink(list.files(ws$input, full.names = TRUE))
       unlink(list.files(ws$intermediate, full.names = TRUE))
@@ -157,7 +172,7 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       }
       shiny::showNotification(
         paste("Parameters loaded from", input$load_params$name,
-              "- the MS-DIAL file must still be uploaded."),
+              "- the data file must still be uploaded."),
         type = "message"
       )
     })

@@ -1,4 +1,4 @@
-# Status profiles
+## 1.2 Status profiles
 
 Each targeted compound in each study sample gets one status, from the concentration before filtering
 (`conc0`) and the compound's limits: **Valid**, **> ULOQ** (above the calibration range), **< LLOQ**,

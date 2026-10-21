@@ -13,6 +13,18 @@ This document is written in Markdown (`.md`) and is best viewed using a Markdown
 
 --------------------------------------------------------------------------------
 
+# Citing QuaNTA
+
+* The app on [SciLifeLab Serve](https://serve.scilifelab.se): cite it by its DOI on Serve (shown on
+  the app's page there), not by its address. Acknowledgement of the hosting, as suggested by Serve:
+  "Technical infrastructure for hosting the app 'QuaNTA' was provided by SciLifeLab Serve
+  (https://serve.scilifelab.se; RRID:SCR_027820), a platform developed and supported by SciLifeLab
+  Data Centre."
+* The methods QuaNTA uses are referenced in `app/reports/bibliography.bib`; the reports and the
+  app's About popup cite them.
+
+--------------------------------------------------------------------------------
+
 # How to use the program
 
 ## Copy the code
@@ -50,7 +62,9 @@ The `Dockerfile` in the root of the repository builds the image that runs the Sh
 [SciLifeLab Serve](https://serve.scilifelab.se).
 It installs R and the packages in `renv.lock`, Quarto with TinyTeX (for the PDF report) and the
 local `SumExp` package, copies the app (`app/`) to `/srv/shiny-server/`, and starts the app with
-**shiny-server** on port **3838**.
+**shiny-server** on port **3838**, as the user `shiny` (UID 999, as SciLifeLab Serve expects).
+The Quarto version is fixed in the `Dockerfile` (`QUARTO_VERSION`); change it there on purpose and
+check the reports. `.dockerignore` keeps test data, mockups and caches out of the build.
 Building the image needs internet access; the running app does not (fonts and LaTeX packages are
 included in the image).
 

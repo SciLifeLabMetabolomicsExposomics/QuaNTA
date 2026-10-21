@@ -31,12 +31,14 @@ genReportUI <- function(uiId) {
 #' @param data_info The `reactiveValues` returned by [msdialInfoServer()].
 #' @param ws The session workspace from [create_session_workspace()].
 #' @param norm_method A reactive returning the normalization method (e.g. `"loess_norm"`).
+#' @param no_external_reason `NULL`, or a reactive returning why the external (PDF) report cannot be
+#'   generated (e.g. no calibration in non-target mode), `NULL` when it can.
 #'
 #' @returns A list with the reactives `report_path` (absolute path of the latest internal report,
 #'   `""` before the first one; its file name includes the time of generation) and `report_ready`
 #'   (changes every time a report was rendered).
 #' @export
-genReportServer <- function(serverId, data_info, ws, norm_method) {
+genReportServer <- function(serverId, data_info, ws, norm_method, no_external_reason = NULL) {
   shiny::moduleServer(serverId, function(input, output, session) {
     msg <- shiny::reactiveVal("")
     report_ready <- shiny::reactiveVal(NULL)
@@ -79,7 +81,9 @@ genReportServer <- function(serverId, data_info, ws, norm_method) {
           interactive_plot = FALSE,
           project_title = shiny::isolate(data_info[["project_title"]]),
           # The same time as in the file name, shown at the top of the report
-          generated_at = format(time, "%Y-%m-%d %H:%M:%S %Z")
+          generated_at = format(time, "%Y-%m-%d %H:%M:%S %Z"),
+          # Generated on SciLifeLab Serve: the reports acknowledge the hosting
+          on_serve = shiny::isolate(is_on_serve(session))
         )
       )
       run_bg_rscript(
@@ -123,6 +127,13 @@ genReportServer <- function(serverId, data_info, ws, norm_method) {
     shiny::observeEvent(input$gen_external, {
       shiny::req(norm_method())
       msg_external("")
+      # The PDF report is about the quantified compounds: say why it cannot be made instead of failing
+      reason <- if (is.null(no_external_reason)) NULL else tryCatch(no_external_reason(), error = function(e) NULL)
+      if (!is.null(reason)) {
+        msg_external(paste("The external (PDF) report shows the quantified compounds, so it needs calibration.",
+                           reason, "The internal report covers this dataset."))
+        return(invisible())
+      }
       time <- Sys.time()
       out_name <- report_name("external.pdf", time)
       render_report(

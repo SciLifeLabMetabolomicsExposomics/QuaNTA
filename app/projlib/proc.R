@@ -137,8 +137,11 @@ identify_outliers <- function(x, times = 3) {
 count_outliers_per_sample <- function(se, mat_id, times = 3) {
   x <- se[[mat_id]]
   x <- log1p(x)              # Log-transform the data
+  if (nrow(x) == 0) return(stats::setNames(rep(0, ncol(x)), colnames(x)))   # No IS left
   outlying <- apply(x, 1, identify_outliers, times = times)
-  return(rowSums(outlying))     # Transposed by `apply` above
+  # A samples x IS matrix (transposed by `apply` above); `apply` gives a vector with one IS only
+  outlying <- matrix(outlying, nrow = ncol(x), dimnames = list(colnames(x), rownames(x)))
+  return(rowSums(outlying))
 }
 
 ##  NORMALIZATION METHODS  ---------------------------------
@@ -190,8 +193,12 @@ get_data_of_closest_istd <- function(se, istd_se, mat_id, verbose = TRUE) {
 get_data_of_closest_istd_in_class <- function(se, istd_se, mat_id) {
   rt_x <- util$retention_time(se)
   rt_istd <- util$retention_time(istd_se)
-  # Find the closest internal standard feature
-  i_closest <- sapply(rt_x, \(.x) which.min(abs(rt_istd - .x)))
+  # Find the closest internal standard feature (`NA` without a retention time or without any IS:
+  # `which.min()` then gives nothing, and `sapply()` would return a list)
+  i_closest <- vapply(rt_x, \(.x) {
+    i <- which.min(abs(rt_istd - .x))
+    if (length(i) == 0) NA_integer_ else i
+  }, integer(1))
   # dim(mat) == dim(se) Not dim(istd_se)
   mat <- istd_se[[mat_id]][i_closest, , drop = FALSE]
   rownames(mat) <- rownames(se)
@@ -752,7 +759,8 @@ max_conc_for_curve <- function(mat_m, mat_q) {
 #' @param conc_pts A numeric vector of spiked concentrations
 #' @param min_n Required minimum number of concentrations for the calibration curve. If the
 #'   number of concentrations is less than this, `NA` is returned.
-#' @param enough_n Enough number of concentrations for the calibration curve
+#' @param enough_n Enough number of concentrations for the calibration curve; a range with fewer
+#'   points is extended upwards to `max(enough_n, min_n)` points
 #'
 #' @returns A numeric vector of the maximum concentrations that provide enough number of spiked
 #'   concentrations. The names are the same as the input vector `max_conc`. If the number of
@@ -765,8 +773,9 @@ make_sure_to_have_enough_calcurve_pts <- function(max_conc, min_conc, conc_pts, 
   # Indices of the minimum/maximum concentration points
   i_min <- match(min_conc, uniq_conc)
   i_max <- match(max_conc, c(0, uniq_conc)) - 1 # If `max_conc` == 0, take the largest range
-  # Counting from minimum
-  i_enough_from_min <- i_min + enough_n - 1
+  # Counting from minimum: at least `min_n` points (a range cut at the highest sample is extended
+  # to the required minimum, not only to `enough_n`, which may be smaller)
+  i_enough_from_min <- i_min + max(enough_n, min_n) - 1
   # Find the indices of the maximums that provide enough number of spiked concentration points
   i_max <- ifelse(i_enough_from_min <= i_max, i_max, i_enough_from_min)
   # Limit when `i_enough_from_min` > number of concentration points
@@ -956,6 +965,44 @@ force_calibration_range <- function(sumexp, rows, min_n) {
   rd$max_c_conc[rows] <- conc_pts[n]
   SumExp::row_df(sumexp) <- rd
   sumexp
+}
+
+#' Average the calibration curve replicates within each batch
+#'
+#' The calibration curve samples of each batch and concentration level are replaced by one sample
+#' with their average (of every matrix; `NA` values left out). The other samples are unchanged.
+#' The averaged samples are named "CalAvg_B<batch>_<concentration>" (sample ID and name) and keep
+#' the sample information of the first replicate; `n_averaged` is the number of replicates.
+#'
+#' @param se A [`SumExp::SumExp`] object with all samples
+#' @returns A [`SumExp::SumExp`] object with the averaged calibration curve samples last
+#' @export
+average_calcurve_replicates <- function(se) {
+  cd <- SumExp::col_df(se)
+  is_cc <- util$ctrl_smpl_cat(se) == "CalCurve"
+  if (!any(is_cc)) return(se)
+  conc <- util$spiked_conc_pts(se)
+  key <- ifelse(is_cc, paste(as.character(cd$batch_id), conc, sep = "|"), NA_character_)
+  keys <- unique(key[is_cc])
+  first <- match(keys, key)
+  ids <- paste0("CalAvg_B", as.character(cd$batch_id)[first], "_",
+                format(conc[first], scientific = FALSE, drop0trailing = TRUE, trim = TRUE))
+  average <- function(m) {
+    avg <- vapply(keys, function(k) {
+      r <- rowMeans(m[, key %in% k, drop = FALSE], na.rm = TRUE)
+      r[is.nan(r)] <- NA_real_
+      r
+    }, numeric(nrow(m)))
+    avg <- matrix(avg, nrow = nrow(m), dimnames = list(rownames(m), ids))
+    labelled::copy_labels(m, cbind(m[, !is_cc, drop = FALSE], avg))
+  }
+  new_cd <- cd[c(which(!is_cc), first), , drop = FALSE]
+  rownames(new_cd) <- c(rownames(cd)[!is_cc], ids)
+  new_cd$sample_name[sum(!is_cc) + seq_along(ids)] <- ids
+  new_cd$n_averaged <- c(rep(1L, sum(!is_cc)), as.integer(table(factor(key[is_cc], levels = keys))))
+  mats <- lapply(stats::setNames(nm = names(se)), function(nm) average(se[[nm]]))
+  do.call(SumExp::SumExp, c(mats, list(col_df = new_cd, row_df = SumExp::row_df(se),
+                                       metadata = SumExp::metadata(se))))
 }
 
 #' Replace values outside the concentration range with NA
@@ -1247,6 +1294,24 @@ replace_conc_whose_signal_below_lod <- function(sumexp, conc_mat_id) {
 
   sumexp[[conc_mat_id]] <- .replace_where(c_mat, signal_mat < lod_signal, lloq / 4)
   sumexp
+}
+
+#' Which concentrations the LOD/LLOQ rules replaced below the LOD or the LLOQ
+#'
+#' @param conc0 The concentrations before the rules
+#' @param conc The concentrations after the rules (same dimensions)
+#' @param lloq The LLOQ of each chemical (row)
+#' @returns A character matrix: "n.d." (not detected: replaced by LLOQ/4), "n.q." (not quantified:
+#'   replaced by LLOQ/2), otherwise `NA` (also for values set to the LLOQ, whose signal is at or
+#'   above the LLOQ level)
+#' @export
+llox_flags <- function(conc0, conc, lloq) {
+  lloq <- matrix(lloq, nrow = nrow(conc), ncol = ncol(conc))
+  replaced <- !is.na(conc) & !is.na(lloq) & (is.na(conc0) | conc != conc0)
+  flag <- matrix(NA_character_, nrow = nrow(conc), ncol = ncol(conc), dimnames = dimnames(conc))
+  flag[replaced & conc == lloq / 4] <- "n.d."
+  flag[replaced & conc == lloq / 2] <- "n.q."
+  flag
 }
 
 #' Find out in which calibration point there is continuous increase in following points

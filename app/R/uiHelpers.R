@@ -8,8 +8,10 @@
 #' @param icon_name A Font Awesome icon name, e.g. "folder-open".
 #' @param subtitle An optional short description below the title.
 #' @param actions Optional UI on the right of the header, e.g. a button.
+#' @param below Optional UI in a row of its own under the title and subtitle (part of the header:
+#'   it stays visible while the card body scrolls), e.g. a button.
 #' @export
-quanta_card_header <- function(title, icon_name = NULL, subtitle = NULL, actions = NULL) {
+quanta_card_header <- function(title, icon_name = NULL, subtitle = NULL, actions = NULL, below = NULL) {
   bslib::card_header(
     shiny::div(
       class = "q-card-head",
@@ -20,7 +22,8 @@ quanta_card_header <- function(title, icon_name = NULL, subtitle = NULL, actions
         if (!is.null(subtitle)) shiny::p(class = "q-card-sub", subtitle)
       ),
       if (!is.null(actions)) shiny::div(class = "q-card-actions", actions)
-    )
+    ),
+    if (!is.null(below)) shiny::div(class = "q-card-below", below)
   )
 }
 

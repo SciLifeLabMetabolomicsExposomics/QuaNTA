@@ -80,8 +80,8 @@ NORM_METHOD_LABELS <- c(
   "Without normalization" = "raw"
 )
 
-quanta_card <- function(title, ..., icon_name = NULL, subtitle = NULL) {
-  card(quanta_card_header(title, icon_name, subtitle), ...)
+quanta_card <- function(title, ..., icon_name = NULL, subtitle = NULL, actions = NULL, below = NULL) {
+  card(quanta_card_header(title, icon_name, subtitle, actions = actions, below = below), ...)
 }
 
 # A card in a resizable pane (Split.js) of the analysis tabs, e.g. side = "qc-left"
@@ -90,6 +90,36 @@ quanta_card_resize <- function(title, side, ...) {
   div(id = side, card(quanta_card_header(title, icon_name), ...))
 }
 section <- function(title, ...) div(style = "padding: 0;", h3(class = "q-section-title", title), ...)
+
+# Explanation of each table and figure, shown on hover over the info icon next to its title
+SECTION_TIPS <- list(
+  "2.1" = "Number and share of samples per category (blank, calibration curve, QC, study sample) and class, from the sample information rows of the data file.",
+  "2.2" = "Number of calibration curve samples per concentration level, per batch and in total. The concentrations are read from the calibrant names (e.g. Cal0-5 = 0.5).",
+  "2.3" = "Number of features per type, from the Comment column: Quant (targeted), IS (internal standards), vIS (volumetric internal standard), empty (non-targeted).",
+  "2.4" = "Every feature by retention time and m/z. After processing, the targeted compounds are coloured by their outcome (quantified, no valid calibration, removed, ...). Non-targeted features can be shown via the legend.",
+  "2.5" = "Number of features per m/z, in bins of 0.5. Hover over a bar for its range; drag to zoom, double-click to reset.",
+  "2.6" = "All raw peak areas of all features and samples, in linear scale (left) and log scale (right, positive values only): the dynamic range of the data and the share of zeros.",
+  "3.1" = "All internal standards (IS) with retention time, m/z, the RSD% of the raw peak areas over all samples and the number of zero values; failed IS are coloured. Select a row to show the IS in 3.4 and 3.5.",
+  "3.2" = "An IS fails when more than 10% of the samples have a zero value. Failed IS are removed before normalization.",
+  "3.3" = "A sample is an outlier when more than 20% of the IS deviate by more than 3 SD from their mean (log scale). Outlier samples are removed before normalization.",
+  "3.4" = "RSD% of the raw peak areas of the IS selected in 3.1, within each QC group and each sample class (with the number of samples). An RSD% needs at least 2 samples.",
+  "3.5" = "Raw peak areas of the IS selected in 3.1, by sample group (left) and along the injection order (right).",
+  "3.6" = "Raw peak area of each volumetric IS per sample along the injection order (all samples, also outliers), and its RSD% per group: how constant the added volume was.",
+  "3.7" = "Peak areas of all IS per sample along the injection order, stacked, with a LOESS trend of the total. Two panels, e.g. to compare raw and normalized values.",
+  "3.8" = "Each line is one targeted compound in one QC group: its RSD% among the QC replicates without normalization (Raw) and with each method, before blank filtering. The colour is the method with the lowest RSD%.",
+  "3.9" = "The RSD% of 3.8 as a table: per targeted compound, QC group and method. Filter by QC group or search a feature.",
+  "3.10" = "Features removed by the blank filter or by the QC RSD% filter, for the chosen normalization method, with the reason.",
+  "3.11" = "One feature in the blanks next to the QCs, study samples (and calibrants), with the threshold of the blank filter (factor × blank mean). Groups: mean ± SD and the samples; per sample: one bar per injection.",
+  "4.1" = "Number of calibration curve samples per concentration in the selected batch.",
+  "4.2" = "Per chemical: the calibration curve used (batch or global), the LOD, the LLOQ (start of the curve) and the highest level, with a note when the curve is not valid. Red: no valid curve; blue: global curve; orange: kept although not valid; grey: removed before calibration. Select a row to show the chemical in the figures.",
+  "4.3" = "Number of chemicals per batch with a valid calibration curve and concentrations in the samples.",
+  "4.4" = "The calibration points of the selected chemical with the fitted curve, coloured by their place: within the calibration range, at the LOD, Cal0 or out of range; one shape per batch.",
+  "4.5" = "The samples of the selected chemical on its calibration curve (signal against the calculated concentration); the shaded areas are below the LOD and the LLOQ.",
+  "4.6" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
+  "4.7" = "The selected chemical in the QC samples of all batches along the injection order, a line per QC group: the values should be stable over the run. Open points: values replaced by the LOD/LLOQ rules."
+)
+#' A title with its number and the info icon of `SECTION_TIPS`, e.g. tip_title("Features", "2.3")
+tip_title <- function(title, num) tagList(paste0(title, " (", num, ")"), info_tip(SECTION_TIPS[[num]]))
 
 ################################################################################################
 ######################################## UI ####################################################
@@ -111,7 +141,7 @@ ui <-
     ),
     window_title = "QuaNTA",   # text in the browser tab; fixes the last warning
     header = tags$head(
-      tags$link(rel = "icon", type = "image/jpeg", href = "QuaNTA_square.jpg"),
+      tags$link(rel = "icon", type = "image/jpeg", href = "QuaNTA_square_2.jpg"),   # Browser tab icon
       tags$script(src = "split.min.js"),
       tags$link(rel = "stylesheet", href = "fonts/fonts.css"),   # Lato, Oswald, JetBrains Mono (local)
       # The QuaNTA design; "?v=" (the file's modification time) makes browsers load a changed file
@@ -125,6 +155,34 @@ ui <-
           var a = document.getElementById(id);
           if (a) a.click();
         });
+      ")),
+      # All plotly plots: a light grey plot area (grid lines: www/quanta.css), as in the internal report
+      tags$script(HTML("
+        (function () {
+          var BG = '#F4F5F7';
+          // New plots get the colour when they are drawn ...
+          (function patch() {
+            if (!window.Plotly) return setTimeout(patch, 100);
+            if (Plotly.__quantaBg) return;
+            Plotly.__quantaBg = true;
+            ['newPlot', 'react'].forEach(function (fn) {
+              var orig = Plotly[fn];
+              Plotly[fn] = function (gd, data, layout) {
+                var lay = (data && !Array.isArray(data) && data.layout) ? data.layout : layout;
+                if (lay && typeof lay === 'object') lay.plot_bgcolor = BG;
+                return orig.apply(this, arguments);
+              };
+            });
+          })();
+          // ... and those drawn before the library was hooked (the first plots: plotly is only loaded
+          // with the first plot) are recoloured
+          setInterval(function () {
+            if (!window.Plotly) return;
+            document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+              if (el._fullLayout && el._fullLayout.plot_bgcolor !== BG) Plotly.relayout(el, { plot_bgcolor: BG });
+            });
+          }, 1000);
+        })();
       ")),
       upload_limit_script(),   # On SciLifeLab Serve: stop uploads above its 1000 MB limit early
       gdpr_notice_script(),    # On SciLifeLab Serve: GDPR popup before choosing a data file
@@ -157,24 +215,29 @@ ui <-
           "Data processing settings",
           icon_name = "gear",
           subtitle = "Configure processing, quality control and calibration options.",
+          # Parameters and processing settings (.yml), in a row of the header under the subtitle:
+          # always visible, and the title keeps its full width
+          below = bslib::tooltip(
+            msdialInfoDownloadUI("data_info", label = "Download settings (.yml)", class = "btn-sm-quanta"),
+            "Download the project information and all processing settings as a .yml file, to load them again later.",
+            placement = "bottom"
+          ),
           runReadMsdialUI("read_msdial"),
-          runProcessUI("proc"),
+          runProcessUI("proc")
           # Session data save hidden for now (very large files); the code is kept:
           # sessionSaveUI("session_data"),   # Save session data (.rds), R/sessionData.R
-          .hr(),
-          msdialInfoDownloadUI("data_info")   # Parameters and processing settings (.yml)
         ),
         card(
           class = "q-log",
           quanta_card_header(
             "Log", "file-lines",
-            subtitle = "Processing information and the MS-DIAL reading log.",
+            subtitle = "Processing information and the data reading log.",
             actions = actionButton("clear_log", "Clear log", icon = icon("trash-can"),
                                    class = "btn-sm-quanta")
           ),
           navset_underline(
             id = "log_tabs",
-            nav_panel("MS-DIAL reading log", runReadMsdialUI_2("read_msdial")),
+            nav_panel("Data reading log", runReadMsdialUI_2("read_msdial")),
             nav_panel("Processing log", runProcessUI_2("proc"))
           )
         )
@@ -185,25 +248,23 @@ ui <-
       value = "overview",
       div(
         id = "ov-split",
-        class = "split-pane",
+        class = "split-pane html-fill-item",   # Fills the window (see quanta.css)
         #Card
         quanta_card_resize("Tables", "ov-left",
-                    section("Samples by category/class (2.1.1)",
+                    section(tip_title("Samples by category", "2.1"),
                             spinner(DT::DTOutput("tb_2_1_1"))),
-                    section("The distribution of the features across m/z and retention time (2.2)",
+                    section(tip_title("Calibration levels", "2.2"),
                             spinner(DT::DTOutput("tb_2_1_2_2"))),
-                    section("Calibration curve samples - quality control samples (2.1.3)",
-                            spinner(htmlOutput("tb_2_1_3"))),
-                    section("Features (2.2)",
-                            spinner(htmlOutput("tb_2_2")))),
+                    section(tip_title("Classes of analytes", "2.3"),
+                            spinner(DT::DTOutput("tb_2_2")))),
         #Card
         quanta_card_resize("Figures", "ov-right",
-                    section("The distribution of the features across m/z and retention time (2.2)",
+                    section(tip_title("The distribution of analytes across m/z and retention time", "2.4"),
                             spinner(plotlyOutput("ggplot1_2_2", height = "540px"))),
-                    section("The distribution of the features (2.2)",
-                            spinner(plotOutput("ggplot2_2_2"))),
-                    section("Distribution of the values (2.3)",
-                            spinner(plotOutput("ggplot2_3"))))
+                    section(tip_title("Distribution of m/z", "2.5"),
+                            spinner(plotlyOutput("ggplot2_2_2", height = "420px"))),
+                    section(tip_title("Distribution of intensities", "2.6"),
+                            spinner(plotlyOutput("ggplot2_3", height = "440px"))))
         
       ),
       tags$script(HTML("
@@ -226,27 +287,29 @@ ui <-
       value = "qc",
       div(
         id = "qc-split",
-        class = "split-pane",
+        class = "split-pane html-fill-item",
         #Card
         quanta_card_resize("Tables", "qc-left",
-                    section("Internal standards (3.1)",
+                    section(tip_title("Internal standards", "3.1"),
                             spinner(DT::DTOutput("tb_3_1"))),
-                    section("Failed internal standards (3.1.1)",
+                    section(tip_title("Failed internal standards", "3.2"),
                             spinner(htmlOutput("text_3_1_1"))),
-                    section("Outlier samples (3.1.2)",
+                    section(tip_title("Outlier samples", "3.3"),
                             spinner(uiOutput("wrap_outlier")),
                             h3(
-                              "Raw RSD% (3.1.2)",
+                              tip_title("Raw RSD%", "3.4"),
                               style = "margin: 0;"
                             ),
                             spinner(DT::DTOutput("tb_3_4_1")))),
         #Card
         quanta_card_resize("Figures", "qc-right",
-                    section("Distribution of the values of individual IS features (3.1.3)",
+                    # Title with the IS selected in 3.1 (server: title_3_5)
+                    section(tagList(textOutput("title_3_5", inline = TRUE), " (3.5)",
+                                    info_tip(SECTION_TIPS[["3.5"]])),
                             spinner(plotlyOutput("ggplot3_1_3", height = "500px")),
                             spinner(uiOutput("remove_failedIS_outlier"))),
                     div(
-                      h3("Volumetric internal standards (3.2.1.1)", style = "margin: 0 0 8px 0;"),
+                      h3(tip_title("Volumetric internal standards", "3.6"), style = "margin: 0 0 8px 0;"),
                       div(
                         style = "display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end;",
                         selectInput("vis_colour", "Colour",
@@ -258,7 +321,7 @@ ui <-
                       spinner(uiOutput("vis_or_text_3_2_1_1"))
                     ),
                     div(
-                      h3("Internal standards over the sequence (3.2.1.2)", style = "margin: 16px 0 4px 0;"),
+                      h3(tip_title("Internal standards over the sequence", "3.7"), style = "margin: 16px 0 4px 0;"),
                       p("Two independent views: choose the colouring and the values of each, e.g. raw and",
                         "normalized, or the same data in two colourings. Failed IS and outlier samples are",
                         "left out."),
@@ -285,18 +348,18 @@ ui <-
                         })
                       ),
                       h3(
-                        "Comparison of normalization methods 3.2.3",
+                        tip_title("Comparison of normalization methods", "3.8"),
                         style = "margin: 0;"
                       ),
                       spinner(plotlyOutput("ggplot3_2_3", height = "550px")),
                       h3(
-                        "RSD% values (3.2.3)",
+                        tip_title("RSD% values", "3.9"),
                         style = "margin: 0;"
                       ),
                       spinner(DT::DTOutput("tb_3_2_3")),
                       # Features removed by blank filtering or the QC RSD% filter
                       h3(
-                        "Removed features (3.2.4)",
+                        tip_title("Removed features", "3.10"),
                         style = "margin: 0;"
                       ),
                       shiny::selectInput(
@@ -308,7 +371,7 @@ ui <-
                       shiny::uiOutput("removed_note"),
                       spinner(DT::DTOutput("tb_3_2_4")),
                       # QC/QA: one feature in the blanks compared to the other sample groups
-                      h3("Blanks compared to samples (3.3)", style = "margin: 16px 0 4px 0;"),
+                      h3(tip_title("Blanks compared to samples", "3.11"), style = "margin: 16px 0 4px 0;"),
                       p("One feature at a time: the (method) blanks in red next to the QCs, study",
                         "samples and calibrants, with the threshold of the blank filter. Type in the",
                         "feature box to search."),
@@ -355,7 +418,7 @@ ui <-
       value = "calibration",
       layout_columns(
         col_widths = c(6, 6),
-        quanta_card("Tables",
+        quanta_card("Tables", icon_name = "table",
                     uiOutput("best_norm_note_4"),
                     shiny::radioButtons(
                       inputId = "norm_method",
@@ -373,7 +436,7 @@ ui <-
                     div(
                       style = "padding: 0;",
                       h3(
-                        "Calibration curve samples (4.1)",
+                        tip_title("Calibration curve samples", "4.1"),
                         style = "margin: 0;"
                       ),
                       spinner(DT::DTOutput("tb_4_1")),
@@ -381,7 +444,7 @@ ui <-
                     div(
                       style = "padding: 0;",
                       h3(
-                        "Calibration curve limits (4.2)",
+                        tip_title("Calibration curve limits", "4.2"),
                         style = "margin: 0;"
                       ),
                       spinner(DT::DTOutput("tb_4_2")),
@@ -389,12 +452,12 @@ ui <-
                     div(
                       style = "padding: 0;",
                       h3(
-                        "Removal of chemicals with no measurement samples (4.5)",
+                        tip_title("Removal of chemicals with no measurement samples", "4.3"),
                         style = "margin: 0;"
                       ),
                       spinner( DT::DTOutput("tb_4_5")),
                     )),
-        quanta_card("Figures",
+        quanta_card("Figures", icon_name = "chart-column",
                     # Which calibration points to show for a chemical quantified with the global
                     # curve: all points of the global curve, or only those of the selected batch
                     div(
@@ -409,7 +472,7 @@ ui <-
                     ),
                     div(
                       h3(
-                        "Calibration curves per chemical  (4.3)",
+                        tip_title("Calibration curves per chemical", "4.4"),
                         style = "margin: 0;"
                       ),
                       div(
@@ -419,7 +482,7 @@ ui <-
                     ),
                     div(
                       h3(
-                        "Calibration curves of all measurement samples (4.4.2)",
+                        tip_title("Calibration curves of all measurement samples", "4.5"),
                         style = "margin: 0;"
                       ),
                       
@@ -431,12 +494,24 @@ ui <-
                     ),
                     div(
                       h3(
-                        "Concentration (5.1)",
+                        tip_title("Concentration", "4.6"),
                         style = "margin: 0;"
                       ),
                       div(
                         style = "width: 100%;", # ✅ shorter height
                         spinner(plotlyOutput("ggplot5_1")),
+                      )
+                    ),
+                    div(
+                      h3(
+                        tip_title("QC samples in acquisition order", "4.7"),
+                        style = "margin: 0;"
+                      ),
+                      p("The chemical selected in 4.2, in the QC samples of all batches (each with its",
+                        "own calibration), along the injection order."),
+                      div(
+                        style = "width: 100%;",
+                        spinner(plotlyOutput("ggplot4_7", height = "460px")),
                       )
                     )
                   )
@@ -558,10 +633,12 @@ server <- function(input, output, session) {
   # ---- 3. Child processes; each returns a reactive that changes when a run has finished ----
   clear_log <- shiny::reactive(input$clear_log)   # "Clear log" empties both logs
   read_done <- runReadMsdialServer("read_msdial", data_info = data_info, ws = ws, clear = clear_log)
-  proc_done <- runProcessServer("proc", data_info = data_info, ws = ws, clear = clear_log)
+  # `data_caps_r()` is defined below (reactives are evaluated lazily)
+  proc_done <- runProcessServer("proc", data_info = data_info, ws = ws, clear = clear_log,
+                                data_caps = shiny::reactive(data_caps_r()))
   # Show the log of the step that is started
   shiny::observeEvent(input[["read_msdial-run_button"]], {
-    bslib::nav_select("log_tabs", "MS-DIAL reading log")
+    bslib::nav_select("log_tabs", "Data reading log")
   }, ignoreInit = TRUE)
   shiny::observeEvent(input[["proc-run_button"]], {
     bslib::nav_select("log_tabs", "Processing log")
@@ -592,9 +669,12 @@ server <- function(input, output, session) {
     "report",
     data_info = data_info,
     ws = ws,
-    norm_method = final_norm_method_r
+    norm_method = final_norm_method_r,
+    # No PDF report without calibration (non-target mode): the reason instead (`is_target_mode()`
+    # and `no_calib_msg_r()` are defined below)
+    no_external_reason = shiny::reactive(if (is_target_mode()) NULL else no_calib_msg_r())
   )
-  
+
   output$the_report <- shiny::renderUI({
     # Re-reading / a new upload deletes the report (see below / msdialInfo.R): hide it then
     input[["read_msdial-run_button"]]
@@ -627,10 +707,28 @@ server <- function(input, output, session) {
   # so the QC / Calibration / Reports tabs stay empty until the data is processed again.
   shiny::observeEvent(input[["read_msdial-run_button"]], {
     f <- data_info[["input_file"]]
-    if (!is.null(f) && nzchar(f)) unlink(c(rds_file("proc"), rds_file("to_report")))
+    # Also the earlier read data: after a read with input errors, nothing can be processed
+    if (!is.null(f) && nzchar(f)) unlink(c(rds_file(""), rds_file("proc"), rds_file("to_report")))
+    unlink(file.path(ws$intermediate, "input_errors.txt"))
     unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
     unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
   }, priority = 100)
+
+  # ---- Input errors found by "Read" (read-msdial.R): a popup asking for a corrected file ----
+  shiny::observeEvent(read_done(), {
+    path <- file.path(ws$intermediate, "input_errors.txt")
+    if (!file.exists(path)) return()
+    errs <- readLines(path, warn = FALSE)
+    shiny::showModal(shiny::modalDialog(
+      title = "The file needs to be corrected",
+      shiny::p(paste0("The data could not be read, because the file has the following problem",
+                      if (length(errs) > 1) "s", ":")),
+      shiny::tags$ul(lapply(errs, shiny::tags$li)),
+      shiny::p("Please correct the file and upload it again. The data cannot be processed until then."),
+      easyClose = TRUE,
+      footer = shiny::modalButton("OK")
+    ))
+  })
 
   # ---- Step buttons are disabled (greyed out) until their input exists ----
   # - "Read MS-Dial output files": an MS-DIAL file has been uploaded (or restored from a session)
@@ -729,6 +827,53 @@ server <- function(input, output, session) {
     !isTRUE(md$is_non_target_mode)
   })
 
+  # Why there is no calibration (non-target mode), shown by the empty calibration tables and figures
+  no_calib_msg_r <- reactive({
+    se <- raw_se_r()
+    has_q <- any(util$is_targeted_feature(se))
+    has_cc <- any(util$ctrl_smpl_cat(se) == "CalCurve")
+    missing <- c(if (!has_q) "targeted (Quant) features", if (!has_cc) "calibration curve (CalCurve) samples")
+    paste0("No calibration for this dataset: it has no ", paste(missing, collapse = " and no "),
+           ", so it was processed without calibration (non-target mode). The normalized data are on",
+           " pages 2 and 3 and in the exported tables.")
+  })
+  # What the read data allows, for the processing options (greyed out when not feasible) and the
+  # popup when "Process data" is clicked; `NULL` before a read
+  data_caps_r <- reactive({
+    se <- tryCatch(raw_se_r(), error = function(e) NULL)
+    if (is.null(se)) return(NULL)
+    cd <- SumExp::col_df(se)
+    cc <- util$ctrl_smpl_cat(se) == "CalCurve"
+    conc <- util$spiked_conc_pts(se)   # NULL in non-target mode
+    b <- as.character(cd$batch_id)
+    # Per batch with calibration samples, and all batches together (the global curve)
+    check <- function(keep) {
+      x <- if (is.null(conc)) numeric(0) else conc[keep]
+      n_pt <- table(x[x != 0])
+      c(cal0 = sum(x == 0) >= 2, reps = length(n_pt) > 0 && all(n_pt >= 2))
+    }
+    batches <- unique(b[cc])
+    per_batch <- matrix(vapply(batches, \(bb) check(cc & b == bb), logical(2)), nrow = 2,
+                        dimnames = list(c("cal0", "reps"), batches))
+    all_b <- check(cc)
+    list(
+      has_targeted = any(util$is_targeted_feature(se)),
+      has_calib = length(batches) > 0 && !is.null(conc),   # Calibration samples with concentrations
+      has_vis = any(util$std_type(se) %in% "vIS"),
+      cal0_ok = any(per_batch["cal0", ]) || all_b[["cal0"]],
+      cal0_fail_batches = batches[!per_batch["cal0", ]],
+      reps_ok = any(per_batch["reps", ]) || all_b[["reps"]],
+      reps_fail_batches = batches[!per_batch["reps", ]],
+      multi_batch = length(batches) > 1,
+      comment_notes = SumExp::metadata(se)$comment_notes,   # NULL for data read by older versions
+      missing_values = SumExp::metadata(se)$missing_values
+    )
+  })
+  # Stops a calibration table or figure with that message in non-target mode
+  need_calibration <- function() shiny::validate(shiny::need(is_target_mode(), no_calib_msg_r()))
+  MSG_SELECT_CHEMICAL <- "Select a chemical in table 4.2 (left) to show it here."
+  MSG_SELECT_IS <- "Select an internal standard in table 3.1 (left) to show it here."
+
   output$tb_2_1_1 <- DT::renderDataTable({
     # shiny::req(raw_se)
     # catg <- util$ctrl_smpl_cat( raw_se)
@@ -795,47 +940,21 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is table 2.1.2.2
-  #### There is problem of is target mode
-
+  ### This is table 2.2: calibration curve samples per concentration, per batch and in total (the
+  ### same table as in the internal report)
 
   output$tb_2_1_2_2 <- DT::renderDataTable({
-    shiny::req(raw_se_r())
-    
-    # -------------------------------------------------------------------
-    # 1. Calibration sample table (dataframe)
-    # -------------------------------------------------------------------
-
-    df_show <- if (is_target_mode()) {
-      SumExp::col_df(raw_se_r()) |>
-        dplyr::filter(util$ctrl_smpl_cat(raw_se_r()) == "CalCurve") |>
-        dplyr::arrange(c_conc) |>
-        dplyr::select(sample_name, c_conc)
-    } else {
-      tibble::tibble(
-        sample_name = character(),
-        c_conc = numeric()
-      )
-    }
-
-    # Ensure it is a plain data.frame if needed
-    df_show <- as.data.frame(df_show,
-      check.names = FALSE
-    )
-
-    # -------------------------------------------------------------------
-    # 2. Concentration frequency table (dataframe)
-    # -------------------------------------------------------------------
-
-    df_conc_summary <- df_show |>
-      dplyr::count(c_conc, name = "Number_of_Samples") |>
-      dplyr::arrange(c_conc)
-
-    df_conc_summary <- as.data.frame(df_conc_summary,
-      check.names = FALSE
-    )
-
-    colnames(df_conc_summary) <- c("Calibrant Concentration", "Number of Samples")
+    se <- raw_se_r()   # Not inside an S4 method argument (see 4.4)
+    df_conc_summary <- as.data.frame(show$calib_samples_per_batch(se), check.names = FALSE)
+    shiny::validate(shiny::need(
+      nrow(df_conc_summary) > 0,
+      if (!any(util$ctrl_smpl_cat(se) == "CalCurve")) {
+        "No calibration curve (CalCurve) samples in this dataset."
+      } else {
+        paste("The calibration curve samples have no concentrations: without targeted (Quant) features",
+              "they are not read (non-target mode, no calibration).")
+      }
+    ))
 
     DT::datatable(
       df_conc_summary,
@@ -871,38 +990,32 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is table 2.1.3
+  ### This is table 2.3
 
 
-  output$tb_2_1_3 <- renderUI({
-    shiny::req(raw_se_r())
-    
-    qc_lst <- show$extract_qc_samples_to_list(raw_se_r())
-    if (length(qc_lst) == 0) return(HTML("<p><em>No QC samples were found.</em></p>"))
-    tb_2_1_3 <- qc_lst |>
-      sapply(ncol) |>
-      knitr::kable(col.names = c("Class", "Number of Replicates")) |>
-      kableExtra::kable_styling(full_width = FALSE)
-    tb_2_1_3 |>
-      HTML()
-  })
-
-  ################################################################################################################
-  ### This is table 2.1.3
-
-
-  output$tb_2_2 <- renderUI({
-    shiny::req(raw_se_r())
-    
+  # A DataTable in the same format as 2.1 and 2.2
+  output$tb_2_2 <- DT::renderDataTable({
     v <- util$std_type(raw_se_r())
-    tb_2_2 <- replace(v, v == "", "Not targeted") |>
-      show$kable_number_of(what = "Features")
-    tb_2_2 |>
-      HTML()
+    v <- replace(v, v == "", "Not targeted")
+    tb <- janitor::tabyl(v) |> janitor::adorn_pct_formatting() |> as.data.frame()
+    colnames(tb) <- c("Standard Type", "Number of Features", "Percent")
+    DT::datatable(
+      tb,
+      options = list(
+        scrollX = TRUE, lengthChange = FALSE, searching = FALSE, paging = FALSE, info = FALSE, dom = "t",
+        headerCallback = JS(
+          "function(thead){",
+          "$(thead).find('th').css({'color': 'green', 'font-weight': 'bold'});", "}"
+        ),
+        columnDefs = list(list(className = "dt-center", targets = "_all"))
+      )
+    ) |>
+      DT::formatStyle(columns = names(tb), color = "#000000", backgroundColor = "#FFFFFF", target = "cell") |>
+      DT::formatStyle(names(tb), backgroundColor = "#F8FAFF", target = "row")
   })
 
   ################################################################################################################
-  ### This is figure 2.2
+  ### This is figure 2.4
 
   # m/z vs retention time map, the same as in the internal report. Before processing, features
   # are coloured by type; after processing, targeted compounds by their outcome (for the final
@@ -929,36 +1042,20 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is figure 2.2
+  ### This is figure 2.5: number of features per m/z (bins of 0.5), the same as in the internal report
 
-  output$ggplot2_2_2 <- renderPlot({
-    shiny::req(raw_se_r())
-    
-    df1 <- SumExp::row_df(raw_se_r())
-    ggplot2_2_2 <- ggplot(df1) +
-      geom_histogram(aes(x = mz), binwidth = 0.5) +
-      labs(
-        x = show$label_if_has(df1$mz),
-        y = "Number of features"
-      )
-    ggplot2_2_2
+  output$ggplot2_2_2 <- plotly::renderPlotly({
+    df1 <- SumExp::row_df(shiny::req(raw_se_r()))
+    show$plotly_binned_hist(df1$mz, binwidth = 0.5, x_title = show$label_if_has(df1$mz, "m/z"))
   })
 
 
   ################################################################################################################
-  ### This is figure 2.3
+  ### This is figure 2.6: all raw values, linear and log scale, the same as in the internal report
 
-  output$ggplot2_3 <- renderPlot({
-    shiny::req(raw_se_r())
-    
-    p <- SumExp::ggplot(raw_se_r()) +
-      geom_histogram(aes(x = raw), bins = 50)
-    ggplot2_3 <- gridExtra::grid.arrange( # Two ggplots next to each other
-      p + labs(title = "Linear scale", x = "Values"),
-      p + scale_x_log10() + labs(title = "Logarithmic scale", x = "Values"),
-      ncol = 2
-    )
-    ggplot2_3
+  output$ggplot2_3 <- plotly::renderPlotly({
+    se <- shiny::req(raw_se_r())
+    show$plotly_value_distribution(se[["raw"]])
   })
 
   ################################################################################################################
@@ -1044,11 +1141,20 @@ server <- function(input, output, session) {
       )
   })
 
+  # Title of 3.5 with the name of the IS selected in table 3.1
+  output$title_3_5 <- shiny::renderText({
+    ii <- input$tb_3_1_rows_selected
+    nm <- tryCatch(SumExp::row_df(internal_std_se_r())$feature_name[ii[1]], error = function(e) NULL)
+    if (length(nm) == 1 && !is.na(nm)) paste("Distribution of intensities of", nm) else
+      "Distribution of intensities of the selected IS feature"
+  })
+
   # The IS selected in table 3.1: box plot per sample group and scatter plot along the injection
   # order, the same as in the internal report (all samples; outliers drawn as crosses)
   output$ggplot3_1_3 <- plotly::renderPlotly({
     se <- internal_std_se_r()
-    ii <- shiny::req(input$tb_3_1_rows_selected)   # Nothing to draw before a row is selected
+    shiny::validate(shiny::need(input$tb_3_1_rows_selected, MSG_SELECT_IS))   # Before a row is selected
+    ii <- input$tb_3_1_rows_selected
     cd <- SumExp::col_df(se)
     smp <- tibble::as_tibble(cd) |> dplyr::mutate(group = show$sample_group(cd))
     is_out <- to_report_r()[["is outlier sample"]]
@@ -1064,7 +1170,7 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is text 3.1.1
+  ### This is text 3.2
 
   ## the matrix internal_std_se_r() is changed after this with failed internal standards removed
 
@@ -1124,7 +1230,7 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### something for 3.1.2 outlier removal
+  ### something for 3.3 outlier removal
 
 
   output$wrap_outlier <- renderUI({
@@ -1221,7 +1327,7 @@ server <- function(input, output, session) {
   })
 
   ################################################################################################################
-  ### This is for table 3.1.4.1 and 3.4.1.2
+  ### This is for table 3.4
 
 
   output$tb_3_4_1 <- DT::renderDataTable({
@@ -1258,13 +1364,25 @@ server <- function(input, output, session) {
     )
 
     m_rsd <- cbind.data.frame(m_rsd1, m_rsd2)
+    # Number of samples per group (rows below), in the same order as the columns
+    n_smpl <- c(vapply(qc_lst, ncol, integer(1)),
+                vapply(colnames(m_rsd2), \(cls) sum(SumExp::col_df(se)$Class == cls), integer(1)))
 
     m_rsd <- t(m_rsd)
 
-    shiny::req(input$tb_3_1_rows_selected)
+    shiny::validate(shiny::need(input$tb_3_1_rows_selected, MSG_SELECT_IS))
     selected <- input$tb_3_1_rows_selected
 
     m_rsd <- m_rsd[, selected, drop = FALSE]
+    # Why a group has no RSD%: it needs at least two samples (or values that are not all 0)
+    rsd_v <- m_rsd[, 1]
+    note <- dplyr::case_when(
+      n_smpl < 2 ~ paste0("Too few samples (n = ", n_smpl, "): RSD% needs at least 2"),
+      !is.finite(rsd_v) ~ "Not computable: all values 0 or missing",
+      TRUE ~ ""
+    )
+    m_rsd <- data.frame(m_rsd, n = n_smpl, check.names = FALSE)
+    if (any(nzchar(note))) m_rsd$Note <- note
 
     DT::datatable(
       m_rsd,
@@ -1300,7 +1418,7 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is for Figure in 3.2.1.1: one tab per volumetric internal standard (vIS), the same
+  ### This is for Figure 3.6: one tab per volumetric internal standard (vIS), the same
   ### plot as in the internal report (raw peak areas of all samples)
 
   output$vis_or_text_3_2_1_1 <- renderUI({
@@ -1334,7 +1452,7 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is for Figure in 3.2.1.2: two independent stacked bar plots of the internal standards,
+  ### This is for Figure 3.7: two independent stacked bar plots of the internal standards,
   ### the same as the internal report's "Internal standards over the sequence"
 
   # Internal standards after the QC steps (failed IS and outlier samples removed)
@@ -1372,7 +1490,7 @@ server <- function(input, output, session) {
   }
 
   ################################################################################################################
-  ### This is for Figure 3.3 (QC/QA): one feature in the blanks compared to the other sample groups,
+  ### This is for Figure 3.11 (QC/QA): one feature in the blanks compared to the other sample groups,
   ### with the threshold of the blank filter. The data before blank filtering (all features).
 
   blank_cmp_se_r <- shiny::reactive({
@@ -1458,7 +1576,7 @@ server <- function(input, output, session) {
   })
 
   ################################################################################################################
-  ### This is for figure 3.2.3
+  ### This is for figure 3.8
 
 
   # One line per targeted chemical and QC class (panels): its RSD% among the QC replicates under
@@ -1467,6 +1585,8 @@ server <- function(input, output, session) {
   output$ggplot3_2_3 <- plotly::renderPlotly({
     norm_se <- to_report_r()[["normalized"]]
     shiny::validate(shiny::need(show$has_enough_qc(norm_se), show$not_enough_qc_msg))
+    # The comparison uses the targeted compounds
+    shiny::validate(shiny::need(any(util$is_targeted_feature(norm_se)), "No targeted (Quant) compounds in this dataset: this comparison uses the targeted compounds."))
     labs <- SumExp::name_labs(norm_se)
     names(labs) <- gsub(" .*", "", names(labs)) # First word only
     df_to_show <- show$extract_quant_qc(norm_se) |>
@@ -1502,12 +1622,14 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is for table 3.2.3
+  ### This is for table 3.9
 
 
   output$tb_3_2_3 <- DT::renderDataTable({
     norm_se <- to_report_r()[["normalized"]]
     shiny::validate(shiny::need(show$has_enough_qc(norm_se), show$not_enough_qc_msg))
+    # The comparison uses the targeted compounds
+    shiny::validate(shiny::need(any(util$is_targeted_feature(norm_se)), "No targeted (Quant) compounds in this dataset: this comparison uses the targeted compounds."))
     labs <- SumExp::name_labs(norm_se)
     names(labs) <- gsub(" .*", "", names(labs)) # First word only
     df_to_show <- show$extract_quant_qc(norm_se) |>
@@ -1565,9 +1687,9 @@ server <- function(input, output, session) {
   })
 
   ################################################################################################################
-  ### This is for table 4.1
+  ### This is for table 3.10
 
-  # ---- Removed features (3.2.4): blank filtering and QC RSD% filter ----
+  # ---- Removed features (3.10): blank filtering and QC RSD% filter ----
   shiny::observeEvent(to_report_r(), {
     ids <- available_norm_r()
     current <- shiny::isolate(input$removed_method)
@@ -1615,9 +1737,11 @@ server <- function(input, output, session) {
     rf <- tr[["qc rsd filter"]]
     rem <- rem[rem$mat_id == shiny::req(input$removed_method), ]
     shiny::validate(shiny::need(nrow(rem) > 0, "No features were removed for this normalization method."))
+    # The volumetric IS has its own type (it is not a targeted feature, but no unknown either)
+    std <- SumExp::row_df(raw_se_r())$.std_type[match(rem$feature_id, rownames(raw_se_r()))]
     show_df <- data.frame(
       Feature = rem$feature_name,
-      Type = ifelse(rem$targeted, "Targeted", "Non-targeted"),
+      Type = dplyr::case_when(rem$targeted ~ "Targeted", std %in% "vIS" ~ "Volumetric IS", TRUE ~ "Non-targeted"),
       `Removed by` = ifelse(
         rem$reason == "QC RSD%",
         paste0("QC RSD% > ", ifelse(rem$targeted, rf$max_targeted, rf$max_nontargeted), "%"),
@@ -1632,16 +1756,18 @@ server <- function(input, output, session) {
       rownames = FALSE,
       caption = paste0(nrow(show_df), " removed features (",
                        sum(show_df$Type == "Targeted"), " targeted, ",
-                       sum(show_df$Type != "Targeted"), " non-targeted)"),
-      options = list(scrollX = TRUE, scrollY = "300px", paging = FALSE, info = FALSE,
-                     dom = "t")
+                       sum(show_df$Type == "Non-targeted"), " non-targeted",
+                       if (any(show_df$Type == "Volumetric IS")) ", the volumetric IS", ")"),
+      # At most 300 px high; shorter with few removed features
+      options = list(scrollX = TRUE, scrollY = "300px", scrollCollapse = TRUE, paging = FALSE,
+                     info = FALSE, dom = "t")
     )
   })
 
   # ---- Calibration and Quantification: batch selection ----
   # Calibrated data of the selected normalization method: batch ID -> list(calcurve, concn)
   calib_lst_proc_r <- shiny::reactive({
-    shiny::req(is_target_mode())
+    need_calibration()
     MAT_ID_BLANK_SUBT <- util$mat_id_of_blank_subtracted(shiny::req(input$norm_method))
     shiny::req(proc_r()[[MAT_ID_BLANK_SUBT]])
   })
@@ -1670,9 +1796,9 @@ server <- function(input, output, session) {
   })
   # Selected feature ID that exists in the selected batch (stops the figures until one is selected)
   calib_selected_feature_r <- shiny::reactive({
-    shiny::req(input$tb_4_2_rows_selected)
+    shiny::validate(shiny::need(input$tb_4_2_rows_selected, MSG_SELECT_CHEMICAL))
     id <- rownames(calib_batch_proc_r()$calcurve)[input$tb_4_2_rows_selected[1]]
-    shiny::req(!is.na(id))
+    shiny::validate(shiny::need(!is.na(id), MSG_SELECT_CHEMICAL))
     id
   })
 
@@ -1753,6 +1879,8 @@ server <- function(input, output, session) {
 
   # Explanation next to the dropdown; red when the shown points are not those of the curve used
   output$calib_points_note <- shiny::renderUI({
+    # Silent when there is nothing to show: the tables and figures say why
+    shiny::req(tryCatch({ to_report_r(); is_target_mode() }, error = function(e) FALSE))
     batch <- input$calib_batch
     used <- calib_used_curve_r()
     # Why the batch uses the global curve (saved by process.R), e.g. no blank samples
@@ -1791,6 +1919,7 @@ server <- function(input, output, session) {
     ## (1) One is the reactivity of params_yml$norm_method
     ## (2) One is reactivity to the data
 
+    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
     if (is_target_mode()) {
       # Number of calibration curve samples per concentration in the selected batch
       se <- calib_batch_proc_r()$calcurve
@@ -1834,7 +1963,7 @@ server <- function(input, output, session) {
   ################################################################################################################
   ### This is for table 4.2
   output$tb_4_2 <- DT::renderDataTable({
-
+    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
     min_cal_points <- to_report_r()[["params"]][["min_cal_points"]]
 
     if (is_target_mode()) {
@@ -1955,22 +2084,35 @@ server <- function(input, output, session) {
       }
 
       show_df <- as.data.frame(show_df, check.names = FALSE)
-      # Positions of the helper columns in the DataTable (0 is the row name column)
-      i_flag <- match(c("is_global", "is_bad", "is_removed", "is_kept"), names(show_df))
+      # Positions of the helper columns in the DataTable (0-based, no row name column)
+      i_flag <- match(c("is_global", "is_bad", "is_removed", "is_kept"), names(show_df)) - 1L
+      i_name <- match("Chemical Name", names(show_df)) - 1L
+      page_len <- 20L
 
       # --------------------------------------------------------
+      # 20 chemicals per page, searchable by the chemical name only. The figures use the row index
+      # of the selection in the full table (not affected by paging or searching).
       DT::datatable(
         show_df,
+        rownames = FALSE,
         selection = list(mode = "single", selected = preselect),
         options = list(
           scrollX = TRUE,
-          paging = FALSE,
-          searching = FALSE,
-          info = FALSE,
-          dom = "t",
+          paging = TRUE,
+          pageLength = page_len,
+          lengthChange = FALSE,
+          # Open the page with the selected chemical
+          displayStart = if (is.null(preselect)) 0L else ((preselect - 1L) %/% page_len) * page_len,
+          searching = TRUE,
+          info = TRUE,
+          dom = "ftip",
+          language = list(search = "Search chemical:"),
 
-          # Hide the helper columns
-          columnDefs = list(list(targets = i_flag, visible = FALSE)),
+          # Hide the helper columns; search in the chemical name only
+          columnDefs = list(
+            list(targets = i_flag, visible = FALSE),
+            list(targets = setdiff(seq_along(show_df) - 1L, i_name), searchable = FALSE)
+          ),
 
           # Row colors: red = no proper calibration range, orange = curve kept although not
           # valid, blue = global calibration curve, grey = removed before calibration
@@ -1993,9 +2135,9 @@ server <- function(input, output, session) {
 
 
   ################################################################################################################
-  ### This is for Figrue 4.3
+  ### This is for Figure 4.4
   output$ggplot4_3 <- renderPlotly({
-
+    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
     if (is_target_mode()) {
       ############################################
       # Parameters
@@ -2085,12 +2227,12 @@ server <- function(input, output, session) {
             color = "(Concentration category,",
             shape = "Batch)"
           ) +
-          scale_color_manual(values = c(
-            "Within limits" = "green4",
-            "LOD = LLOQ" = "#E8B730",   # Yellow
+          scale_color_manual(values = c(   # Colour-blind safe (Okabe-Ito)
+            "Within limits" = show$okabe_ito[["green"]],
+            "LOD = LLOQ" = show$okabe_ito[["orange"]],
             "Out-of-range" = "gray",
-            "Cal0" = "red",
-            "LOD" = "blue"
+            "Cal0" = show$okabe_ito[["vermillion"]],
+            "LOD" = show$okabe_ito[["blue"]]
           )) +
           scale_shape_manual(
             values = rep_len(c(16, 17, 15, 18, 8, 3, 4, 7, 9, 10, 11, 12, 13, 14), nlevels(dfm$Batch))
@@ -2147,10 +2289,10 @@ server <- function(input, output, session) {
   })
 
   ################################################################################################################
-  ### This is for Figrue 4.4
+  ### This is for Figure 4.5
 
   output$ggplot4_4_2 <- renderPlotly({
-
+    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
     MAT_ID_BLANK_SUBT <- input$norm_method |>
       util$mat_id_of_blank_subtracted()
     MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)
@@ -2224,10 +2366,10 @@ server <- function(input, output, session) {
   })
 
   ################################################################################################################
-  ### This is for Figrue 5.1
+  ### This is for Figure 4.6
 
   output$ggplot5_1 <- renderPlotly({
-    shiny::req(to_report_r())
+    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
 
     if (shiny::req(is_target_mode())) {
       log_scale <- isTRUE(to_report_r()[["params"]][["log_calibration"]])
@@ -2241,11 +2383,18 @@ server <- function(input, output, session) {
 
       # ------------------------------------------------------------
       # No concentrations: a message instead of an empty plot
+      # Values below the LOD / LLOQ without a value ("n.d." / "n.q."), when not replaced
+      flag <- if ("conc_flag" %in% names(df1)) df1$conc_flag else NULL
       if (is.null(df1) || nrow(df1) == 0 || all(is.na(df1$conc))) {
+        n_flag <- sum(!is.na(flag))
         plotly::plot_ly() |>
           plotly::layout(
             xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
-            annotations = list(list(text = "Not detected / quantified in samples", x = 0.5, y = 0.5,
+            annotations = list(list(text = if (n_flag > 0) {
+                                      "All values below the LOD / LLOQ (n.d. / n.q.)"
+                                    } else {
+                                      "Not detected / quantified in samples"
+                                    }, x = 0.5, y = 0.5,
                                     xref = "paper", yref = "paper", showarrow = FALSE,
                                     font = list(size = 24, color = "gray")))
           )
@@ -2259,16 +2408,51 @@ server <- function(input, output, session) {
         show$plotly_conc_by_class(
           conc = df1$conc, lloq = df1$lloq, cats = as.character(df1$Class),
           cat_colors = colors_of_classes(), hover = hover, name = df1$feature_name[1],
-          y_title = labelled::get_label_attribute(df1$conc) %||% "Concentration", log = log_scale
+          y_title = labelled::get_label_attribute(df1$conc) %||% "Concentration", log = log_scale,
+          flag = flag
         )
       }
     }
   })
   ################################################################################################################
-  ### This is for text 4.5
+  ### This is for Figure 4.7: the selected chemical in the QC samples of all batches along the
+  ### injection order (each batch with its own calibration), the same as in the internal report
+
+  output$ggplot4_7 <- renderPlotly({
+    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
+    feature_id <- calib_selected_feature_r()
+    lst_proc <- calib_lst_proc_r()   # Evaluated before the S4 methods (see 4.4)
+    d <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), lst_proc), function(x) {
+      se <- util$extract_ctrl_smpl_cat(x$concn, "QC")
+      if (!feature_id %in% rownames(se) || ncol(se) == 0) return(NULL)
+      se <- se[rownames(se) == feature_id, ]
+      flag <- if ("conc_flag" %in% names(se)) as.character(se[["conc_flag"]][1, ]) else NA_character_
+      cd <- SumExp::col_df(se)
+      tibble::tibble(sample_name = cd$sample_name, Class = as.character(cd$Class),
+                     batch_id = as.character(cd$batch_id), injection_order = cd$injection_order,
+                     conc = unname(se[["conc"]][1, ]), lloq = SumExp::row_df(se)$lloq, flag = flag,
+                     name = SumExp::row_df(se)$feature_name,
+                     unit = labelled::get_label_attribute(se[["conc"]]) %||% "Concentration")
+    }))
+    if (nrow(d) == 0 || all(is.na(d$conc) & is.na(d$flag))) {
+      return(plotly::plot_ly() |>
+        plotly::layout(
+          xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
+          annotations = list(list(text = if (nrow(d) == 0) "No QC samples" else "No concentrations in the QC samples",
+                                  x = 0.5, y = 0.5, xref = "paper", yref = "paper", showarrow = FALSE,
+                                  font = list(size = 24, color = "gray")))
+        ))
+    }
+    d$kind <- show$imputed_kind(d$conc, d$lloq)
+    show$plotly_qc_conc(d, name = d$name[1], y_title = d$unit[1])
+  })
+
+  ################################################################################################################
+  ### This is for table 4.3
 
 
   output$tb_4_5 <- DT::renderDataTable({
+    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
     MAT_ID_BLANK_SUBT <- input$norm_method |>
       util$mat_id_of_blank_subtracted()
     MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)

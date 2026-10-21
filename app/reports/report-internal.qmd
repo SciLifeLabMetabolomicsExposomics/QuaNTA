@@ -5,6 +5,7 @@ params:
   interactive_plot: false        # Not used here; passed by the app to both reports
   project_title: ""
   generated_at: ""               # Time of generation, set by the app (also in the file name)
+  on_serve: false                # Generated on SciLifeLab Serve (hosting acknowledgement)
 format:
   html:
     theme: cosmo
@@ -12,7 +13,7 @@ format:
     toc-location: left
     toc-depth: 3
     toc-title: "Contents"
-    number-sections: true
+    number-sections: false       # Numbers in the headings: the same as in the app (see below)
     embed-resources: true
     page-layout: full
     fig-width: 10
@@ -32,6 +33,9 @@ execute:
   - internal-status.qmd and internal-calibration.qmd: only with calibration (targeted mode)
   - internal-norm-method.qmd: one section per normalization method (`NORM_M`)
   The layout follows the quality control reports of MeTaQuaC (see References).
+  Section numbers are written in the headings: chapters 2-4 follow the pages of the app, and a
+  table or figure that is also in the app has the app's number (e.g. 3.8); sections only in this
+  report are numbered under the related one (e.g. 3.8.1) or in chapters 1 and 5.
 -->
 
 ```{r}
@@ -79,6 +83,8 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   .report-logos .quanta { height: 38px; }
   .report-logos .scilifelab { height: 23px; }
   .report-logos .sep { width: 1px; height: 28px; background: #D5DAE3; }
+  /* Plots: a light grey plot area with grey grid lines, as in the app */
+  .js-plotly-plot .plotly .gridlayer path { stroke: #C8CDD5 !important; }
 </style>
 <div class="report-logos">
   <img class="quanta" src="logos/QuaNTA_logo.png" alt="QuaNTA">
@@ -86,6 +92,27 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   <img class="scilifelab" src="logos/SciLifeLab_logo.png" alt="SciLifeLab">
 </div>
 <script>
+  // All plotly plots (widgets and viewers): a light grey plot area, as in the app
+  (function patch() {
+    if (!window.Plotly) return setTimeout(patch, 100);
+    if (Plotly.__quantaBg) return;
+    Plotly.__quantaBg = true;
+    ["newPlot", "react"].forEach(function (fn) {
+      var orig = Plotly[fn];
+      Plotly[fn] = function (gd, data, layout) {
+        var lay = (data && !Array.isArray(data) && data.layout) ? data.layout : layout;
+        if (lay && typeof lay === "object") lay.plot_bgcolor = "#F4F5F7";
+        return orig.apply(this, arguments);
+      };
+    });
+  })();
+  // Plots drawn before the hook (if any) are recoloured
+  setInterval(function () {
+    if (!window.Plotly) return;
+    document.querySelectorAll(".js-plotly-plot").forEach(function (el) {
+      if (el._fullLayout && el._fullLayout.plot_bgcolor !== "#F4F5F7") Plotly.relayout(el, { plot_bgcolor: "#F4F5F7" });
+    });
+  }, 1000);
   // Plots in tabs that were hidden at load time get their full width when the tab is opened
   document.addEventListener('shown.bs.tab', () => window.dispatchEvent(new Event('resize')));
   // The logos into the title block (built by Quarto)
@@ -102,7 +129,11 @@ options(box.path = Sys.getenv("R_BOX_PATH", "app/"))
 box::use(SumExp, util = projlib/msdial_utils, proc = projlib/proc, show = projlib/show,
          msdial = projlib/msdial, ggplot2[...])
 library(dplyr, warn.conflicts = FALSE)
-theme_set(theme_minimal(base_size = 14) + theme(panel.grid.minor = element_blank()))
+# Light grey plot area with grey grid lines (as the interactive plots, see the styles above)
+theme_set(theme_minimal(base_size = 14) +
+            theme(panel.grid.minor = element_blank(),
+                  panel.background = element_rect(fill = "#F4F5F7", colour = NA),
+                  panel.grid.major = element_line(colour = "#C8CDD5")))
 
 # The session's data (paths from the session parameter file)
 user_inputs <- msdial$get_user_input()
@@ -124,10 +155,10 @@ method_label <- c(raw = "Raw", loess_norm = "LOESS", closest_norm = "Closest RT"
 method_label <- method_label[names(method_label) %in% names(tr[["normalized"]])]
 norm_desc <- c(
   closest_norm = "Each feature is divided by the internal standard closest in retention time.",
-  loess_norm = paste("Each sample is normalized by a LOESS fit of the internal standards over the",
-                     "retention time, so that signal changes that depend on the retention time are corrected."),
+  loess_norm = paste("Each sample is normalized by a LOESS fit [@cleveland1988] of the internal standards",
+                     "over the retention time, so that signal changes that depend on the retention time are corrected."),
   mvis_norm = paste("The variation shared by all internal standards (their first principal component) is",
-                    "removed from every feature.")
+                    "removed from every feature [@surowiec2017].")
 )
 # Batch IDs of the data; "all" in one-batch mode
 batch_label <- function(b) ifelse(b == "all", "All samples", paste("Batch", b))
@@ -153,7 +184,8 @@ study_classes <- sort(unique(smp$Class[smp$category == "Study sample"]))
 # Colours shared with the app (projlib/show.R)
 group_colors <- show$sample_group_colors(smp$group)
 class_colors <- group_colors[study_classes]
-cat_colors <- c("Study sample" = "#4C72B0", "QC" = "#55A868", "Blank" = "#C44E52", "CalCurve" = "#8C8C8C")
+# Colour-blind safe (Okabe-Ito), as the sample groups
+cat_colors <- c("Study sample" = "#009E73", "QC" = "#0072B2", "Blank" = "#D55E00", "CalCurve" = "#999999")
 batch_ids <- if (HAS_CALIB) names(lst) else unique(as.character(smp$batch_id))
 
 # QC samples are only shown when the data has them
@@ -164,22 +196,28 @@ note <- function(txt) knitr::asis_output(paste0('<p class="note-line">', txt, '<
 
 # Concentrations of all batches (long format) with a status per compound and sample
 conc_long <- purrr::map_dfr(lst, function(x) {
-  SumExp::as_tibble(x$concn) |>
+  d <- SumExp::as_tibble(x$concn) |>
     select(.row_id, feature_name, sample_name, Class, .ctrl_cat, injection_order, batch_id,
-           conc, conc0, lod, lloq, max_c_conc, has_proper_range, src_calcurve)
+           conc, conc0, lod, lloq, max_c_conc, has_proper_range, src_calcurve, any_of("conc_flag"))
+  if (!"conc_flag" %in% names(d)) d$conc_flag <- NA_character_   # Processed by older versions
+  mutate(d, conc_flag = as.character(conc_flag))
 })
+# Values below the LOD / LLOQ: replaced (LLOQ/4, LLOQ/2), or without a value and reported as
+# "n.d." / "n.q." (`conc` NA, `conc_flag`)
+LLOX_IMPUTED <- !isFALSE(tr$params$impute_llox)
 if (!HAS_CALIB) {   # Same columns, no rows
   conc_long <- tibble(.row_id = character(), feature_name = character(), sample_name = character(),
                       Class = character(), .ctrl_cat = character(), injection_order = integer(),
                       batch_id = character(), conc = numeric(), conc0 = numeric(), lod = numeric(),
                       lloq = numeric(), max_c_conc = numeric(), has_proper_range = logical(),
-                      src_calcurve = character())
+                      src_calcurve = character(), conc_flag = character())
 }
 status_levels <- c("Valid", "> ULOQ", "< LLOQ", "< LOD", "Not detected", "No valid calibration",
                    "Removed (blank filter)", "Removed (QC RSD%)")
-status_colors <- c("Valid" = "#2E9E5B", "> ULOQ" = "#F4A259", "< LLOQ" = "#F7D06B", "< LOD" = "#E57373",
-                   "Not detected" = "#D9D9D9", "No valid calibration" = "#c23636",
-                   "Removed (blank filter)" = "#7E57C2", "Removed (QC RSD%)" = "#455A64")
+# Colour-blind safe (Okabe-Ito)
+status_colors <- c("Valid" = "#009E73", "> ULOQ" = "#56B4E9", "< LLOQ" = "#C9A400", "< LOD" = "#E69F00",
+                   "Not detected" = "#D9D9D9", "No valid calibration" = "#D55E00",
+                   "Removed (blank filter)" = "#CC79A7", "Removed (QC RSD%)" = "#0072B2")
 conc_long <- conc_long |>
   mutate(status = case_when(
     !has_proper_range ~ "No valid calibration",
@@ -233,13 +271,25 @@ KEPT_BG <- "#FFE3B3"     # Background of calibration curves kept although not va
 # Shared sample table for the viewers; points refer to it by index (keeps the embedded data small)
 s_tab <- smp |> transmute(n = sample_name, c = Class, g = group, k = category,
                           b = as.character(batch_id), i = injection_order)
+# Averaged calibration points (option "average calibration replicates per batch"): not samples of
+# the data file, added so that the viewers can show them (ID = name, e.g. "CalAvg_B1_0.5")
+AVERAGE_CAL <- isTRUE(tr$params$average_cal_reps)
+cal_avg <- if (HAS_CALIB) {
+  bind_rows(lapply(lst, \(x) tibble::as_tibble(SumExp::col_df(x$calcurve), rownames = "sample_id"))) |>
+    filter(!sample_name %in% smp$sample_name) |> distinct(sample_name, .keep_all = TRUE)
+}
+if (!is.null(cal_avg) && nrow(cal_avg) > 0) {
+  s_tab <- bind_rows(s_tab, transmute(cal_avg, n = sample_name, c = paste("Average of", n_averaged %||% NA, "replicates"),
+                                      g = "Calibrant", k = "CalCurve", b = as.character(batch_id), i = injection_order))
+}
 s_idx <- setNames(seq_len(nrow(s_tab)) - 1L, s_tab$n)
 id2name <- setNames(smp$sample_name, smp$sample_id)
+if (!is.null(cal_avg) && nrow(cal_avg) > 0) id2name <- c(id2name, setNames(cal_avg$sample_name, cal_avg$sample_id))
 to_json <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na = "null", digits = NA,
                                         dataframe = "columns")
 ```
 
-# Overview
+# 1 Overview
 
 ```{r}
 #| results: asis
@@ -276,57 +326,7 @@ Sections with *tabs* show alternative views of the same data. Study samples are 
 whole experiment** (by group); batches appear where they matter for quality control. Large sets of plots
 (one per compound or internal standard) are shown as one interactive plot with a dropdown.
 
-## Samples and compounds
-
-::: {.panel-tabset}
-
-### Samples by group
-
-```{r}
-#| fig-height: 4
-smp |>
-  count(category, group) |>
-  ggplot(aes(x = n, y = reorder(group, n), fill = category)) +
-  geom_col() +
-  geom_text(aes(label = n), hjust = -0.2, size = 4.5) +
-  scale_fill_manual(values = cat_colors) +
-  scale_x_continuous(expand = expansion(mult = c(0, .1))) +
-  labs(x = "Number of samples", y = NULL, fill = NULL)
-```
-
-### Samples per batch (table)
-
-```{r}
-smp |>
-  count(Batch = batch_id, group) |>
-  tidyr::pivot_wider(names_from = group, values_from = n, values_fill = 0) |>
-  dt()
-```
-
-### Compounds
-
-```{r}
-#| fig-height: 3
-feat |> count(type) |>
-  ggplot(aes(x = n, y = reorder(type, n))) +
-  geom_col(fill = "#6FAAF7") +
-  geom_text(aes(label = n), hjust = -0.2, size = 4.5) +
-  scale_x_continuous(expand = expansion(mult = c(0, .1))) +
-  labs(x = "Number of features", y = NULL)
-```
-
-### m/z and retention time
-
-All targeted compounds (TComps) and internal standards by retention time and m/z, coloured by their
-outcome. Non-targeted features can be switched on in the legend.
-
-```{r}
-show$plotly_mz_rt_map(show$mz_rt_outcome(SumExp::row_df(raw), if (HAS_CALIB) calib_rows, removed_tgt))
-```
-
-:::
-
-## Processing summary
+## 1.1 Processing summary
 
 ::: {.panel-tabset}
 
@@ -359,12 +359,16 @@ tibble(Setting = c("Normalization (this report)", "Best normalization (lowest me
                    "Per-batch processing", "Outlier removal", "Blank filtering", "Blank filtering factor",
                    "QC RSD% filter", "Weighting", "LOD/LLOQ method", "RSD% ≤ 20% for LLOQ",
                    "Log-scale calibration", "Keep all calibration curves", "Linear models only",
-                   "Minimum R² of the calibration curves"),
+                   "Minimum R² of the calibration curves", "Values below the LOD/LLOQ",
+                   "Calibration replicates averaged per batch (global curve)", "Pre-normalization by the volumetric IS"),
        Value = c(val(method_label[MAT]), val(method_label[tr[["best normalization"]]]),
                  val(length(batch_ids) > 1), val(p$rm_outlier), val(p$blank_filter),
                  val(p$blank_filter_factor), rsd_txt, val(p$weight), val(p$llox_method),
                  val(p$use_rsd20), val(p$log_calibration), val(isTRUE(p$keep_all_calcurves)), val(isTRUE(p$linear_only)),
-                 if (isTRUE(p$r2_filter)) sprintf("%.3f", p$min_r2) else "None")) |>
+                 if (isTRUE(p$r2_filter)) sprintf("%.3f", p$min_r2) else "None",
+                 if (isFALSE(p$impute_llox)) "Reported as n.d. / n.q. (no value)" else "Replaced (LLOQ/4, LLOQ/2)",
+                 val(isTRUE(p$average_cal_reps)),
+                 if (is.null(tr[["vIS prenormalization"]])) "No" else paste("Yes:", paste(tr[["vIS prenormalization"]], collapse = ", then ")))) |>
   knitr::kable()
 ```
 
@@ -376,7 +380,88 @@ tibble(Setting = c("Normalization (this report)", "Best normalization (lowest me
 if (HAS_CALIB) cat(knitr::knit_child(file.path(chapters_dir, "internal-status.qmd"), quiet = TRUE))
 ```
 
-# Normalization by internal standards
+# 2 Data overview
+
+## 2.1 Samples by category
+
+::: {.panel-tabset}
+
+### Samples by group
+
+```{r}
+#| fig-height: 4
+smp |>
+  count(category, group) |>
+  ggplot(aes(x = n, y = reorder(group, n), fill = category)) +
+  geom_col() +
+  geom_text(aes(label = n), hjust = -0.2, size = 4.5) +
+  scale_fill_manual(values = cat_colors) +
+  scale_x_continuous(expand = expansion(mult = c(0, .1))) +
+  labs(x = "Number of samples", y = NULL, fill = NULL)
+```
+
+### Samples per batch (table)
+
+```{r}
+smp |>
+  count(Batch = batch_id, group) |>
+  tidyr::pivot_wider(names_from = group, values_from = n, values_fill = 0) |>
+  dt()
+```
+
+:::
+
+## 2.2 Calibration levels
+
+The number of calibration curve samples per concentration, per batch and in total.
+
+```{r}
+#| results: asis
+cal_tbl <- show$calib_samples_per_batch(raw, unit)
+if (nrow(cal_tbl) == 0) note("No calibration curve samples in this dataset.") else
+  cal_tbl |> knitr::kable(align = "l") |> kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
+
+## 2.3 Classes of analytes
+
+```{r}
+#| fig-height: 3
+feat |> count(type) |>
+  ggplot(aes(x = n, y = reorder(type, n))) +
+  geom_col(fill = "#6FAAF7") +
+  geom_text(aes(label = n), hjust = -0.2, size = 4.5) +
+  scale_x_continuous(expand = expansion(mult = c(0, .1))) +
+  labs(x = "Number of features", y = NULL)
+```
+
+## 2.4 The distribution of analytes across m/z and retention time
+
+All targeted compounds (TComps) and internal standards by retention time and m/z, coloured by their
+outcome. Non-targeted features can be switched on in the legend.
+
+```{r}
+show$plotly_mz_rt_map(show$mz_rt_outcome(SumExp::row_df(raw), if (HAS_CALIB) calib_rows, removed_tgt))
+```
+
+## 2.5 Distribution of m/z
+
+The number of features (all types) per m/z, in bins of 0.5. Hover over a bar for its range; drag to
+zoom, double-click to reset.
+
+```{r}
+show$plotly_binned_hist(feat$mz, binwidth = 0.5, x_title = "m/z")
+```
+
+## 2.6 Distribution of intensities
+
+All raw peak areas of all features and samples, in linear scale (left) and in log scale (right, the
+positive values only). Hover over a bar for its range; drag to zoom, double-click to reset.
+
+```{r}
+show$plotly_value_distribution(raw[["raw"]])
+```
+
+# 3 Quality control and normalization
 
 ```{r}
 is0 <- tr[["internal std. before qc"]]                     # All IS, all samples, raw values
@@ -395,7 +480,7 @@ is_cols <- function(d) transmute(d, `Internal standard` = feature_name, `Avg RT 
 is_clean <- is0[!is_failed, if (is.null(is_out)) TRUE else !is_out]
 ```
 
-## Internal standards
+## 3.1 Internal standards
 
 There are `r nrow(is0)` internal standards (IS) in the data, measured in `r ncol(is0)` samples.
 
@@ -404,7 +489,7 @@ is_cols(is_tbl) |> mutate(Status = ifelse(is_tbl$failed, "Failed (removed)", "OK
   DT::formatStyle("Status", target = "row", backgroundColor = DT::styleEqual("Failed (removed)", FAILED_BG))
 ```
 
-## Failed internal standards {#failed-is}
+## 3.2 Failed internal standards {#failed-is}
 
 An IS fails when more than 10% of the samples have a zero value. Failed IS are removed before
 normalization.
@@ -437,7 +522,7 @@ if (any(is_failed)) {
 }
 ```
 
-## Outlier samples {#outlier-samples}
+## 3.3 Outlier samples {#outlier-samples}
 
 A sample is an outlier when more than 20% of the IS deviate by more than 3 standard deviations from
 the IS mean (log scale). Outlier samples are removed before normalization.
@@ -457,31 +542,10 @@ if (is.null(is_out)) {
 }
 ```
 
-## Distribution of the internal standards
-
-Each IS by sample group (left) and along the injection order (right), raw peak areas. Choose the IS in
-the dropdown; click legend entries to hide or show groups.
-
-```{r}
-#| results: asis
-is_view <- list(
-  is = lapply(seq_len(nrow(is0)), function(ii) list(
-    name = SumExp::row_df(is0)$feature_name[ii], failed = is_failed[[ii]],
-    y = sig(unname(is0[["raw"]][ii, ])))),
-  s = unname(s_idx[SumExp::col_df(is0)$sample_name]),
-  out = unname(if (is.null(is_out)) rep(FALSE, ncol(is0)) else is_out)
-)
-cat('<div class="viewer" id="isv">',
-    '<div class="controls"><input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
-    '<button type="button" class="next">&#9654;</button>',
-    '<label><input type="checkbox" class="log" checked> Log scale</label></div>',
-    '<div class="info"></div><div class="plot" style="height:480px;"></div></div>',
-    '<script>window.ISVIEW = ', to_json(is_view), ';</script>', sep = "")
-```
-
-## RSD% of the internal standards
+## 3.4 Raw RSD%
 
 RSD% of the raw IS peak areas within groups of samples, after removing failed IS and outlier samples.
+A group with a single sample has no RSD% (it needs at least two); the *Note* column says so.
 Filter the table by grouping or group; the matrix tab shows all groups side by side.
 
 ```{r}
@@ -491,9 +555,15 @@ grp_rsd <- function(grouping, key, keep = TRUE) {
   keys <- unique(key[keep])
   purrr::map_dfr(keys, function(k) {
     cols <- keep & key == k
-    if (sum(cols) < 2) return(NULL)
+    # A group with a single sample stays in the table, with the reason why it has no RSD%
+    rsd <- if (sum(cols) < 2) NA_real_ else round(rsd_of(cols), 1)
     tibble(`Internal standard` = SumExp::row_df(is_clean)$feature_name, Grouping = grouping, Group = k,
-           n = sum(cols), `RSD%` = round(rsd_of(cols), 1))
+           n = sum(cols), `RSD%` = rsd,
+           Note = dplyr::case_when(
+             sum(cols) < 2 ~ paste0("Too few samples (n = ", sum(cols), "): RSD% needs at least 2"),
+             !is.finite(rsd) ~ "Not computable: all values 0 or missing",
+             TRUE ~ ""
+           ))
   })
 }
 is_rsd <- bind_rows(
@@ -526,7 +596,29 @@ is_rsd |> mutate(col = paste0(Group, " (", Grouping, ")")) |>
 if (!has_qc) note(paste(NO_QC, "The RSD% per QC group is not available."))
 ```
 
-## Volumetric internal standards
+## 3.5 Distribution of intensities of the internal standards
+
+Each IS by sample group (left) and along the injection order (right), raw peak areas. Choose the IS in
+the dropdown; click legend entries to hide or show groups.
+
+```{r}
+#| results: asis
+is_view <- list(
+  is = lapply(seq_len(nrow(is0)), function(ii) list(
+    name = SumExp::row_df(is0)$feature_name[ii], failed = is_failed[[ii]],
+    y = sig(unname(is0[["raw"]][ii, ])))),
+  s = unname(s_idx[SumExp::col_df(is0)$sample_name]),
+  out = unname(if (is.null(is_out)) rep(FALSE, ncol(is0)) else is_out)
+)
+cat('<div class="viewer" id="isv">',
+    '<div class="controls"><input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
+    '<button type="button" class="next">&#9654;</button>',
+    '<label><input type="checkbox" class="log" checked> Log scale</label></div>',
+    '<div class="info"></div><div class="plot" style="height:480px;"></div></div>',
+    '<script>window.ISVIEW = ', to_json(is_view), ';</script>', sep = "")
+```
+
+## 3.6 Volumetric internal standards
 
 ```{r}
 #| results: asis
@@ -546,7 +638,7 @@ if (length(vis_rows) == 0) {
 }
 ```
 
-## Internal standards over the sequence
+## 3.7 Internal standards over the sequence
 
 The internal standards (IS) of each sample in injection order, stacked: switch the colours between
 sample group, batch and the contribution of each IS, and the values between raw and normalized. The
@@ -595,6 +687,7 @@ norm_se <- norm_all[util$is_targeted_feature(norm_all), ]
 # QC RSD% of the targeted compounds, raw vs normalized
 plot_rsd <- function(m) {
   if (!has_qc_rep) return(note(NO_QC))
+  if (nrow(norm_se) == 0) return(note("No targeted compounds in this dataset."))
   d <- tibble(Compound = SumExp::row_df(norm_se)$feature_name,
               raw = proc$qc_rsd_per_feature(norm_se, "raw"), norm = proc$qc_rsd_per_feature(norm_se, m)) |>
     filter(is.finite(raw), is.finite(norm))
@@ -602,7 +695,7 @@ plot_rsd <- function(m) {
   p <- ggplot(d, aes(raw, norm, text = paste0(Compound, "<br>raw ", round(raw, 1), "% → ", round(norm, 1), "%"))) +
     geom_abline(slope = 1, intercept = 0, color = "grey60", linetype = "dashed") +
     geom_point(aes(color = norm < raw), size = 2, alpha = .8) +
-    scale_color_manual(values = c(`TRUE` = "#2E9E5B", `FALSE` = "#c23636"), labels = c(`TRUE` = "Improved", `FALSE` = "Not improved"), name = NULL) +
+    scale_color_manual(values = c(`TRUE` = "#009E73", `FALSE` = "#D55E00"), labels = c(`TRUE` = "Improved", `FALSE` = "Not improved"), name = NULL) +
     coord_cartesian(xlim = lim, ylim = lim) +
     labs(x = "QC RSD% raw", y = paste0("QC RSD% ", method_label[m]),
          title = sprintf("Median QC RSD%%: raw %.1f%% → %.1f%%; improved for %d of %d compounds",
@@ -614,8 +707,9 @@ plot_rsd <- function(m) {
 # close to 0 everywhere. Blanks and calibrants (no sample matrix) are not shown.
 in_matrix <- norm_cd$group %in% c(study_classes, "QC")
 plot_rla <- function(m) {
+  if (!any(in_matrix)) return(note("No study samples or QCs: no relative log abundance."))
   rla <- function(mat) {
-    lx <- log2(ifelse(mat > 0, mat, NA))[, in_matrix]
+    lx <- log2(ifelse(mat > 0, mat, NA))[, in_matrix, drop = FALSE]   # Also with one sample
     apply(lx - apply(lx, 1, median, na.rm = TRUE), 2, median, na.rm = TRUE)
   }
   d <- bind_rows(lapply(c("raw", m), function(mm) {
@@ -631,17 +725,31 @@ plot_rla <- function(m) {
   plotly::ggplotly(p, tooltip = "text", height = 520)
 }
 # PCA of the study samples (and QCs), raw vs normalized, coloured by batch or by sample group
+# The PCA of each matrix is computed once and reused (both colourings, and "raw" in every method)
+pca_cache <- new.env()
 plot_pca <- function(m, by = c("batch", "group")) {
   by <- match.arg(by)
   keep_s <- norm_cd$group != "Calibrant" & norm_cd$group != "Blank"
   d <- bind_rows(lapply(c("raw", m), function(mm) {
-    x <- norm_all[[mm]][not_is, keep_s]
-    x <- x[rowSums(is.na(x)) == 0 & apply(x, 1, sd) > 0, ]
-    pc <- prcomp(t(log1p(x)), scale. = TRUE)
-    ve <- round(100 * pc$sdev^2 / sum(pc$sdev^2), 1)
-    mutate(norm_cd[keep_s, ], PC1 = pc$x[, 1], PC2 = pc$x[, 2],
-           method = sprintf("%s (PC1 %s%%, PC2 %s%%)", method_label[mm], ve[1], ve[2]))
+    if (!exists(mm, envir = pca_cache, inherits = FALSE)) assign(mm, pca_scores(mm, keep_s), envir = pca_cache)
+    get(mm, envir = pca_cache)
   }))
+  pca_draw(d, by)
+}
+# PC1 and PC2 of the study samples and QCs of one matrix (`NULL` if a PCA is not possible)
+pca_scores <- function(mm, keep_s) {
+  x <- norm_all[[mm]][not_is, keep_s, drop = FALSE]   # `drop = FALSE`: also with one sample
+  x <- x[rowSums(is.na(x)) == 0 & apply(x, 1, sd) > 0, , drop = FALSE]
+  if (nrow(x) < 2 || ncol(x) < 2) return(NULL)        # A PCA needs 2 samples and 2 features
+  pc <- prcomp(t(log1p(x)), scale. = TRUE, rank. = 2)  # Only PC1 and PC2 are needed
+  ve <- round(100 * pc$sdev^2 / sum(pc$sdev^2), 1)
+  mutate(norm_cd[keep_s, ], PC1 = pc$x[, 1], PC2 = if (ncol(pc$x) > 1) pc$x[, 2] else 0,
+         method = sprintf("%s (PC1 %s%%, PC2 %s%%)", method_label[mm], ve[1], ve[2]))
+}
+pca_draw <- function(d, by) {
+  if (nrow(d) == 0) {
+    return(note("No PCA: it needs at least 2 study samples or QCs and 2 features without missing values."))
+  }
   if (by == "batch") {
     ggplot(d, aes(PC1, PC2, color = factor(batch_id), shape = group == "QC")) +
       geom_point(size = 2, alpha = .8) +
@@ -657,8 +765,9 @@ plot_pca <- function(m, by = c("batch", "group")) {
   }
 }
 rla_text <- paste(
-  "Each point is one sample: the median, over all features, of log2(the feature's value in this",
-  "sample / the feature's median in all study samples and QCs). 0 means a sample of typical overall",
+  "Each point is one sample: its relative log abundance (RLA) [@delivera2012], the median, over all",
+  "features, of log2(the feature's value in this sample / the feature's median in all study samples",
+  "and QCs). 0 means a sample of typical overall",
   "intensity; a shift of the whole sample (dilution, injection volume, signal drift) moves it up or",
   "down. A good normalization brings all samples close to 0, in every batch."
 )
@@ -688,15 +797,7 @@ pca_group_text <- paste(
 )
 ```
 
-```{r}
-#| results: asis
-# One section per normalization method in the data
-for (NORM_M in intersect(c("closest_norm", "loess_norm", "mvis_norm"), names(method_label))) {
-  cat(knitr::knit_child(file.path(chapters_dir, "internal-norm-method.qmd"), quiet = TRUE))
-}
-```
-
-## Comparison of normalization methods
+## 3.8 Comparison of normalization methods
 
 ```{r}
 #| results: asis
@@ -707,7 +808,8 @@ cat(sprintf('<div class="callout-q">Lowest median RSD%% among the %s replicates:
 ```
 
 ```{r}
-rsd_df <- if (has_qc_rep) lapply(names(method_label), function(m) {
+NO_TCOMP <- "No targeted compounds in this dataset."
+rsd_df <- if (has_qc_rep && nrow(norm_se) > 0) lapply(names(method_label), function(m) {
   tibble(feature_id = rownames(norm_se), method = method_label[m],
          rsd = proc$qc_rsd_per_feature(norm_se, m))
 }) |> bind_rows() |>
@@ -715,79 +817,115 @@ rsd_df <- if (has_qc_rep) lapply(names(method_label), function(m) {
   mutate(method = factor(method, levels = method_label))
 ```
 
-::: {.panel-tabset}
-
-### QC RSD% distribution
+The QC RSD% of the targeted compounds under each method (the median over the QC groups):
 
 ```{r}
 #| fig-height: 4.5
-if (!has_qc_rep) note(NO_QC) else
+if (!has_qc_rep) note(NO_QC) else if (is.null(rsd_df)) note(NO_TCOMP) else
   ggplot(rsd_df, aes(x = method, y = rsd, fill = method)) +
   geom_violin(alpha = .5, color = NA) +
   geom_boxplot(width = .15, outlier.size = .6) +
   geom_hline(yintercept = c(20, 30), linetype = c("dashed", "dotted"), color = "grey40") +
-  scale_fill_manual(values = c("#9E9E9E", "#00BFC4", "#F8766D", "#7CAE00"), guide = "none") +
+  scale_fill_manual(values = c("#9E9E9E", show$okabe_ito[["skyblue"]], show$okabe_ito[["orange"]], show$okabe_ito[["green"]]), guide = "none") +
   labs(x = NULL, y = "QC RSD% (targeted compounds)")
 ```
 
-### Per compound (table)
+Per compound, as in the app: its RSD% among the replicates of each QC group (a panel per group) under
+each method, before blank filtering. The chosen compound is drawn in the colour of the method with its
+lowest RSD% (raw peak areas are not a method); all other compounds are the grey lines behind it.
+Choose the compound in the dropdown or search; hover over a point for its value.
 
 ```{r}
-if (!has_qc_rep) note(NO_QC) else
+#| results: asis
+if (!show$has_enough_qc(norm_all)) note(show$not_enough_qc_msg) else if (nrow(norm_se) == 0) note(NO_TCOMP) else {
+  labs_m <- SumExp::name_labs(norm_all)
+  names(labs_m) <- gsub(" .*", "", names(labs_m))   # First word only, as in the app
+  rsd_cmp <- show$extract_quant_qc(norm_all) |>
+    show$calc_rsd_qstd(labs_m) |>
+    show$mark_lowest_rsd_norm(labs_m) |>
+    left_join(select(feat, feature_id, feature_name), by = "feature_id")
+  qc_groups <- sort(unique(rsd_cmp$QC))   # Panels in the order of the app
+  ids <- unique(rsd_cmp$feature_id[order(rsd_cmp$feature_name)])   # By compound name
+  rsd_view <- list(
+    # I(): arrays also for a single QC group
+    methods = I(names(labs_m)), groups = I(qc_groups), sign_colors = as.list(show$norm_sign_colors),
+    comps = lapply(ids, function(id) {
+      d <- rsd_cmp[rsd_cmp$feature_id == id, ]
+      list(name = d$feature_name[1],
+           r = lapply(qc_groups, function(g) {
+             i <- match(g, d$QC)
+             if (is.na(i)) NULL else I(unname(round(unlist(d[i, unname(labs_m)]), 1)))
+           }),
+           s = I(unname(vapply(qc_groups, function(g) { i <- match(g, d$QC); if (is.na(i)) "" else as.character(d$sign[i]) }, ""))))
+    })
+  )
+  n_rows <- ceiling(length(qc_groups) / min(length(qc_groups), 3))
+  cat('<div class="viewer" id="rsdv">',
+      '<div class="controls"><input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
+      '<button type="button" class="next">&#9654;</button></div>',
+      '<div class="info"></div><div class="plot" style="height:', 60 + 280 * n_rows, 'px;"></div></div>',
+      '<script>window.RSDVIEW = ', to_json(rsd_view), ';</script>', sep = "")
+}
+```
+
+```{r}
+#| results: asis
+# One section per normalization method in the data (3.8.1, 3.8.2, ...)
+norm_methods <- intersect(c("closest_norm", "loess_norm", "mvis_norm"), names(method_label))
+for (NORM_K in seq_along(norm_methods)) {
+  NORM_M <- norm_methods[NORM_K]
+  cat(knitr::knit_child(file.path(chapters_dir, "internal-norm-method.qmd"), quiet = TRUE))
+}
+```
+
+## 3.9 RSD% values
+
+The QC RSD% of each targeted compound under each method (the median over the QC groups).
+
+```{r}
+if (!has_qc_rep) note(NO_QC) else if (is.null(rsd_df)) note(NO_TCOMP) else
   rsd_df |> select(Compound = feature_name, method, rsd) |>
   mutate(rsd = round(rsd, 1)) |>
   tidyr::pivot_wider(names_from = method, values_from = rsd) |> dt(scroll = TRUE)
 ```
 
-### Removed features
+## 3.10 Removed features
+
+Features removed by the blank filter and, when selected, by the QC RSD% filter (thresholds as
+discussed by @broadhurst2018).
 
 ```{r}
 if (is.null(removed) || nrow(filter(removed, mat_id == MAT)) == 0) {
   note("No features were removed for this normalization method.")
 } else {
   removed |> filter(mat_id == MAT) |>
-    left_join(select(feat, feature_id, label), by = "feature_id") |>
-    transmute(Feature = coalesce(label, feature_name), Type = ifelse(targeted, "Targeted", "Non-targeted"),
+    left_join(select(feat, feature_id, label, ftype = type), by = "feature_id") |>
+    # The volumetric IS has its own type
+    transmute(Feature = coalesce(label, feature_name),
+              Type = case_when(targeted ~ "Targeted", ftype %in% "Volumetric IS" ~ "Volumetric IS", TRUE ~ "Non-targeted"),
               `Removed by` = reason, `QC RSD%` = round(qc_rsd, 1)) |> dt(search = FALSE)
 }
 ```
 
-:::
+## 3.11 Blanks compared to samples
 
-# Quality control
-
-## QC samples in acquisition order
-
-Concentrations of the quantified compounds in each QC sample, in injection order: the spread should be
-stable over the run.
-
-```{r}
-#| fig-height: 4.5
-qc_conc <- filter(conc_long, .ctrl_cat == "QC", status == "Valid")
-if (!has_qc) note(NO_QC) else if (nrow(qc_conc) == 0) note("No quantified compounds in the QC samples.") else
-  qc_conc |>
-  mutate(sample = reorder(sample_name, injection_order)) |>
-  ggplot(aes(x = sample, y = conc, fill = factor(batch_id))) +
-  geom_boxplot(outlier.size = .5) +
-  scale_y_log10() +
-  labs(x = "QC sample (injection order)", y = paste0("Concentration [", unit, "] (log10)"), fill = "Batch") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 8))
-```
-
-## Blanks compared to the sample groups
-
-One feature at a time in the (method) blanks, in red, next to the QCs, study samples and calibrants,
-`r method_label[MAT]` values before blank filtering. The dashed line is the threshold of the blank
-filter: a feature is kept when its maximum or mean in the other samples (calibrants included) is
-above `r tr$blank_filter_factor %||% 5` × its mean in the blanks. Choose the feature type, search, and
-switch between a bar per group (mean ± SD, samples as points) and a bar per sample along the
-injection order.
+One targeted compound at a time in the (method) blanks, in red, next to the QCs, study samples and
+calibrants, `r method_label[MAT]` values before blank filtering. The dashed line is the threshold of the
+blank filter: a feature is kept when its maximum or mean in the other samples (calibrants included) is
+above `r tr$blank_filter_factor %||% 5` × its mean in the blanks (on blanks and QC samples in
+metabolomics, see @broadhurst2018). Search, and switch between a bar per group (mean ± SD, samples as
+points) and a bar per sample along the injection order. This report shows the targeted compounds only
+(all features would make the report very large); the app (3.11) shows all features, also the
+non-targeted ones and the internal standards.
 
 ```{r}
 #| results: asis
 norm_b <- tr[["normalized"]]
 if (!any(util$ctrl_smpl_cat(norm_b) == "Blank")) {
   note("No blank samples in this dataset.")
+} else if (!any(util$is_targeted_feature(norm_b))) {
+  note(paste("No targeted (Quant) compounds in this dataset, so there is no interactive plot here: the",
+             "report shows the targeted compounds only. The app (3.11) shows the blanks of all features."))
 } else {
   rd_b <- SumExp::row_df(norm_b)
   type_b <- dplyr::case_when(
@@ -797,7 +935,9 @@ if (!any(util$ctrl_smpl_cat(norm_b) == "Blank")) {
     TRUE ~ "nontargeted"
   )
   rem_b <- removed$feature_id[removed$mat_id == MAT & removed$reason == "Blank filter"]
-  ord_b <- order(feat$label[match(rownames(rd_b), feat$feature_id)])
+  # The targeted compounds only (by name)
+  ord_b <- which(type_b == "targeted")
+  ord_b <- ord_b[order(feat$label[match(rownames(rd_b)[ord_b], feat$feature_id)])]
   blank_view <- list(
     f = lapply(ord_b, function(i) list(
       name = feat$label[match(rownames(rd_b)[i], feat$feature_id)], t = type_b[i],
@@ -807,9 +947,8 @@ if (!any(util$ctrl_smpl_cat(norm_b) == "Blank")) {
     y_lab = paste(method_label[MAT], if (MAT == "raw") "peak area" else "normalized peak area")
   )
   cat('<div class="viewer" id="blankv">',
-      '<div class="controls"><select class="type"><option value="targeted">Targeted</option>',
-      '<option value="nontargeted">Non-targeted</option><option value="is">Internal standards (incl. vIS)</option>',
-      '<option value="all">All</option></select>',
+      # (One feature type: the targeted compounds; the hidden selector keeps the viewer code as in the app)
+      '<div class="controls"><select class="type" style="display:none"><option value="targeted">Targeted</option></select>',
       '<input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
       '<button type="button" class="next">&#9654;</button>',
       '<select class="view"><option value="groups">Groups</option><option value="samples">Per sample</option></select>',
@@ -827,23 +966,28 @@ if (!any(util$ctrl_smpl_cat(norm_b) == "Blank")) {
 if (HAS_CALIB) cat(knitr::knit_child(file.path(chapters_dir, "internal-calibration.qmd"), quiet = TRUE))
 ```
 
-# Whole experiment
+# 5 Whole experiment
 
 The study samples **as one experiment**: groups compared over all batches.
 
-## PCA
+## 5.1 PCA
 
 ```{r}
 blk_lst <- tr[["normalized - blank"]]
 m <- do.call(cbind, lapply(blk_lst, \(se) se[[BLK]]))
 cd <- bind_rows(lapply(blk_lst, \(se) tibble::as_tibble(SumExp::col_df(se), rownames = "sample_id")))
 keep_s <- cd$.ctrl_cat %in% c("", "QC")
-m <- m[, keep_s]; cd <- cd[keep_s, ]
-m <- m[rowSums(is.na(m)) == 0 & apply(m, 1, sd) > 0, ]
-pca <- prcomp(t(log1p(m)), scale. = TRUE)
-ve <- round(100 * pca$sdev^2 / sum(pca$sdev^2), 1)
-pc <- tibble(PC1 = pca$x[, 1], PC2 = pca$x[, 2], cd) |>
-  mutate(group = ifelse(.ctrl_cat == "QC", "QC", Class))
+m <- m[, keep_s, drop = FALSE]; cd <- cd[keep_s, ]   # `drop = FALSE`: also with one sample
+m <- m[rowSums(is.na(m)) == 0 & apply(m, 1, sd) > 0, , drop = FALSE]
+# A PCA needs at least 2 samples and 2 features (without missing values, with variation)
+PCA_MSG <- sprintf("No PCA: it needs at least 2 samples and 2 features without missing values; there are %d samples and %d features.", ncol(m), nrow(m))
+pca_ok <- ncol(m) >= 2 && nrow(m) >= 2
+if (pca_ok) {
+  pca <- prcomp(t(log1p(m)), scale. = TRUE, rank. = 2)   # Only PC1 and PC2 are needed
+  ve <- round(100 * pca$sdev^2 / sum(pca$sdev^2), 1)
+  pc <- tibble(PC1 = pca$x[, 1], PC2 = if (ncol(pca$x) > 1) pca$x[, 2] else 0, cd) |>
+    mutate(group = ifelse(.ctrl_cat == "QC", "QC", Class))
+}
 ```
 
 ::: {.panel-tabset}
@@ -852,21 +996,25 @@ pc <- tibble(PC1 = pca$x[, 1], PC2 = pca$x[, 2], cd) |>
 
 ```{r}
 #| fig-height: 5.5
+if (!pca_ok) note(PCA_MSG) else {
 p_pca <- ggplot(pc, aes(PC1, PC2, color = group, text = paste0(sample_name, " (batch ", batch_id, ")"))) +
   geom_point(size = 2, alpha = .8) +
   scale_color_manual(values = group_colors) +
   labs(x = paste0("PC1 (", ve[1], "%)"), y = paste0("PC2 (", ve[2], "%)"), color = NULL)
 plotly::ggplotly(p_pca, tooltip = "text", height = 520)
+}
 ```
 
 ### Colored by batch (check)
 
 ```{r}
 #| fig-height: 5.5
+if (!pca_ok) note(PCA_MSG) else {
 p_pcab <- ggplot(pc, aes(PC1, PC2, color = factor(batch_id), text = sample_name)) +
   geom_point(size = 2, alpha = .8) +
   labs(x = paste0("PC1 (", ve[1], "%)"), y = paste0("PC2 (", ve[2], "%)"), color = "Batch")
 plotly::ggplotly(p_pcab, tooltip = "text", height = 520)
+}
 ```
 
 :::
@@ -877,20 +1025,37 @@ plotly::ggplotly(p_pcab, tooltip = "text", height = 520)
 if (length(study_classes) >= 2) {
   cat(knitr::knit_child(file.path(chapters_dir, "internal-group-comparison.qmd"), quiet = TRUE))
 } else {
-  cat("## Group comparison\n\n", '<p class="note-line">Only one group of study samples: no group comparison.</p>\n\n', sep = "")
+  cat("## 5.2 Group comparison\n\n", '<p class="note-line">Only one group of study samples: no group comparison.</p>\n\n', sep = "")
 }
 ```
 # Appendix {.unnumbered}
 
-Built with QuaNTA from `r basename(user_inputs$input_file)`; normalization `r method_label[MAT]`; generated `r GENERATED_AT`.
+Built with QuaNTA from `r basename(user_inputs$input_file)` (an MS-DIAL export [@tsugawa2015]);
+normalization `r method_label[MAT]`; generated `r GENERATED_AT`. The layout of this report is inspired
+by the quality control reports of MeTaQuaC [@kuhring2020].
+
+```{r}
+#| results: asis
+# Hosting acknowledgement (SciLifeLab Serve's suggested wording), when generated on Serve
+if (isTRUE(as.logical(params$on_serve))) {
+  cat("Technical infrastructure for hosting the app 'QuaNTA' was provided by SciLifeLab Serve",
+      "(https://serve.scilifelab.se; RRID:SCR_027820), a platform developed and supported by",
+      "SciLifeLab Data Centre.\n\n")
+}
+```
+
+**Software.** R [@rcore], Shiny [@shiny], Quarto [@quarto], ggplot2 [@ggplot2], plotly [@plotly], DT
+[@dt]; the app runs in a Rocker container [@rocker2017].
+
+**QuaNTA rules (no literature reference).** `r if (LLOX_IMPUTED) "Concentrations below the LOD are replaced by LLOQ/4, those between the LOD and the LLOQ by LLOQ/2," else "Concentrations below the LOD are reported as n.d. (not detected) and those between the LOD and the LLOQ as n.q. (not quantified), without a value (this processing did not replace them);"`
+and those of samples whose signal is at or above the mean signal of the LLOQ level, but whose
+concentration is below the LLOQ, by the LLOQ. Outlier samples: more than 20% of the internal standards
+deviate by more than 3 standard deviations from their mean (log scale).
 
 ## References {.unnumbered}
 
-The layout of this report is inspired by the quality control reports of MeTaQuaC:
-
-Kuhring M, Eisenberger A, Schmidt V, Kränkel N, Leistner DM, Kirwan J, Beule D. Concepts and Software
-Package for Efficient Quality Control in Targeted Metabolomics Studies: MeTaQuaC. *Analytical Chemistry*
-2020, 92 (15), 10241–10245. [doi:10.1021/acs.analchem.0c00136](https://doi.org/10.1021/acs.analchem.0c00136)
+::: {#refs}
+:::
 
 ```{r}
 #| results: asis
@@ -903,6 +1068,8 @@ cat('<script>window.QSAMPLES = ', to_json(s_tab), '; window.QCOLORS = ', to_json
 window.addEventListener('load', function () {
   var S = window.QSAMPLES, COL = window.QCOLORS;
   var fmt = function (v) { return v === null || v === undefined ? '–' : (+v).toPrecision(4).replace(/\.?0+$/, ''); };
+  // Scientific notation (peak areas in 3.5 and 3.7, as in the app), e.g. 1.234E+6
+  var sci = function (v) { return v === null || v === undefined ? '–' : (+v).toExponential(3).toUpperCase(); };
   var who = function (s) { return '<b>' + S.n[s] + '</b><br>' + S.c[s] + ' · batch ' + S.b[s] + ' · inj. ' + S.i[s]; };
   var font = { family: 'Lato, Segoe UI, sans-serif' };
 
@@ -937,7 +1104,7 @@ window.addEventListener('load', function () {
     IV.s.forEach(function (s, j) { (groups[S.g[s]] = groups[S.g[s]] || []).push(j); });
     Object.keys(groups).forEach(function (g) {
       var k = groups[g], y = k.map(function (j) { return it.y[j]; }), col = COL[g] || '#999';
-      var txt = k.map(function (j) { return who(IV.s[j]) + '<br>peak area ' + fmt(it.y[j]) + (IV.out[j] ? '<br><b>outlier sample</b>' : ''); });
+      var txt = k.map(function (j) { return who(IV.s[j]) + '<br>peak area ' + sci(it.y[j]) + (IV.out[j] ? '<br><b>outlier sample</b>' : ''); });
       traces.push({ type: 'box', y: y, name: g, legendgroup: g, marker: { color: col }, boxpoints: false, xaxis: 'x', yaxis: 'y', showlegend: false, hoverinfo: 'y' });
       traces.push({ type: 'scatter', mode: 'markers', x: k.map(function (j) { return S.i[IV.s[j]]; }), y: y, name: g, legendgroup: g,
         marker: { color: col, size: 6, symbol: k.map(function (j) { return IV.out[j] ? 'x' : 'circle'; }) },
@@ -946,8 +1113,9 @@ window.addEventListener('load', function () {
     root.querySelector('.info').innerHTML = it.failed ? '<span class="warn">Failed internal standard: removed before normalization.</span>' : '';
     Plotly.react(root.querySelector('.plot'), traces, {
       title: { text: it.name, x: 0.02 }, font: font, hovermode: 'closest', margin: { t: 50, r: 20, b: 60, l: 80 },
-      xaxis: { domain: [0, 0.27], tickangle: -30 }, xaxis2: { domain: [0.32, 1], title: 'Injection order' },
-      yaxis: { title: 'Peak area', type: isLog ? 'log' : 'linear', exponentformat: 'E' }, legend: { orientation: 'v', x: 1.02, y: 1 }
+      // The groups panel keeps its x-axis when zooming; the shared y-axis zooms in both panels
+      xaxis: { domain: [0, 0.27], tickangle: -30, fixedrange: true }, xaxis2: { domain: [0.32, 1], title: 'Injection order' },
+      yaxis: { title: 'Peak area', type: isLog ? 'log' : 'linear', exponentformat: 'E', hoverformat: '.3e' }, legend: { orientation: 'v', x: 1.02, y: 1 }
     }, { responsive: true, displaylogo: false });
   });
 
@@ -960,11 +1128,11 @@ window.addEventListener('load', function () {
       var m = vals.value, V = B.v[m], mode = colour.value, n = B.s.length, traces = [];
       var x = B.s.map(function (s) { return S.i[s]; });
       var tot = B.s.map(function (s, j) { return V.reduce(function (a, row) { return a + (row[j] || 0); }, 0); });
-      var txt = function (j) { return who(B.s[j]) + '<br>total ' + fmt(tot[j]); };
+      var txt = function (j) { return who(B.s[j]) + '<br>total ' + sci(tot[j]); };
       if (mode === 'is') {
         V.forEach(function (row, i) {
           traces.push({ type: 'bar', x: x, y: row, name: B.names[i], marker: { color: B.is_colors[i] },
-            text: row.map(function (v, j) { return txt(j) + '<br><b>' + B.names[i] + '</b> ' + fmt(v); }),
+            text: row.map(function (v, j) { return txt(j) + '<br><b>' + B.names[i] + '</b> ' + sci(v); }),
             textposition: 'none', hovertemplate: '%{text}<extra></extra>' });
         });
       } else {
@@ -1062,6 +1230,78 @@ window.addEventListener('load', function () {
     q('.prev').addEventListener('click', function () { if (bsel.selectedIndex > 0) { bsel.selectedIndex--; drawB(); } });
     q('.next').addEventListener('click', function () { if (bsel.selectedIndex < bsel.options.length - 1) { bsel.selectedIndex++; drawB(); } });
     fillB(); drawB();
+  }
+
+  // ---- Comparison of normalization methods (3.8): one compound's QC RSD% per method, a panel per
+  //      QC group, in the colour of its lowest method; all other compounds as grey lines behind ----
+  var R = window.RSDVIEW;
+  if (R && document.getElementById('rsdv')) {
+    var nG = R.groups.length, nC = Math.min(nG, 3), nR = Math.ceil(nG / nC);
+    var rsdOf = function (v) { return v === null ? 0 : v; };   // NA: all values 0 (as in the app)
+    // All compounds of each QC group as one trace, the compounds separated by gaps
+    var bgr = R.groups.map(function (g, gi) {
+      var x = [], y = [];
+      R.comps.forEach(function (c) {
+        var r = c.r[gi]; if (!r) return;
+        R.methods.forEach(function (m, mi) { x.push(m); y.push(rsdOf(r[mi])); });
+        x.push(null); y.push(null);
+      });
+      return { x: x, y: y };
+    });
+    viewer('rsdv', R.comps, function (c) { return c.name; }, function (root) {
+      var c = R.comps[+root.querySelector('.sel').value], traces = [], notes = [];
+      var layout = { title: { text: c.name, x: 0.02 }, font: font, hovermode: 'closest', showlegend: false,
+                     margin: { t: 60, r: 20, b: 40, l: 70 }, annotations: [] };
+      R.groups.forEach(function (g, gi) {
+        var ax = gi === 0 ? '' : String(gi + 1), col = gi % nC, row = Math.floor(gi / nC);
+        var xd = [col / nC + 0.025, (col + 1) / nC - 0.025], yd = [1 - (row + 1) / nR + 0.1, 1 - row / nR - 0.05];
+        layout['xaxis' + ax] = { domain: xd, anchor: 'y' + ax, type: 'category', categoryorder: 'array', categoryarray: R.methods };
+        layout['yaxis' + ax] = { domain: yd, anchor: 'x' + ax, title: col === 0 ? 'RSD%' : '', rangemode: 'tozero' };
+        layout.annotations.push({ text: '<b>' + g + '</b>', x: (xd[0] + xd[1]) / 2, y: yd[1], xref: 'paper', yref: 'paper',
+                                  xanchor: 'center', yanchor: 'bottom', showarrow: false });
+        traces.push({ x: bgr[gi].x, y: bgr[gi].y, mode: 'lines', type: 'scatter', connectgaps: false, hoverinfo: 'skip',
+                      line: { color: 'rgba(110,110,110,0.18)', width: 1 }, xaxis: 'x' + ax, yaxis: 'y' + ax });
+        var r = c.r[gi]; if (!r) return;
+        var colr = R.sign_colors[c.s[gi]] || '#333';
+        traces.push({ x: R.methods, y: r.map(rsdOf), mode: 'lines+markers', type: 'scatter', xaxis: 'x' + ax, yaxis: 'y' + ax,
+                      line: { color: colr, width: 3 }, marker: { color: colr, size: 9 },
+                      text: r.map(function (v, mi) { return '<b>' + c.name + '</b> (' + g + ')<br>' + R.methods[mi] + ': ' + (v === null ? 'NA (all 0s)' : (+v).toFixed(1) + '%'); }),
+                      hovertemplate: '%{text}<extra></extra>' });
+        notes.push('<span class="chip" style="color:' + colr + ';font-weight:600">' + g + ': lowest RSD% ' + c.s[gi].replace('↓ ', '') + '</span>');
+      });
+      root.querySelector('.info').innerHTML = notes.join(' ');
+      Plotly.react(root.querySelector('.plot'), traces, layout, { responsive: true, displaylogo: false });
+    });
+  }
+
+  // ---- QC samples in acquisition order (4.7): one compound, a line per QC group; measured values
+  //      filled, values replaced by the LOD/LLOQ rules open; values without a value are counted ----
+  var Q = window.QCVIEW;
+  if (Q && document.getElementById('qcv')) {
+    viewer('qcv', Q.comps, function (c) { return c.name; }, function (root) {
+      var c = Q.comps[+root.querySelector('.sel').value], isLog = root.querySelector('.log').checked, traces = [], groups = {}, nf = {};
+      c.s.forEach(function (s, j) {
+        if (c.y[j] === null) { if (c.f[j]) nf[c.f[j]] = (nf[c.f[j]] || 0) + 1; return; }
+        (groups[S.c[s]] = groups[S.c[s]] || []).push(j);
+      });
+      Object.keys(Q.group_colors).forEach(function (g) {
+        var k = groups[g]; if (!k) return;
+        k.sort(function (a, b) { return S.i[c.s[a]] - S.i[c.s[b]]; });
+        var colr = Q.group_colors[g];
+        traces.push({ type: 'scatter', mode: 'lines+markers', name: g, x: k.map(function (j) { return S.i[c.s[j]]; }),
+          y: k.map(function (j) { return c.y[j]; }), line: { color: colr, width: 1 },
+          marker: { size: 8, color: k.map(function (j) { return Q.kinds[c.k[j]] === 'Measured' ? colr : '#fff'; }), line: { color: colr, width: 1.5 } },
+          text: k.map(function (j) { return who(c.s[j]) + '<br>conc. ' + fmt(c.y[j]) + ' ' + Q.unit + ' (' + Q.kinds[c.k[j]] + ')'; }),
+          hovertemplate: '%{text}<extra></extra>' });
+      });
+      var nfTxt = Object.keys(nf).map(function (f) { return f + ' ' + nf[f]; }).join(', ');
+      root.querySelector('.info').innerHTML = nfTxt ? 'Not shown (no value): ' + nfTxt : '';
+      Plotly.react(root.querySelector('.plot'), traces, {
+        title: { text: c.name, x: 0.02 }, hovermode: 'closest', font: font,
+        xaxis: { title: 'Injection order' }, yaxis: { title: 'Concentration [' + Q.unit + ']', type: isLog ? 'log' : 'linear', exponentformat: 'E' },
+        legend: { orientation: 'v', x: 1.02, y: 1, title: { text: 'QC group' } }, margin: { t: 50, r: 20, b: 60, l: 80 }
+      }, { responsive: true, displaylogo: false });
+    });
   }
 
   // ---- Concentrations per compound: a box per class, points coloured by measured / replaced ----

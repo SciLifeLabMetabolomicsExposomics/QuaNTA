@@ -23,7 +23,7 @@ runReadMsdialUI <- function(uiId) {
                               "enough calibration replicates uses the global curve of all batches.")),
       value = TRUE,
     ),
-    shiny::actionButton(ns("run_button"), "Read MS-DIAL output file", icon = shiny::icon("file-import"))
+    shiny::actionButton(ns("run_button"), "Read data file", icon = shiny::icon("file-import"))
   )
 }
 
@@ -51,7 +51,7 @@ runReadMsdialUI_2 <- function(uiId) {
 runReadMsdialServer <- function(serverId, data_info, ws, clear = NULL) {
   runScriptServer(serverId,
                   script_path = "scripts/read-msdial.R",
-                  what = "Reading the MS-DIAL file",
+                  what = "Reading the data file",
                   param_ids = c("per_batch"),
                   data_info = data_info,
                   ws = ws,

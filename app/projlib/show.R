@@ -3,6 +3,34 @@
 # ------------------------------------------------------------------------------------------- #
 box::use(util = ./msdial_utils)
 
+
+
+#' Numbers in scientific notation for hover texts, e.g. "1.234E+06"
+#' @param x Numbers
+#' @export
+sci_txt <- function(x) ifelse(is.na(x), "NA", toupper(formatC(x, format = "e", digits = 3)))
+#  -----  COLOURS  -------------------------------------------------------------
+
+#' Colour-blind safe colours of Okabe & Ito (2008), named
+#' @export
+okabe_ito <- c(orange = "#E69F00", skyblue = "#56B4E9", green = "#009E73", yellow = "#F0E442",
+               blue = "#0072B2", vermillion = "#D55E00", purple = "#CC79A7", black = "#000000",
+               grey = "#999999")
+
+#' `n` colour-blind safe colours for categories: Okabe-Ito (up to 7), Paul Tol's "muted" (up to
+#' 9), viridis for more (no palette keeps many categories apart: use the legend / hover then).
+#' Without the pale yellow of Okabe-Ito and the pale sand of Tol (hard to see): black and brown.
+#'
+#' @param n The number of colours
+#' @param exclude Colours not to use (e.g. those of blanks and QCs)
+#' @export
+cb_colors <- function(n, exclude = character(0)) {
+  if (n <= 0) return(character(0))
+  oi <- setdiff(unname(okabe_ito[c("blue", "orange", "green", "vermillion", "skyblue", "purple", "black")]),
+                toupper(exclude))
+  tol <- c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#661100", "#CC6677", "#882255", "#AA4499")
+  if (n <= length(oi)) oi[seq_len(n)] else if (n <= length(tol)) tol[seq_len(n)] else grDevices::hcl.colors(n, "viridis")
+}
 #  -----  UTILS  ---------------------------------------------------------------
 
 #' Check if
@@ -96,8 +124,8 @@ get_colors_of_classes <- function(sumexp, color_cat) {
   # Remaining classes
   rest <- unlist(by_cat[! names(by_cat) %in% names(color_cat)])
   n <- length(rest)
-  # Use ggplot2 default colors excluding the first red, which is similar to 'red'
-  ggcolor <- grDevices::hcl(seq(15, 375, length.out = n + 2), 100, 65)[2:(n + 1)]
+  # Colour-blind safe colours other than those of the fixed classes
+  ggcolor <- cb_colors(n, exclude = unname(unlist(color_cat)))
   names(ggcolor) <- rest
   # A named character vector (`purrr::flatten()` gives a list, which ggplot2's manual scales
   # do not accept as colors)
@@ -159,10 +187,12 @@ extract_quant_qc <- function(sumexp) {
 #' @export
 calc_rsd_qstd <- function(qc_se_lst, mat_ids) {
   out <- lapply(qc_se_lst, \(qc_se) {
-    sapply(stats::setNames(nm = mat_ids), function(nm) {
-      apply(qc_se[[nm]], 1, rsd_perc)
-    }) |>    # Rows are features, columns are matrix IDs
-      tibble::as_tibble(rownames = "feature_id")
+    rsd <- matrix(vapply(stats::setNames(nm = mat_ids), function(nm) {
+      as.numeric(apply(qc_se[[nm]], 1, rsd_perc))
+    }, numeric(nrow(qc_se))), nrow = nrow(qc_se), ncol = length(mat_ids),
+    dimnames = list(rownames(qc_se), unname(mat_ids)))   # Features x matrix IDs
+    # `feature_id` also without features (no targeted compounds), for the joins of the callers
+    tibble::as_tibble(rsd) |> tibble::add_column(feature_id = rownames(qc_se) %||% character(), .before = 1)
   }) |>
     # `QC` has the name of the QC samples
     dplyr::bind_rows(.id = "QC")
@@ -174,7 +204,7 @@ calc_rsd_qstd <- function(qc_se_lst, mat_ids) {
 
 #' Colors of the `sign` levels from [mark_lowest_rsd_norm()]
 #' @export
-norm_sign_colors <- c("#00BFC4", "#F8766D", "#7CAE00", "#7f7f7f") |>
+norm_sign_colors <- c(okabe_ito[["skyblue"]], okabe_ito[["orange"]], okabe_ito[["green"]], "#7f7f7f") |>
   stats::setNames(c(paste(intToUtf8(0x2193), c("LOESS", "Closest", "Multivariate")), "All 0s"))
 
 #' Mark the normalization method with the lowest RSD% per feature
@@ -331,12 +361,21 @@ ggplot_calcurve_samples <- function(x_se, cc_se, mat_id, colors_of_classes, log_
     dplyr::select(feature_name, lloq, lod, min_c_conc, max_c_conc, calcurve_model) |>
     tibble::rownames_to_column("feature_id")
   # The samples to show with the calibration curve
-  x_df <- SumExp::as_tibble(x_se) |>
+  x_df <- SumExp::as_tibble(x_se)
+  # Values below the LOD / LLOQ without a value ("n.d." / "n.q."): shown at their calculated
+  # concentration (before the LOD/LLOQ rules), i.e. on the curve
+  x_df$.flag <- ""
+  if (all(c("conc_flag", "conc0") %in% names(x_df))) {
+    cens <- is.na(x_df$conc) & !is.na(x_df$conc_flag)
+    x_df$conc[cens] <- x_df$conc0[cens]
+    x_df$.flag[cens] <- paste0(" (", x_df$conc_flag[cens], ")")
+  }
+  x_df <- x_df |>
     tidyr::drop_na(conc) |>
     dplyr::mutate(
       txt = paste(
         "batch: ", batch_id, "\n",
-        "inj: ", injection_order, ", conc: ", conc, "\n",
+        "inj: ", injection_order, ", conc: ", paste0(conc, .flag), "\n",
         "name: ", sample_name, "\n",
         "int: ", round(.data[[mat_id]], 0)
       )
@@ -618,19 +657,17 @@ sample_group <- function(col_df) {
 #' @param fixed Fixed colours of control groups, as `COLORS$.ctrl_cat` in `constants.yml`
 #' @returns A named character vector of colours
 #' @export
-sample_group_colors <- function(groups, fixed = c(Blank = "red", QC = "blue")) {
+sample_group_colors <- function(groups, fixed = c(Blank = okabe_ito[["vermillion"]], QC = okabe_ito[["blue"]])) {
   rest <- c(sort(setdiff(unique(groups), c(names(fixed), "Calibrant"))),
             intersect("Calibrant", unique(groups)))
-  n <- length(rest)
-  hues <- grDevices::hcl(seq(15, 375, length.out = n + 2), 100, 65)[seq_len(n) + 1]
-  c(stats::setNames(hues, rest), fixed)
+  c(stats::setNames(cb_colors(length(rest), exclude = unname(fixed)), rest), fixed)
 }
 
-#' ggplot2's default discrete colours, named (for batches and internal standards)
+#' Colour-blind safe colours, named (for batches, internal standards, QC groups); see [cb_colors()]
 #'
 #' @param x The names (levels)
 #' @export
-hue_colors <- function(x) stats::setNames(scales::hue_pal()(length(x)), x)
+hue_colors <- function(x) stats::setNames(cb_colors(length(x)), x)
 
 #' Interactive stacked bar plot of the internal standards per sample along the injection order,
 #' with a LOESS trend of the total (the same as the internal report's "Internal standards over
@@ -652,14 +689,14 @@ plotly_is_bars <- function(is_se, mat_id, colour_by = c("group", "batch", "is"),
   io <- cd$injection_order
   tot <- colSums(v)
   who <- paste0("<b>", cd$sample_name, "</b><br>", cd$Class, " · batch ", cd$batch_id, " · inj. ", io,
-                "<br>total ", signif(tot, 4))
+                "<br>total ", sci_txt(tot))
   p <- plotly::plot_ly(height = height)
   if (colour_by == "is") {
     nm <- SumExp::row_df(is_se)$feature_name
     col <- hue_colors(nm)
     for (i in seq_along(nm)) {
       p <- plotly::add_bars(p, x = io, y = v[i, ], name = nm[i], marker = list(color = col[[i]]),
-                            text = paste0(who, "<br><b>", nm[i], "</b> ", signif(v[i, ], 4)),
+                            text = paste0(who, "<br><b>", nm[i], "</b> ", sci_txt(v[i, ])),
                             textposition = "none", hoverinfo = "text")
     }
   } else {
@@ -723,7 +760,7 @@ plotly_vis_bars <- function(y, smp, name, colour_by = c("group", "batch"), switc
   }
   menus <- if (switchable) {
     vis <- function(s) rep(names(n_traces), n_traces) == s
-    list(list(type = "buttons", direction = "right", x = 1, y = 1.02, xanchor = "right",
+    list(list(type = "buttons", direction = "right", x = 0.55, y = 1.02, xanchor = "center",
               yanchor = "bottom", active = match(colour_by, names(n_traces)) - 1L,
               buttons = list(
                 list(label = "Sample group", method = "restyle", args = list("visible", as.list(vis("group")))),
@@ -741,8 +778,8 @@ plotly_vis_bars <- function(y, smp, name, colour_by = c("group", "batch"), switc
 #' Colours of the concentrations replaced by the LOD/LLOQ rules (as the cells of the exported
 #' tables: red, yellow and blue), and of the measured ones
 #' @export
-imputed_colors <- c("Measured" = "grey25", "< LOD: LLOQ/4" = "#E05555",
-                    "< LLOQ: LLOQ/2" = "#E8B730", "Set to LLOQ" = "#4A9FD8")
+imputed_colors <- c("Measured" = "grey25", "< LOD: LLOQ/4" = okabe_ito[["vermillion"]],
+                    "< LLOQ: LLOQ/2" = okabe_ito[["orange"]], "Set to LLOQ" = okabe_ito[["skyblue"]])
 
 #' Whether each concentration is measured or replaced by an LOD/LLOQ rule
 #'
@@ -837,8 +874,9 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
     hovermode = "closest", font = list(family = "Lato"), xaxis = xaxis,
     yaxis = list(title = y_title, exponentformat = "E"), annotations = notes,
     legend = list(orientation = "v", x = 1.02, y = 1), margin = list(t = 80),
-    updatemenus = list(list(type = "buttons", direction = "right", x = 1, y = 1.1,
-                            xanchor = "right", yanchor = "bottom", buttons = axis_buttons))
+    # Linear / log at the top centre: away from the title (left) and plotly's toolbar (right)
+    updatemenus = list(list(type = "buttons", direction = "right", x = 0.55, y = 1.1,
+                            xanchor = "center", yanchor = "bottom", buttons = axis_buttons))
   )
 }
 
@@ -853,10 +891,16 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
 #' @param y_title The title of the y-axis
 #' @param log Whether the y-axis starts in log scale (a button switches it)
 #' @param height Height of the plot in pixels
+#' @param flag `NULL`, or "n.d." / "n.q." per sample for the values below the LOD / LLOQ without
+#'   a value (not shown; their number is given under the title)
 #' @returns A plotly object
 #' @export
 plotly_conc_by_class <- function(conc, lloq, cats, cat_colors, hover, name, y_title, log = FALSE,
-                                 height = 460) {
+                                 height = 460, flag = NULL) {
+  n_flag <- if (is.null(flag)) integer() else table(flag[is.na(conc) & !is.na(flag)])
+  flag_note <- if (length(n_flag) == 0) "" else {
+    paste0("Not shown (no value): ", paste(names(n_flag), n_flag, collapse = ", "))
+  }
   ok <- !is.na(conc)
   levs <- intersect(names(cat_colors), unique(cats[ok]))
   levs <- c(levs, sort(setdiff(unique(cats[ok]), levs)))
@@ -890,9 +934,13 @@ plotly_conc_by_class <- function(conc, lloq, cats, cat_colors, hover, name, y_ti
                  range = c(0.4, length(levs) + 0.6), zeroline = FALSE),
     yaxis = list(title = y_title, type = if (log) "log" else "linear", exponentformat = "E"),
     legend = list(orientation = "v", x = 1.02, y = 1, title = list(text = "Value")),
+    annotations = if (nzchar(flag_note)) {
+      list(list(text = flag_note, x = 0, y = 1.02, xref = "paper", yref = "paper", xanchor = "left",
+                yanchor = "bottom", showarrow = FALSE, font = list(size = 12, color = "grey40")))
+    },
     margin = list(t = 70),
-    updatemenus = list(list(type = "buttons", direction = "right", x = 1, y = 1.02,
-                            xanchor = "right", yanchor = "bottom", active = if (log) 1 else 0,
+    updatemenus = list(list(type = "buttons", direction = "right", x = 0.55, y = 1.02,
+                            xanchor = "center", yanchor = "bottom", active = if (log) 1 else 0,
                             buttons = axis_buttons))
   )
 }
@@ -1014,14 +1062,14 @@ mz_rt_outcome <- function(row_df, calib_rows = NULL, removed = NULL) {
 plotly_mz_rt_map <- function(df, height = 520) {
   style <- tibble::tribble(
     ~outcome,                             ~color,    ~symbol,
-    "Quantified",                         "#2E9E5B", "circle",
-    "Targeted",                           "#2E9E5B", "circle",
-    "Valid curve, not found in samples",  "#F7B32B", "circle",
-    "No valid calibration",               "#c23636", "circle",
-    "Removed (Blank filter)",             "#7E57C2", "x",
-    "Removed (QC RSD%)",                  "#455A64", "x",
+    "Quantified",                         "#009E73", "circle",          # Colour-blind safe (Okabe-Ito)
+    "Targeted",                           "#009E73", "circle",
+    "Valid curve, not found in samples",  "#E69F00", "circle",
+    "No valid calibration",               "#D55E00", "circle",
+    "Removed (Blank filter)",             "#CC79A7", "x",
+    "Removed (QC RSD%)",                  "#0072B2", "x",
     "Internal standard",                  "#0D121C", "diamond",
-    "Volumetric IS",                      "#6FAAF7", "diamond",
+    "Volumetric IS",                      "#56B4E9", "diamond",
     "Non-targeted",                       "#BDBDBD", "circle"
   )
   p <- plotly::plot_ly(height = height)
@@ -1038,8 +1086,10 @@ plotly_mz_rt_map <- function(df, height = 520) {
       hoverinfo = "text"
     )
   }
-  plotly::layout(p, xaxis = list(title = "Retention time [min]"), yaxis = list(title = "m/z"),
-                 legend = list(orientation = "v", x = 1.02, y = 1), font = list(family = "Lato"))
+  # WebGL (scattergl): fast also with tens of thousands of features
+  plotly::toWebGL(p) |>
+    plotly::layout(xaxis = list(title = "Retention time [min]"), yaxis = list(title = "m/z"),
+                   legend = list(orientation = "v", x = 1.02, y = 1), font = list(family = "Lato"))
 }
 
 #' Interactive plot of one internal standard: box plot per sample group and scatter plot along
@@ -1058,7 +1108,7 @@ plotly_mz_rt_map <- function(df, height = 520) {
 plotly_is_distribution <- function(y, smp, name, outlier = rep(FALSE, length(y)), failed = FALSE,
                                    colors = sample_group_colors(smp$group), height = 480) {
   txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", smp$batch_id,
-                " · inj. ", smp$injection_order, "<br>peak area ", signif(y, 4),
+                " · inj. ", smp$injection_order, "<br>peak area ", sci_txt(y),
                 ifelse(outlier, "<br><b>outlier sample</b>", ""))
   p <- plotly::plot_ly(height = height)
   for (g in unique(smp$group)) {
@@ -1078,13 +1128,175 @@ plotly_is_distribution <- function(y, smp, name, outlier = rep(FALSE, length(y))
     title = list(text = if (failed) paste0(name, " <span style='color:#c23636'>(failed: removed before normalization)</span>") else name,
                  x = 0.02),
     font = list(family = "Lato"), hovermode = "closest", margin = list(t = 70, r = 20, b = 60, l = 80),
-    xaxis = list(domain = c(0, 0.27), tickangle = -30), xaxis2 = list(domain = c(0.32, 1), title = "Injection order"),
-    yaxis = list(title = "Peak area", type = "log", exponentformat = "E"),
+    # The groups panel keeps its x-axis when zooming (only the injection order zooms); the
+    # shared y-axis (peak area) zooms in both panels
+    xaxis = list(domain = c(0, 0.27), tickangle = -30, fixedrange = TRUE),
+    xaxis2 = list(domain = c(0.32, 1), title = "Injection order"),
+    yaxis = list(title = "Peak area", type = "log", exponentformat = "E", hoverformat = ".3e"),
     legend = list(orientation = "v", x = 1.02, y = 1),
-    # Log / linear switch at the top right, away from the title at the top left
-    updatemenus = list(list(type = "buttons", direction = "right", x = 1, y = 1.02, xanchor = "right",
+    # Log / linear switch at the top centre, away from the title (left) and plotly's toolbar (right)
+    updatemenus = list(list(type = "buttons", direction = "right", x = 0.55, y = 1.02, xanchor = "center",
                             yanchor = "bottom", pad = list(t = 0, r = 0),
                             buttons = list(list(label = "Log", method = "relayout", args = list("yaxis.type", "log")),
                                            list(label = "Linear", method = "relayout", args = list("yaxis.type", "linear")))))
   )
+}
+
+#' Interactive histogram of pre-binned values (bars with the bin range and count on hover)
+#'
+#' @param x The values (`NA` are left out)
+#' @param binwidth Width of the bins
+#' @param x_title,y_title Titles of the axes
+#' @param what What is counted, for the hover text (e.g. "features")
+#' @param color Colour of the bars
+#' @param height Height of the plot in pixels
+#' @returns A plotly object
+#' @export
+plotly_binned_hist <- function(x, binwidth, x_title, y_title = "Number of features", what = "features",
+                               color = "#6FAAF7", height = 400) {
+  x <- x[is.finite(x)]
+  if (length(x) == 0) {
+    return(plotly::plot_ly(height = height) |>
+             plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
+  }
+  br <- seq(floor(min(x) / binwidth) * binwidth, ceiling(max(x) / binwidth) * binwidth + binwidth, by = binwidth)
+  h <- graphics::hist(x, breaks = br, plot = FALSE, right = FALSE)
+  keep <- h$counts > 0
+  txt <- paste0(signif(h$breaks[-length(h$breaks)], 6), " – ", signif(h$breaks[-1], 6), "<br>",
+                h$counts, " ", what)
+  plotly::plot_ly(height = height) |>
+    plotly::add_bars(x = h$mids[keep], y = h$counts[keep], width = binwidth, text = txt[keep],
+                     textposition = "none", hoverinfo = "text", marker = list(color = color),
+                     showlegend = FALSE) |>
+    plotly::layout(xaxis = list(title = x_title), yaxis = list(title = y_title), bargap = 0,
+                   font = list(family = "Lato"), margin = list(t = 30))
+}
+
+#' Interactive distribution of all values of a matrix: histograms in linear scale (left) and of
+#' the positive values in log scale (right), from pre-binned counts (also for large data)
+#'
+#' @param values The values (a matrix or vector; `NA` are left out)
+#' @param bins The number of bins of each histogram
+#' @param x_title The title of the x-axes (the values)
+#' @param height Height of the plot in pixels
+#' @returns A plotly object
+#' @export
+plotly_value_distribution <- function(values, bins = 50, x_title = "Intensities", height = 420) {
+  v <- as.vector(values)
+  n_na <- sum(!is.finite(v))
+  v <- v[is.finite(v)]
+  pos <- v[v > 0]
+  bars <- function(x, log) {
+    if (length(x) == 0) return(plotly::plot_ly())
+    lx <- if (log) log10(x) else x
+    br <- seq(min(lx), max(lx), length.out = bins + 1)
+    if (diff(range(br)) == 0) br <- c(br[1] - 0.5, br[1] + 0.5)
+    h <- graphics::hist(lx, breaks = br, plot = FALSE, include.lowest = TRUE)
+    lab <- function(b) sci_txt(if (log) 10^b else b)
+    txt <- paste0(lab(h$breaks[-length(h$breaks)]), " – ", lab(h$breaks[-1]), "<br>", h$counts, " intensities")
+    p <- plotly::plot_ly() |>
+      plotly::add_bars(x = h$mids, y = h$counts, width = diff(h$breaks)[1], text = txt,
+                       textposition = "none", hoverinfo = "text", showlegend = FALSE,
+                       marker = list(color = "#6FAAF7", line = list(color = "#3F7BD0", width = 0.5)))
+    # Log panel: bins of log10(value), labelled with the values (e.g. 1E+4)
+    ax <- if (log) {
+      k <- seq(floor(min(lx)), ceiling(max(lx)))
+      list(title = paste(x_title, "(log scale)"), tickvals = k, ticktext = label_e(10^k))
+    } else {
+      list(title = x_title, exponentformat = "E")
+    }
+    plotly::layout(p, xaxis = ax, yaxis = list(title = "N intensities"))
+  }
+  note <- paste0(format(length(v), big.mark = ","), " intensities",
+                 if (length(pos) < length(v)) paste0(" · ", format(length(v) - length(pos), big.mark = ","),
+                                                     " ≤ 0 (not in log scale)"),
+                 if (n_na > 0) paste0(" · ", format(n_na, big.mark = ","), " missing"))
+  panel_title <- function(txt, x) list(text = paste0("<b>", txt, "</b>"), x = x, y = 1.02, xref = "paper",
+                                       yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE)
+  p <- plotly::subplot(bars(v, FALSE), bars(pos, TRUE), nrows = 1, margin = 0.06, titleX = TRUE, titleY = TRUE)
+  p$height <- height   # Of the widget (`height` in `layout()` is deprecated)
+  p |>
+    plotly::layout(
+      bargap = 0, font = list(family = "Lato"), margin = list(t = 70),
+      annotations = list(panel_title("Linear scale", 0.22), panel_title("Logarithmic scale", 0.78),
+                         list(text = note, x = 0, y = 1.12, xref = "paper", yref = "paper", xanchor = "left",
+                              yanchor = "bottom", showarrow = FALSE, font = list(size = 12, color = "grey40")))
+    )
+}
+
+#' Interactive plot of one compound's concentrations in the QC samples along the injection order:
+#' a line per QC group; measured values filled, values replaced by the LOD/LLOQ rules open
+#'
+#' @param d A data frame of the QC samples of the compound: `sample_name`, `Class` (QC group),
+#'   `batch_id`, `injection_order`, `conc`, `kind` ([imputed_kind()]) and `flag` ("n.d." / "n.q."
+#'   for values without a value, otherwise `NA`)
+#' @param name The name of the compound (title)
+#' @param y_title The title of the y-axis
+#' @param height Height of the plot in pixels
+#' @returns A plotly object
+#' @export
+plotly_qc_conc <- function(d, name, y_title = "Concentration", height = 440) {
+  d <- d[order(d$injection_order), ]
+  ok <- !is.na(d$conc)
+  n_flag <- table(d$flag[!ok & !is.na(d$flag)])
+  note <- if (length(n_flag) == 0) "" else paste0("Not shown (no value): ", paste(names(n_flag), n_flag, collapse = ", "))
+  groups <- sort(unique(as.character(d$Class)))
+  col <- hue_colors(groups)
+  p <- plotly::plot_ly(height = height)
+  for (g in groups) {
+    k <- ok & d$Class == g
+    if (!any(k)) next
+    measured <- d$kind[k] %in% "Measured"
+    txt <- paste0("<b>", d$sample_name[k], "</b><br>", g, " · batch ", d$batch_id[k], " · inj. ",
+                  d$injection_order[k], "<br>conc. ", signif(d$conc[k], 4), " (", d$kind[k], ")")
+    p <- plotly::add_trace(p, type = "scatter", mode = "lines+markers", x = d$injection_order[k],
+                           y = d$conc[k], name = g, text = txt, hoverinfo = "text",
+                           line = list(color = col[[g]], width = 1),
+                           marker = list(color = ifelse(measured, col[[g]], "white"), size = 8,
+                                         line = list(color = col[[g]], width = 1.5)))
+  }
+  axis_buttons <- list(
+    list(label = "Linear", method = "relayout", args = list(list(yaxis.type = "linear"))),
+    list(label = "Log", method = "relayout", args = list(list(yaxis.type = "log")))
+  )
+  plotly::layout(
+    p, title = list(text = paste0(name, if (nzchar(note)) paste0("<br><sup>", note, "</sup>")), x = 0.02),
+    hovermode = "closest", font = list(family = "Lato"),
+    xaxis = list(title = "Injection order"), yaxis = list(title = y_title, exponentformat = "E"),
+    legend = list(orientation = "v", x = 1.02, y = 1,
+                  title = list(text = "QC group<br><sup>open points: replaced<br>by the LOD/LLOQ rules</sup>")),
+    margin = list(t = 70),
+    updatemenus = list(list(type = "buttons", direction = "right", x = 0.55, y = 1.02, xanchor = "center",
+                            yanchor = "bottom", buttons = axis_buttons))
+  )
+}
+#' Number of calibration curve samples per concentration, per batch and in total (app 2.2 and the
+#' internal report)
+#'
+#' @param se A [`SumExp::SumExp`] object with all samples
+#' @param unit The concentration unit, for the column name
+#' @returns A tibble: the concentration (as text, without trailing zeros), one column per batch
+#'   ("Batch 1", ...; "All samples" in one-batch mode) and `Total`; no rows without calibration
+#'   curve samples
+#' @export
+calib_samples_per_batch <- function(se, unit = "") {
+  cd <- SumExp::col_df(se)
+  is_cc <- util$ctrl_smpl_cat(se) == "CalCurve"
+  has_unit <- length(unit) == 1 && !is.na(unit) && nzchar(unit)
+  conc_col <- if (has_unit) paste0("Concentration [", unit, "]") else "Concentration"
+  # No calibration samples, or no concentrations (not read in non-target mode)
+  if (!any(is_cc) || is.null(util$spiked_conc_pts(se))) {
+    return(tibble::tibble(!!conc_col := character(), Total = integer()))
+  }
+  b <- as.character(cd$batch_id[is_cc])
+  tibble::tibble(conc = util$spiked_conc_pts(se)[is_cc],
+                 Batch = ifelse(b == "all", "All samples", paste("Batch", b))) |>
+    dplyr::count(conc, Batch) |>
+    dplyr::mutate(Batch = factor(Batch, levels = unique(Batch[order(stringr::str_rank(Batch, numeric = TRUE))]))) |>
+    dplyr::arrange(Batch) |>
+    tidyr::pivot_wider(names_from = Batch, values_from = n, values_fill = 0) |>
+    dplyr::arrange(conc) |>
+    dplyr::mutate(Total = rowSums(dplyr::across(-conc)),
+                  conc = format(conc, scientific = FALSE, drop0trailing = TRUE, trim = TRUE)) |>
+    dplyr::rename(!!conc_col := conc)
 }

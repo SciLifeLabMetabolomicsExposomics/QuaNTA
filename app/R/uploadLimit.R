@@ -56,7 +56,7 @@ uploadLimitServer <- function(input, session) {
     shiny::showNotification(
       sprintf(paste(
         "%s is %.0f MB, but SciLifeLab Serve accepts uploads of at most %d MB.",
-        "Compress the MS-DIAL file as .zip or .gz (typically 5-10 times smaller) and upload that,",
+        "Compress the data file as .zip or .gz (typically 5-10 times smaller) and upload that,",
         "or run QuaNTA locally, where there is no such limit."
       ), f$name, f$mb, .serve_upload_limit_mb),
       type = "error", duration = NULL, session = session

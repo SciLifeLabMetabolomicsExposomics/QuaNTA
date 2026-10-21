@@ -29,13 +29,17 @@ current_inputs <- shiny::reactive({
 })
 rds_file <- function(suffix) msdial$get_raw_data_file_name(current_inputs(), suffix = suffix)
 
+# Shown by every table and figure that has no data yet (instead of an empty space)
+MSG_NOT_READ <- "No data yet: upload the data file and click \"Read\" on page 1 (Input data and processing)."
+MSG_NOT_PROCESSED <- "Not processed yet: click \"Process data\" on page 1 (Input data and processing)."
+
 # Parsed data (output of read-msdial.R)
 raw_se_r <- shiny::reactive({
   read_done()
   session_loaded()   # Also re-read after loading saved session data
   input[["data_info-input_file_upload"]]   # A new upload deletes the data (also with the same name)
-  shiny::req(nzchar(data_info[["input_file"]]))
-  shiny::req(file.exists(rds_file("")))
+  has_input <- isTRUE(nzchar(data_info[["input_file"]]))   # `NULL` before an upload
+  shiny::validate(shiny::need(has_input && file.exists(rds_file("")), MSG_NOT_READ))
   msdial$read_parsed_msdial_data(current_inputs())
 })
 
@@ -63,11 +67,11 @@ to_report_r <- shiny::reactive({
   read_done()                              # Re-reading deletes the processed data (see app.R)
   input[["read_msdial-run_button"]]        # ... from the moment the read is started
   input[["data_info-input_file_upload"]]   # A new upload deletes it too
-  shiny::req(nzchar(data_info[["input_file"]]))
+  shiny::validate(shiny::need(isTRUE(nzchar(data_info[["input_file"]])), MSG_NOT_READ))
   path <- rds_file("to_report")
-  shiny::req(file.exists(path))
+  shiny::validate(shiny::need(file.exists(path), MSG_NOT_PROCESSED))
   to_report <- readRDS(path)
-  shiny::req(isTRUE(to_report[["Completed"]]))
+  shiny::validate(shiny::need(isTRUE(to_report[["Completed"]]), MSG_NOT_PROCESSED))
   to_report
 })
 # Slices of the cached list, no extra file reading
@@ -81,8 +85,8 @@ proc_r <- shiny::reactive({
   read_done()
   input[["read_msdial-run_button"]]
   input[["data_info-input_file_upload"]]
-  shiny::req(nzchar(data_info[["input_file"]]))
+  shiny::validate(shiny::need(isTRUE(nzchar(data_info[["input_file"]])), MSG_NOT_READ))
   path <- rds_file("proc")
-  shiny::req(file.exists(path))
+  shiny::validate(shiny::need(file.exists(path), MSG_NOT_PROCESSED))
   readRDS(path)
 })

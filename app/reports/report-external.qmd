@@ -5,6 +5,7 @@ params:
   interactive_plot: false      # No need here but needed by `report-internal.qmd`
   project_title: "Test"
   generated_at: ""             # Time of generation, set by the app (also in the file name)
+  on_serve: false              # Generated on SciLifeLab Serve (hosting acknowledgement)
 title: "Report on `r params$project_title`"
 format:
   pdf:
@@ -147,7 +148,7 @@ for (batch_id in names(concn_lst)) {
 
 ## Blank filtering
 
-Features were filtered based on blank samples.
+Features were filtered based on blank samples [@broadhurst2018].
 A feature was kept if its maximum peak area in the samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area, OR if its average peak area in samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area.
 
 ```{r}
@@ -283,14 +284,26 @@ lod_signal_txt <- switch(to_report$params$llox_method,
 )
 ```
 
-After the computation of concentration, the following steps are applied to the data:
+The calibration curves are linear or quadratic, with the weighting 1, 1/x or 1/x² [@almeida2002].
+`r if (isTRUE(to_report$params$average_cal_reps)) "The calibration replicates were averaged within each batch, and every batch was quantified with the global curve fitted on these averages." else ""`
+After the computation of concentration, the following steps are applied to the data (QuaNTA rules,
+without a literature reference):
 
-  * Any calibrated concentration between the LOD and LLOQ is adjusted to the 1/2 of LLOQ.
-  * Any calibrated concentration below the LOD is adjusted to the 1/4 of LLOQ.
+```{r}
+#| label: 'llox-rules-txt'
+# Values below the LOD / LLOQ: replaced (LLOQ/4, LLOQ/2), or reported as "n.d." / "n.q."
+llox_imputed <- !isFALSE(to_report$params$impute_llox)
+below_lloq_txt <- if (llox_imputed) "adjusted to the 1/2 of LLOQ" else "reported as n.q. (not quantified, no value)"
+below_lod_txt <- if (llox_imputed) "adjusted to the 1/4 of LLOQ" else "reported as n.d. (not detected, no value)"
+```
+
+  * Any calibrated concentration between the LOD and LLOQ is `r below_lloq_txt`.
+  * Any calibrated concentration below the LOD is `r below_lod_txt`.
   * Any calibrated concentration below LLOQ while peak signal > the average signal of LLOQ is adjusted to LLOQ.
-  * Any calibrated concentration whose signal is below the average signal of LLOQ is adjusted to the 1/2 of LLOQ.
-  * Any calibrated concentration whose signal is below the LOD signal threshold (`r lod_signal_txt`) is adjusted to 1/4 of LLOQ.
+  * Any calibrated concentration whose signal is below the average signal of LLOQ is `r below_lloq_txt`.
+  * Any calibrated concentration whose signal is below the LOD signal threshold (`r lod_signal_txt`) is `r below_lod_txt`.
   * Any chemical with values below LLOQ in all samples is removed from the quantification report.
+`r if (!llox_imputed) "  * n.d. and n.q. values are not shown in the plots and are left out of the median, average, minimum and maximum."`
 
 {{< pagebreak >}}
 
@@ -353,7 +366,11 @@ for (batch_id in names(concn_lst)) {
     # rules coloured as in the exported tables
     x_df <- SumExp::as_tibble(x_se) |>
       dplyr::mutate(kind = show$imputed_kind(conc, lloq))
-    p3 <- ggplot(x_df, aes(x = Class, y = conc)) +
+    # Values below the LOD / LLOQ without a value (n.d. / n.q.): not shown, counted in the title
+    n_flag <- if ("conc_flag" %in% names(x_df)) table(x_df$conc_flag[is.na(x_df$conc) & !is.na(x_df$conc_flag)]) else integer()
+    flag_note <- if (length(n_flag) > 0) paste0("Not shown (no value): ", paste(names(n_flag), n_flag, collapse = ", "))
+    p3 <- ggplot(dplyr::filter(x_df, !is.na(conc)), aes(x = Class, y = conc)) +
+      labs(subtitle = flag_note) +
       geom_boxplot(aes(fill = Class), color = "grey30", alpha = 0.5, outlier.shape = NA) +
       geom_jitter(aes(color = kind), width = 0.2, height = 0, size = 1.2) +
       labs(
@@ -416,3 +433,31 @@ for (batch_id in names(concn_lst)) {
   }
 }
 ```
+
+{{< pagebreak >}}
+
+# Methods and references {.unnumbered}
+
+```{r}
+#| label: 'methods-references'
+# Normalization of this report, with its reference
+cat(switch(params$norm_method,
+  "loess_norm" = "Normalization: LOESS fit of the internal standards over the retention time [@cleveland1988].",
+  "mvis_norm" = "Normalization: multivariate normalization by the first principal component of the internal standards [@surowiec2017].",
+  "closest_norm" = "Normalization: each feature divided by the internal standard closest in retention time.",
+  "raw" = "No normalization by internal standards.",
+  paste("Normalization:", params$norm_method)
+), "\n\n")
+if (isTRUE(as.logical(params$on_serve))) {
+  # Hosting acknowledgement (SciLifeLab Serve's suggested wording)
+  cat("Technical infrastructure for hosting the app 'QuaNTA' was provided by SciLifeLab Serve",
+      "(https://serve.scilifelab.se; RRID:SCR_027820), a platform developed and supported by",
+      "SciLifeLab Data Centre.\n\n")
+}
+```
+
+The input data are MS-DIAL exports [@tsugawa2015]. Software: R [@rcore], Shiny [@shiny], Quarto
+[@quarto], ggplot2 [@ggplot2]; the app runs in a Rocker container [@rocker2017].
+
+::: {#refs}
+:::

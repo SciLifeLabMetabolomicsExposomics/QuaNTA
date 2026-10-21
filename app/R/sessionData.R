@@ -73,7 +73,7 @@ sessionDataServer <- function(serverId, data_info, ws, processing_params) {
       info <- shiny::reactiveValuesToList(data_info)
       input_file <- info[["input_file"]]
       if (is.null(input_file) || !nzchar(input_file) || !file.exists(input_file)) {
-        shiny::showNotification("Nothing to save yet: upload and read an MS-DIAL file first.",
+        shiny::showNotification("Nothing to save yet: upload and read a data file first.",
                                 type = "error")
         return()
       }

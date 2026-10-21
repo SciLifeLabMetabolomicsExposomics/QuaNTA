@@ -7,20 +7,20 @@ cat(switch(
   to_report$params$llox_method,
   "pt_signal_mean" = paste(
     "LOD and LLOQ were defined as the lowest concentrations at which the mean signal exceeded 3×",
-    "or 10× the mean signal of the blank (zero concentration point) respectively.",
+    "or 10× the mean signal of the blank (zero concentration point) respectively [@ichq2r2].",
     "DF (Detection Frequency) is defined as the percentage of samples where the signal exceeds 3×", 
     "the mean signal of the blank (zero concentration point)."
   ),
   "pt_signal_mean_plus_sd" = paste(
     "LOD and LLOQ were defined as the lowest concentrations at which the mean signal exceeded the",
     "mean signal of the blank (zero concentration point) plus 3× or 10× its standard deviation,",
-    "respectively.",
+    "respectively [@ichq2r2].",
     "DF (Detection Frequency) is defined as the percentage of samples where the signal exceeds", 
     "the mean signal of the blank (zero concentration point) by at least 3 standard deviations."
   )
 ))
 if (to_report$params$use_rsd20) {
-  cat(" Additionally, LLOQ required a signal RSD ≤ 20%.")
+  cat(" Additionally, LLOQ required a signal RSD ≤ 20% [@ichm10].")
 }
 ```
 

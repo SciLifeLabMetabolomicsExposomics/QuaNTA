@@ -21,6 +21,9 @@ ext <- tolower(tools::file_ext(job$name))
 
 if (ext == "gz") {
   inner_name <- sub("\\.gz$", "", job$name, ignore.case = TRUE)
+  if (!grepl("\\.txt$", inner_name, ignore.case = TRUE)) {
+    stop("The .gz file must be of a .txt file (named <name>.txt.gz): ", job$name, call. = FALSE)
+  }
   out <- file.path(job$out_dir, safe_name(inner_name))
   con_in <- gzfile(job$src, "rb")
   con_out <- file(out, "wb")
@@ -36,10 +39,13 @@ if (ext == "gz") {
   listing <- utils::unzip(job$src, list = TRUE)
   files <- listing$Name[!grepl("/$", listing$Name) & !grepl("(^|/)__MACOSX/|(^|/)\\.", listing$Name)]
   if (length(files) != 1) {
-    stop("The zip file must contain exactly one MS-DIAL file; it contains ", length(files), ": ",
+    stop("The zip file must contain exactly one data file; it contains ", length(files), ": ",
          paste(utils::head(files, 5), collapse = ", "), call. = FALSE)
   }
   inner_name <- basename(files)
+  if (!grepl("\\.txt$", inner_name, ignore.case = TRUE)) {
+    stop("The file in the zip file must be a .txt file; it is: ", inner_name, call. = FALSE)
+  }
   tmp <- tempfile("unzip_")
   utils::unzip(job$src, files = files, exdir = tmp, junkpaths = TRUE)
   out <- file.path(job$out_dir, safe_name(inner_name))

@@ -1,10 +1,10 @@
-## `r method_label[[NORM_M]]` normalization
+### 3.8.`r NORM_K` `r method_label[[NORM_M]]` normalization
 
 `r norm_desc[[NORM_M]]`
 
 ::: {.panel-tabset}
 
-### QC RSD% before / after
+#### QC RSD% before / after
 
 `r rsd_text`
 
@@ -12,7 +12,7 @@
 plot_rsd(NORM_M)
 ```
 
-### Along the injection order
+#### Along the injection order
 
 `r rla_text`
 
@@ -20,7 +20,7 @@ plot_rsd(NORM_M)
 plot_rla(NORM_M)
 ```
 
-### PCA by batch
+#### PCA by batch
 
 `r pca_text` `r pca_batch_text`
 
@@ -29,7 +29,7 @@ plot_rla(NORM_M)
 plot_pca(NORM_M, by = "batch")
 ```
 
-### PCA by sample group
+#### PCA by sample group
 
 `r pca_text` `r pca_group_text`
 

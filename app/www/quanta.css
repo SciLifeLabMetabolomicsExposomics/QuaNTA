@@ -114,6 +114,29 @@ a:hover { color: var(--q-blue-hover); }
 .q-card-sub { margin: 4px 0 0; font-size: .92rem; color: var(--q-muted); }
 .q-card-actions { margin-left: auto; }
 .q-card-actions .btn { white-space: nowrap; }
+/* A plot or table that shows a message instead (e.g. "Not enough QCs ...") takes only the height of
+   the message, not the height reserved for the plot or table */
+/* (htmlwidgets shows the message in a box laid over the hidden plot / table, which keeps its height
+   or, for an empty table, has none: the message then runs into the next title) */
+/* Height 0, not `display: none`: Shiny suspends hidden outputs, which would then not update (e.g.
+   3.5 stuck loading after selecting an IS) */
+*:has(> .htmlwidgets-error.shiny-output-error-validation) > .html-widget-output {
+  height: 0 !important; min-height: 0 !important; overflow: hidden !important;
+}
+/* Room for the loading spinner, also where the output had no height (e.g. after a message) */
+/* (The spinner and its caption are centred in the area: 240 px keeps it clear of the title above) */
+.shiny-spinner-output-container:has(> .load-container:not(.shiny-spinner-hidden)) { min-height: 240px; }
+.htmlwidgets-error.shiny-output-error-validation {
+  position: static !important; max-width: none !important; height: auto !important; margin: 4px 0 22px;
+}
+
+/* Plots: grey grid lines on the light grey plot area (set by a script in app.R) (pale colours stand out better than on
+   white); all plotly plots, the same as in the internal report */
+.js-plotly-plot .plotly .gridlayer path { stroke: #C8CDD5 !important; }
+
+/* A row under the title and subtitle (e.g. "Download settings"), aligned with the title text */
+.q-card-below { margin: 10px 0 0 calc(1.9rem + 14px); }
+.q-card-below .btn { white-space: nowrap; }
 
 /* Section titles inside the cards of the analysis tabs */
 .q-section-title { margin: 18px 0 8px; font-size: 1.15rem; font-weight: 700; color: var(--q-navy); }
@@ -143,6 +166,25 @@ a:hover { color: var(--q-blue-hover); }
   border: 1px solid var(--q-input-border) !important;
   border-radius: 6px !important;
   box-shadow: none !important;
+}
+
+/* ---------- File Inputs ---------- */
+.shiny-file-input {
+  height: 40px !important; /* Double the default height */
+  min-height: 40px !important;
+}
+
+/* For Bootstrap file input styling */
+.form-control[type="file"] {
+  height: 40px !important; /* Double the default height */
+  min-height: 40px !important;
+  padding: 8px 12px !important;
+}
+
+/* Custom file input styling for better visibility */
+.custom-file-input {
+  height: 40px !important; /* Double the default height */
+  min-height: 40px !important;
 }
 .form-control:focus, .selectize-input.focus, .form-select:focus {
   border-color: var(--q-blue) !important;
@@ -256,6 +298,12 @@ table.dataTable tbody tr.selected a { color: #FFFFFF !important; }
 /* ---------- Resizable panes (analysis tabs) ---------- */
 .split-pane { display: flex; flex-direction: row; width: 100%; }
 .split-pane > div { overflow: auto; min-width: 0; }
+/* Pages 2-3 as page 4: the cards fill the window and each card body scrolls on its own (the card
+   headers stay visible) */
+.split-pane { flex: 1 1 auto; min-height: 0; height: 100%; }
+.split-pane > div { display: flex; flex-direction: column; min-height: 0; overflow: hidden !important; }
+.split-pane > div > .card { flex: 1 1 auto; min-height: 0; margin-bottom: 0; }
+.split-pane > div > .card > .card-body { overflow-y: auto; min-height: 0; }
 .gutter { background-color: var(--q-border); background-repeat: no-repeat; background-position: 50%; cursor: col-resize; border-radius: 4px; }
 .gutter:hover { background-color: var(--q-blue-soft); }
 .gutter.gutter-horizontal { width: 8px; }

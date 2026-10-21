@@ -26,7 +26,7 @@ opt_parser <- optparse::OptionParser(
 )
 params <- optparse::parse_args(opt_parser)
 cat(
-  "\nRead MS-Dial parameters:\n",
+  "\nRead parameters:\n",
   "  - Per batch processing:", params$per_batch, "\n"
 )
 
@@ -101,17 +101,41 @@ features <- dplyr::rename_with(features, to_valid_id) |>
 
 # Syntactically valid ID
 rownames(features) <- make.names(features$feature_name, unique = TRUE)
-features <- features |> 
+comment_given <- trimws(as.character(features$.std_type))   # The Comment as given
+features <- features |>
   dplyr::mutate(
     dplyr::across(c(mz, .rt), as.numeric),
-    # Ignore other variants
+    # Only the exact naming conventions; anything else is a non-targeted feature
     .std_type = dplyr::case_when(
-      .std_type %in% c("Quant", "IS", "vIS") ~ .std_type,
-      grepl("^IS\\\\", .std_type) ~ .std_type,
-      grepl("^Quant\\\\", .std_type) ~ .std_type,
+      comment_given %in% c("Quant", "IS", "vIS") ~ comment_given,
+      grepl("^IS\\\\", comment_given) ~ comment_given,
+      grepl("^Quant\\\\", comment_given) ~ comment_given,
       .default = ""
     )
   )
+# Comment values that do not follow the naming conventions (shown before processing): they are
+# non-targeted features. `looks_like`: the convention it resembles (a whole word, case-sensitive;
+# "vIS" before "IS"), e.g. "IS - bad" looks like IS but is not used as one; `NA` if none
+exact <- comment_given %in% c("Quant", "IS", "vIS") | grepl("^(IS|Quant)\\\\", comment_given)
+odd <- !is.na(comment_given) & nzchar(comment_given) & !exact
+comment_notes <- tibble::tibble(
+  comment = comment_given[odd],
+  looks_like = dplyr::case_when(
+    grepl("\\bvIS\\b", comment) ~ "vIS",
+    grepl("\\bQuant\\b", comment) ~ "Quant",
+    grepl("\\bIS\\b", comment) ~ "IS",
+    grepl("\\bR\\b", comment) ~ "R",
+    .default = NA_character_
+  )
+) |>
+  dplyr::count(comment, looks_like)
+if (nrow(comment_notes) > 0) {
+  cat("Comment values that do not follow the naming conventions (IS, IS\\<compound>, Quant,",
+      "Quant\\<IS>, vIS, R); these features are non-targeted:\n",
+      paste0("  - \"", comment_notes$comment, "\" (", comment_notes$n, ")",
+             ifelse(is.na(comment_notes$looks_like), "", paste0(", looks like ", comment_notes$looks_like)), "\n"),
+      sep = "")
+}
 # Apply labels for plots and tables
 conv_tbl <- conv_tbl[match(colnames(features), conv_tbl$id), ]  # To make sure the order is right.
 features <- labelled::set_variable_labels(features, .labels = conv_tbl$label)
@@ -130,6 +154,17 @@ raw_mat <- lapply(raw_df, as.numeric) |>
   as.data.frame(row.names = rownames(features)) |> 
   as.matrix()
 labelled::label_attribute(raw_mat) <- "Raw"
+# Empty or non-numeric values (not in an export as such, e.g. a file edited by hand): read as 0 (not
+# detected), and listed before processing (missing values would stop the processing)
+na_cells <- is.na(raw_mat)
+missing_values <- tibble::tibble(feature = features$feature_name[row(raw_mat)[na_cells]]) |>
+  dplyr::count(feature)
+if (any(na_cells)) {
+  raw_mat[na_cells] <- 0
+  cat(sum(na_cells), "empty or non-numeric value(s) were read as 0 (not detected), in",
+      nrow(missing_values), "feature(s):", paste(utils::head(missing_values$feature, 10), collapse = ", "),
+      if (nrow(missing_values) > 10) "...", "\n")
+}
 
 cat("From the given file:", FILE$i, "\n",
     "Number of samples:", ncol(raw_mat), "\n",
@@ -160,6 +195,51 @@ sample_info <- sample_info |>
 
 batch_ids <- unique(sample_info$batch_id)
 stopifnot("`Batch ID` must not be NA." = all(!is.na(batch_ids)))
+
+# Input errors the user must fix in the file ---------------------------------------------
+# Collected and saved to `input_errors.txt` in the intermediate folder (the app shows them in a
+# popup); the read data is then not saved, so the data cannot be processed
+input_errors <- character(0)
+# 1. The same injection number twice in a batch
+inj_key <- paste(sample_info$batch_id, sample_info$injection_order)
+dup_inj <- unique(inj_key[duplicated(inj_key) & !is.na(sample_info$injection_order)])
+for (k in dup_inj) {
+  i <- which(inj_key == k)
+  input_errors <- c(input_errors, sprintf(
+    "Injection order %s is used more than once in batch %s (samples: %s).",
+    sample_info$injection_order[i[1]], sample_info$batch_id[i[1]],
+    paste(sample_info$sample_name[i], collapse = ", ")))
+}
+# 2. The same name for two internal standards (also volumetric ones)
+is_names <- features$feature_name[util$is_internal_std(features$.std_type) | features$.std_type == "vIS"]
+for (nm in unique(is_names[duplicated(is_names)])) {
+  input_errors <- c(input_errors, sprintf(
+    "The internal standard name \"%s\" is used for %d features.", nm, sum(is_names == nm)))
+}
+# 3. A class used both for QC samples and for study samples
+qc_cls <- unique(sample_info$Class[sample_info$.ctrl_cat == "QC"])
+study_cls <- unique(sample_info$Class[sample_info$.ctrl_cat == ""])
+for (cl in intersect(qc_cls, study_cls)) {
+  input_errors <- c(input_errors, sprintf(
+    "The class \"%s\" is used both for QC samples and for study samples.", cl))
+}
+# 4. A missing (or non-numeric) retention time or m/z: the internal standards are matched to the
+# features by retention time
+for (col in c(".rt", "mz")) {
+  miss <- features$feature_name[is.na(features[[col]])]
+  if (length(miss) > 0) {
+    input_errors <- c(input_errors, sprintf(
+      "The %s is empty or not a number for %d feature(s): %s.",
+      if (col == ".rt") "retention time (Average Rt(min))" else "m/z", length(miss),
+      paste0(paste(utils::head(miss, 10), collapse = ", "), if (length(miss) > 10) ", ..." else "")))
+  }
+}
+errors_file <- file.path(user_inputs$intermediate_dir, "input_errors.txt")
+if (length(input_errors) > 0) {
+  writeLines(input_errors, errors_file)
+  stop("The input file has ", length(input_errors), " error(s) that must be fixed:\n",
+       paste("-", input_errors, collapse = "\n"), call. = FALSE)
+}
 if (length(batch_ids) > 1) {
   cat("Multiple batches are detected: ", paste(batch_ids, collapse = ", "), "\n")
   # If not processing per batch, assign all samples to a single batch
@@ -203,7 +283,7 @@ if (!any(sample_info$.ctrl_cat == "CalCurve")) {
 }
 
 if (is_non_target_mode) {
-  warning("Hence, the processing of the data will be stopped before calibration!")
+  # warning("Hence, the processing of the data will be stopped before calibration!")
 } else {
   # Function to identify concentration values from the given IDs
   catch_concentration <- function(sid) {
@@ -237,6 +317,8 @@ sumexp <- SumExp::SumExp(
     is_non_target_mode = is_non_target_mode,
     concentration_unit = user_inputs$concentration_unit,
     has_single_cal_pt = if (is_non_target_mode) FALSE else has_single_cal_pt,
+    comment_notes = comment_notes,   # Comment values that do not follow the naming conventions
+    missing_values = missing_values,   # Empty or non-numeric values read as 0, per feature
   )
 )
 

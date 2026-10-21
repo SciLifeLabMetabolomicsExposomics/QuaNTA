@@ -24,10 +24,12 @@
   "optimize_cal_points", "proc",        "checkbox",
   "set_minimum_number",  "proc",        "checkbox",
   "min_cal_points",      "proc",        "numeric",
+  "average_cal_reps",    "proc",        "checkbox",
   "keep_all_calcurves",  "proc",        "checkbox",
   "r2_filter",           "proc",        "checkbox",
   "min_r2",              "proc",        "numeric",
   "linear_only",         "proc",        "checkbox",
+  "vis_prenorm",        "proc",        "checkbox",
   "rm_outlier",         "proc",        "checkbox",
   "log_calibration",     "proc",        "checkbox",
   "blank_filter",        "proc",        "checkbox",
@@ -35,7 +37,8 @@
   "weight",              "proc",        "radio",
   "llox_method",         "proc",        "radio",
   "use_rsd20",           "proc",        "checkbox",
-  "rsd_filter",          "proc",        "checkbox",
+  "impute_llox",         "proc",        "checkbox",
+  "rsd_filter",         "proc",        "checkbox",
   "rsd_filter_scope",    "proc",        "radio",
   "rsd_max_targeted",    "proc",        "numeric",
   "rsd_max_nontargeted", "proc",        "numeric"
@@ -87,6 +90,23 @@ read_params_file <- function(path) {
   p
 }
 
+#' Why an uploaded data file has a type that cannot be used
+#'
+#' Accepted: `.txt`, `.txt.gz` and `.zip` (whose single file must be a `.txt`; checked by
+#' `scripts/decompress_input.R`).
+#'
+#' @param name The original file name
+#' @returns A message, or `NULL` when the type is accepted
+#' @export
+upload_type_problem <- function(name) {
+  nm <- tolower(name)
+  if (grepl("\\.txt$", nm) || grepl("\\.txt\\.gz$", nm) || grepl("\\.zip$", nm)) return(NULL)
+  if (grepl("\\.gz$", nm)) {
+    return(paste0("\"", name, "\" is a .gz file, but not of a .txt file (the name must end in .txt.gz)."))
+  }
+  paste0("\"", name, "\" is not a .txt, .gz or .zip file.")
+}
+
 #' Write the private, per-session parameter file read by the child processes
 #'
 #' The directories are always taken from the session workspace `ws`, never from user input.
@@ -105,7 +125,7 @@ write_session_params <- function(info, ws) {
   p$table_dir <- ws$tables
   p$report_dir <- ws$report
   if (!nzchar(p$input_file) || !file.exists(p$input_file)) {
-    stop("Please upload an MS-DIAL output file first.", call. = FALSE)
+    stop("Please upload a data file first.", call. = FALSE)
   }
   path <- file.path(ws$base, "params.yml")
   yaml::write_yaml(p, path)

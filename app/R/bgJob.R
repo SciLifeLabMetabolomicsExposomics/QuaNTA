@@ -61,12 +61,18 @@ run_bg_rscript <- function(session, ws, script, job, progress_message, on_done, 
 
 #' The error message of a failed background process, from its log
 #'
+#' For a report, also where it failed: knitr's "Quitting from report-internal.qmd:912-918 [label]"
+#' line(s), which hold only file names, line numbers and chunk labels (no data).
+#'
 #' @param log The log lines passed to `on_done()` of [run_bg_rscript()].
 #' @export
 bg_error_message <- function(log) {
+  log <- gsub("\033\\[[0-9;]*m", "", log)          # Without colour codes
   log <- log[!grepl("^Execution halted", log)]   # Rscript's closing line adds nothing for users
+  where <- unique(trimws(sub(".*Quitting from\\s*", "", grep("Quitting from", log, value = TRUE))))
+  where <- if (length(where) > 0) paste0(" (where: ", paste(where, collapse = "; "), ")") else ""
   i <- grep("^Error|error:", log)
-  if (length(i) == 0) return(paste(utils::tail(log, 3), collapse = " "))
+  if (length(i) == 0) return(paste0(paste(utils::tail(log, 3), collapse = " "), where))
   msg <- paste(log[i[1]:min(length(log), i[1] + 2)], collapse = " ")
-  sub("^Error( in [^:]*)?:\\s*", "", msg)   # "Error: ..." -> "..."
+  paste0(sub("^Error( in [^:]*)?:\\s*", "", msg), where)   # "Error: ..." -> "..."
 }

@@ -1,13 +1,14 @@
 # ------------------------------------------------------------------------------------------- #
 # Create the synthetic QuaNTA example dataset (MS-DIAL alignment export format)
 #
-# Calibration standards, QCs and blanks are based on a real ESI+ targeted exposomics run
-# (5 batches with one calibration curve each), collapsed into 3 batches:
-#   - batch 1 = original batches 2 + 3, batch 2 = original batches 4 + 5 (all real injections)
-#   - batch 3 = original batch 1 + a synthetic copy of each of its injections (with noise and
-#     outliers)
-#   - plus a third, synthetic injection of the calibration curve in every batch (mid-batch)
-# Everything else is synthetic:
+# All values are simulated. The design of the calibration standards, QCs and blanks, and their
+# typical signal levels, replicate variation and non-detects per feature, are modelled on a real
+# ESI+ targeted exposomics run (5 batches with one calibration curve each), but no measured value
+# (nor spectrum) of that run is included. Its 5 batches are collapsed into 3:
+#   - batch 1 = source batches 2 + 3, batch 2 = source batches 4 + 5
+#   - batch 3 = source batch 1 + a second copy of each of its injections (with noise and outliers)
+#   - plus a third injection of the calibration curve in every batch (mid-batch)
+# Also simulated:
 #   - 120 samples (60 "Healthy", 60 "Sick"; 20 + 20 per batch), no real samples are included
 #   - 45 common serum metabolites (targeted, with calibration curves; 2 not detectable)
 #   - 1000 non-targeted features ("Unknown")
@@ -54,6 +55,41 @@ comment <- sub("\\\\.*", "", feat[, "Comment"])
 is_is <- comment %in% c("IS", "vIS")
 n_t <- nrow(feat)
 levels_conc <- sort(unique(smp$conc[!is.na(smp$conc)]))
+
+# -----  SIMULATED CONTROL INJECTIONS  ------------------------------------------------------ #
+# No measured value of the source run is used: its calibration standards, QCs and blanks are
+# replaced by simulated ones with the same design. Per feature, each calibration level (per source
+# batch), QC group and blank group keeps the source's mean signal (log scale), replicate variation
+# and share of zeros (non-detects), and every value is drawn anew. A common factor per injection
+# mimics the injection-to-injection variation that the internal standards correct.
+ctrl_cols <- which(smp$type != "Sample")
+grp_key <- with(smp, ifelse(type == "Standard", paste("cal", batch, conc),
+                     ifelse(type == "QC", paste("qc", batch, qc_group), paste("blk", batch, blk_group))))
+x_sim <- x
+for (k in unique(grp_key[ctrl_cols])) {
+  j <- ctrl_cols[grp_key[ctrl_cols] == k]
+  lx <- log(ifelse(x[, j, drop = FALSE] > 0, x[, j, drop = FALSE], NA))
+  mu <- rowMeans(lx, na.rm = TRUE)
+  mu[!is.finite(mu)] <- 0                                           # Never detected: p0 = 1 below
+  sdl <- apply(lx, 1, stats::sd, na.rm = TRUE)
+  sdl[!is.finite(sdl)] <- 0.08                                      # A single replicate
+  sdl <- pmin(pmax(sdl, 0.02), 0.5)
+  p0 <- rowMeans(!(x[, j, drop = FALSE] > 0))
+  for (jj in j) {
+    v <- exp(stats::rnorm(n_t, mu, sdl) + stats::rnorm(1, 0, 0.05))
+    v[stats::runif(n_t) < p0] <- 0
+    x_sim[, jj] <- v
+  }
+}
+x <- x_sim
+x[, smp$type == "Sample"] <- NA                                     # Not used: samples are synthetic
+
+# Feature information without measured details of the source run: no spectra, a synthetic
+# reference file name and S/N
+feat[, "MS1 isotopic spectrum"] <- ""
+feat[, "MS/MS spectrum"] <- ""
+feat[, "Spectrum reference file name"] <- "QC1_QC_B1_example"
+feat[, "S/N average"] <- sprintf("%.2f", exp(stats::rnorm(n_t, log(50), 1)))
 
 # -----  HELPERS  --------------------------------------------------------------------------- #
 lnorm <- function(n, sd, meanlog = 0) exp(stats::rnorm(n, meanlog, sd))

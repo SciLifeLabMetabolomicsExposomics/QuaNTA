@@ -28,7 +28,7 @@ runScriptUI <- function(uiId, label, download=FALSE) {
 # Shared implementation --------------------------------------------------------------------
 
 .runScriptCore <- function(serverId, script_path, what, param_ids, data_info, ws, extra_args,
-                           clear = NULL) {
+                           clear = NULL, trigger = NULL) {
   shiny::moduleServer(serverId, function(input, output, session) {
     output_txt <- shiny::reactiveVal("")
     proc <- shiny::reactiveVal(NULL)
@@ -40,7 +40,8 @@ runScriptUI <- function(uiId, label, download=FALSE) {
     # "Clear log" (a reactive from the app, e.g. a button); a running job keeps logging
     if (!is.null(clear)) shiny::observeEvent(clear(), output_txt(""), ignoreInit = TRUE)
 
-    shiny::observeEvent(input[["run_button"]], {
+    # The run starts on the button, or on `trigger()` (e.g. after a confirmation popup)
+    shiny::observeEvent(if (is.null(trigger)) input[["run_button"]] else trigger(), {
       old <- proc()
       if (!is.null(old) && old$is_alive()) {
         output_txt(paste0(output_txt(), "\nA job is already running. Please wait until it finishes.\n"))
@@ -160,14 +161,16 @@ find_box_root <- function() {
 #' @param data_info The `reactiveValues` returned by [msdialInfoServer()].
 #' @param ws The session workspace from [create_session_workspace()].
 #' @param clear Optional reactive (e.g. a "Clear log" button); its changes empty the log.
+#' @param trigger Optional reactive that starts the run instead of the module's "run_button"
+#'   (ignore its initial value: `NULL` or 0).
 #'
 #' @returns A reactive that changes every time a run has finished (use it to invalidate
 #'   downstream reactives that load the results).
 #' @export
 runScriptServer <- function(serverId, script_path, what, param_ids = NULL, data_info, ws,
-                            clear = NULL) {
+                            clear = NULL, trigger = NULL) {
   .runScriptCore(serverId, script_path, what, param_ids, data_info, ws, extra_args = NULL,
-                 clear = clear)
+                 clear = clear, trigger = trigger)
 }
 
 #' Same as [runScriptServer()] for the export script, with the normalization method and a zip download

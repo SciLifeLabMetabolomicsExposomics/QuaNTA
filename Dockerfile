@@ -26,8 +26,12 @@ RUN apt-get update && \
 # Refresh the font cache so the Lato fonts are found
 RUN fc-cache -f
 
-# Install Quarto (apt-get instead of gdebi, in case gdebi isn't in the base image)
-RUN wget -O quarto-linux.deb https://quarto.org/download/latest/quarto-linux-${TARGETARCH}.deb && \
+# Install Quarto (apt-get instead of gdebi, in case gdebi isn't in the base image). A fixed version,
+# so that every build renders the reports the same way; update it deliberately (and test the
+# reports), e.g. to the version used locally (`quarto --version`).
+ARG QUARTO_VERSION=1.8.25
+RUN wget -O quarto-linux.deb \
+      https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-${TARGETARCH}.deb && \
     apt-get update && \
     apt-get install -y ./quarto-linux.deb && \
     rm quarto-linux.deb && \
@@ -46,13 +50,19 @@ RUN Rscript -e 'install.packages("/tmp/SumExp_0.2.1.tar.gz", repos = NULL, type 
 RUN rm -rf /srv/shiny-server/*
 COPY /app/ /srv/shiny-server/
 
-# Ensure that the expected user is present in the container
-RUN if id shiny &>/dev/null && [ "$(id -u shiny)" -ne 999 ]; then \
-        userdel -r shiny; \
-        id -u 999 &>/dev/null && userdel -r "$(id -un 999)"; \
+# The user `shiny` with UID 999, as SciLifeLab Serve expects for Shiny apps (plain `sh`: Docker
+# runs RUN lines with /bin/sh). Another user with UID 999 is removed; an existing `shiny` user
+# gets UID 999 (usermod also updates the owner of its home directory).
+RUN set -e; \
+    other="$(getent passwd 999 | cut -d: -f1)"; \
+    if [ -n "$other" ] && [ "$other" != "shiny" ]; then userdel "$other"; fi; \
+    if id -u shiny >/dev/null 2>&1; then \
+        if [ "$(id -u shiny)" != "999" ]; then usermod -u 999 shiny; fi; \
+    else \
+        useradd -u 999 -m -s /bin/bash shiny; \
     fi; \
-    useradd -u 999 -m -s /bin/bash shiny; \
-    chown -R shiny:shiny /srv/shiny-server/ /var/lib/shiny-server/ /var/log/shiny-server/
+    mkdir -p /home/shiny; \
+    chown -R shiny:shiny /home/shiny /srv/shiny-server/ /var/lib/shiny-server/ /var/log/shiny-server/
 
 # Other settings
 USER shiny

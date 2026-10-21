@@ -10,10 +10,12 @@ processing:
   optimize_cal_points: no
   set_minimum_number: no
   min_cal_points: 3
+  average_cal_reps: no
   keep_all_calcurves: no
   r2_filter: no
   min_r2: 0.99
   linear_only: no
+  vis_prenorm: no
   rm_outlier: yes
   log_calibration: no
   blank_filter: yes
@@ -25,3 +27,4 @@ processing:
   weight: largestR2
   llox_method: pt_signal_mean_plus_sd
   use_rsd20: yes
+  impute_llox: yes

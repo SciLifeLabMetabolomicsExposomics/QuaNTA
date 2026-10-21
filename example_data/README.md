@@ -25,7 +25,7 @@ A synthetic dataset to try out QuaNTA. It's an MS-DIAL alignment export (ESI+), 
 - **222 targeted features:** 196 compounds (`Q`), 22 internal standards (`IS`), 1 volumetric IS (`vIS`) and 3 features marked for removal (`R`). The compounds are 151 environmental chemicals and drugs and 45 common serum metabolites (amino acids, acylcarnitines, purines, bile acids, lysophosphatidylcholines and others).
 - **1000 non-targeted features** (`Unknown`).
 
-The calibration standards, QCs and blanks of the 151 environmental chemicals and drugs come from a real measurement. Everything else is synthetic: all samples, the serum metabolites, all non-targeted features, the third calibration curve injection of each batch, and a copy of the calibration curve, QCs and blanks in batch 3. No real sample data is included.
+All values are synthetic. For the 151 environmental chemicals and drugs, the design of the calibration standards, QCs and blanks and their typical signal levels, replicate variation and non-detects are modelled on a real measurement, but every value is simulated and no measured value or spectrum of that measurement is included. Also synthetic: all samples, the serum metabolites, all non-targeted features, the third calibration curve injection of each batch, and the second copy of the calibration curve, QCs and blanks in batch 3.
 
 Features built in to try the app on:
 
@@ -46,4 +46,4 @@ Features built in to try the app on:
 - **Noisy features in the QCs:** about 8% of the non-targeted features, removed by the QC RSD% filter.
 - **Missing values:** zeros for low signals.
 
-Note: the real QCs weren't spiked with the environmental chemicals, so many of them are near or below the detection limit in the QCs. Their QC RSD% is therefore high. That's why the example parameters apply the QC RSD% filter to non-targeted features only.
+Note: the QCs are modelled on QCs that weren't spiked with the environmental chemicals, so many of them are near or below the detection limit in the QCs. Their QC RSD% is therefore high. That's why the example parameters apply the QC RSD% filter to non-targeted features only.

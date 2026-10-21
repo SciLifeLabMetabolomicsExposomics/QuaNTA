@@ -46,6 +46,24 @@ option_list <- rlang::list2(
     help = "Fit linear calibration models only, no quadratic ones [default: %default]"
   ),
   optparse::make_option(
+    c("--vis_prenorm"),
+    type = "logical", default = FALSE,
+    help = paste(
+      "Pre-normalize all peak areas (also of the IS) by the volumetric internal standard(s): area / vIS",
+      "area of the sample * average vIS area of all injections; several vIS one after the other",
+      "[default: %default]"
+    )
+  ),
+  optparse::make_option(
+    c("--average_cal_reps"),
+    type = "logical", default = FALSE,
+    help = paste(
+      "Average the calibration point replicates within each batch; the global curve of all batches,",
+      "fitted on these averages, is used for every batch. Needs `--use_rsd20=FALSE` and",
+      "`--llox_method=pt_signal_mean` (set so) [default: %default]"
+    )
+  ),
+  optparse::make_option(
     c("--log_calibration"),
     type = "logical", default = FALSE,
     help = "Log scale for calibration curve fitting [default: %default]"
@@ -68,6 +86,14 @@ option_list <- rlang::list2(
     c("--use_rsd20"),
     type = "logical", default = TRUE,
     help = "Use RSD% 20% threshold for LLOQ [default: %default]"
+  ),
+  optparse::make_option(
+    c("--impute_llox"),
+    type = "logical", default = TRUE,
+    help = paste(
+      "Replace concentrations below the LOD by LLOQ/4 and below the LLOQ by LLOQ/2. With FALSE,",
+      "they have no value and are reported as `n.d.` and `n.q.` [default: %default]"
+    )
   ),
   optparse::make_option(
     c("--blank_filter"),
@@ -109,8 +135,20 @@ opt_parser <- optparse::OptionParser(
   description = "Process MS-Dial parsed data and save the results."
 )
 params <- optparse::parse_args(opt_parser)
+# Averaged calibration points have no replicates within a batch: no RSD% at the LLOQ level and
+# no SD of the zero calibrant (the app disables those options then)
+if (isTRUE(params$average_cal_reps)) {
+  if (isTRUE(params$use_rsd20) || params$llox_method != "pt_signal_mean") {
+    cat("Averaged calibration points: the RSD% 20% threshold is not used and the LOD/LLOQ method is",
+        "`pt_signal_mean` (no replicates to compute an SD or RSD%).\n")
+  }
+  params$use_rsd20 <- FALSE
+  params$llox_method <- "pt_signal_mean"
+}
 cat(
   "\nProcessing parameters:\n",
+  "  - vIS pre-normalization: ", isTRUE(params$vis_prenorm), "\n",
+  "  - Average calibration replicates per batch (global curve): ", isTRUE(params$average_cal_reps), "\n",
   "  - Optimize cal points: ", params$optimize_cal_points, "\n",
   "  - Minimum number of cal points: ", params$min_cal_points, "\n",
   "  - Keep all calibration curves: ", params$keep_all_calcurves, "\n",
@@ -122,6 +160,8 @@ cat(
   "  - Weight method:", params$weight, "\n",
   "  - LOD/LLOQ method: ", params$llox_method, "\n",
   "  - Use RSD% 20% for LLOQ: ", params$use_rsd20, "\n",
+  "  - Values below the LOD/LLOQ: ",
+  if (!isFALSE(params$impute_llox)) "replaced (LLOQ/4, LLOQ/2)" else "n.d. / n.q. (no value)", "\n",
   "  - Blank filtering: ", params$blank_filter, "\n",
   "  - Blank filtering factor: ", params$blank_filter_factor, "\n",
   "  - QC RSD% filtering: ", params$rsd_filter,
@@ -211,8 +251,33 @@ to_report <- rlang::list2(
 
 #  -----  NORMALIZATION USING INTERNAL STANDARDS  ------------------------------
 
-to_report[["before normalization"]] <- proc_sumexp
+#  -----  PRE-NORMALIZATION BY THE VOLUMETRIC INTERNAL STANDARD(S)  -------------
+# `--vis_prenorm`: every peak area (also of the IS) is divided by the vIS area of its sample and
+# multiplied by the average vIS area of all injections; with several vIS, one after the other.
+# The vIS themselves are not changed (by themselves nor by another vIS). A sample without a vIS
+# value (0 or missing) is not corrected by that vIS.
+if (isTRUE(params$vis_prenorm)) {
+  vis_rows <- which(util$std_type(proc_sumexp) %in% "vIS")
+  if (length(vis_rows) == 0) {
+    cat("vIS pre-normalization: no volumetric internal standard in the data; skipped.\n")
+  } else {
+    raw0 <- proc_sumexp[["raw"]]
+    out <- raw0
+    not_vis <- !seq_len(nrow(raw0)) %in% vis_rows
+    for (v in vis_rows) {
+      vis <- raw0[v, ]
+      ok <- is.finite(vis) & vis > 0
+      factor <- ifelse(ok, mean(vis[ok]) / vis, 1)
+      out[not_vis, ] <- sweep(out[not_vis, , drop = FALSE], 2, factor, `*`)
+      cat("vIS pre-normalization by ", rownames(raw0)[v], " (average area ", signif(mean(vis[ok]), 4), ")",
+          if (any(!ok)) paste0("; ", sum(!ok), " sample(s) without a vIS value not corrected"), ".\n", sep = "")
+    }
+    proc_sumexp[["raw"]] <- labelled::set_label_attribute(out, "Raw (vIS pre-normalized)")
+    to_report[["vIS prenormalization"]] <- SumExp::row_df(proc_sumexp)$feature_name[vis_rows]
+  }
+}
 
+to_report[["before normalization"]] <- proc_sumexp
 # Extract internal standard features
 internal_std_se <- local(
   envir = list(se = proc_sumexp),
@@ -234,6 +299,11 @@ to_report[["is failed internal std."]] <- is_failed
 is_failed_in_proc_sumexp <- rownames(proc_sumexp) %in% rownames(internal_std_se)[is_failed]
 proc_sumexp <- proc_sumexp[!is_failed_in_proc_sumexp, ]
 internal_std_se <- internal_std_se[!is_failed, ]
+if (nrow(internal_std_se) == 0) {
+  stop("All ", length(is_failed), " internal standards failed (zero values in more than 10% of the ",
+       "injections): the data cannot be normalized. Check the internal standards in the file.",
+       call. = FALSE)
+}
 # Impute remaining zeros with the mean of the same type
 internal_std_se <- proc$impute_zeros_with_mean_of_same_type(internal_std_se, "raw")
 cat("Internal standards check done (N = ", sum(is_failed), " failed have been removed).\n", sep = "")
@@ -360,6 +430,9 @@ to_report[["matrix ids to blk subt"]] <- to_blk_subt
 is_all_na_row <- function(m) rowSums(!is.na(m)) == 0
 removed_features <- list()
 targeted <- util$is_targeted_feature(proc_sumexp)
+# The volumetric IS is not filtered (blank filter, QC RSD% filter): it is added to every sample,
+# also to the blanks, and is not a feature to measure
+is_vis <- util$std_type(proc_sumexp) %in% "vIS"
 removed_tbl <- function(mat_id, is_removed, reason, qc_rsd = NA_real_) {
   tibble::tibble(
     mat_id = mat_id,
@@ -375,11 +448,14 @@ if (params$blank_filter) {
   for (mat_id in to_blk_subt) {
     cat("Performing blank filtering for matrix:", mat_id, "\n")
     na_before <- is_all_na_row(proc_sumexp[[mat_id]])
+    vis_values <- proc_sumexp[[mat_id]][is_vis, , drop = FALSE]
     proc_sumexp <- proc$filter_by_blank(
       proc_sumexp,
       mat_id = mat_id,
       factor = params$blank_filter_factor
     )
+    proc_sumexp[[mat_id]][is_vis, ] <- vis_values   # Kept (see `is_vis`)
+    SumExp::row_df(proc_sumexp)$blank_filtered[is_vis] <- TRUE
     removed_features[[length(removed_features) + 1]] <-
       removed_tbl(mat_id, !na_before & is_all_na_row(proc_sumexp[[mat_id]]), "Blank filter")
   }
@@ -478,7 +554,7 @@ if (rsd_filter$enabled) {
       blk_mat_id <- mat_ids_after_blk_subt[ii]      # e.g. "loess_norm_blk" (filtered)
       rsd <- proc$qc_rsd_per_feature(proc_sumexp, blk_mat_id)
       already_removed <- is_all_na_row(proc_sumexp[[blk_mat_id]])
-      to_remove <- !already_removed & !is.na(limit) & !is.na(rsd) & rsd > limit
+      to_remove <- !already_removed & !is_vis & !is.na(limit) & !is.na(rsd) & rsd > limit
       # In the overall (global) data and in each batch
       proc_sumexp[[blk_mat_id]] <- util$extract_with_na(proc_sumexp[[blk_mat_id]], i = !to_remove)
       for (batch_id in names(per_batch_proc_se_lst)) {
@@ -490,7 +566,7 @@ if (rsd_filter$enabled) {
       removed_features[[length(removed_features) + 1]] <-
         removed_tbl(mat_id, to_remove, "QC RSD%", qc_rsd = rsd)
       cat("QC RSD% filtering for ", mat_id, ": ", sum(to_remove & targeted), " targeted and ",
-          sum(to_remove & !targeted), " non-targeted features removed.\n", sep = "")
+          sum(to_remove & !targeted), " non-targeted features removed (the volumetric IS is not filtered).\n", sep = "")
     }
   }
 }
@@ -528,7 +604,9 @@ if (has_multiple_batches) {
 #' Concentrations from the signal in `se[[mat_id]]` (in the scale of the fit) with the fitted
 #' models (`calcurve_model`) and limits in `row_df(se)`, and the LOD/LLOQ rules
 #'
-#' @returns `se` with the matrices `conc0` (before the rules) and `conc`
+#' @returns `se` with the matrices `conc0` (before the rules), `conc` and `conc_flag` ("n.d." /
+#'   "n.q." where the rules replaced a value below the LOD / LLOQ, otherwise `NA`). Without
+#'   `--impute_llox`, those values are removed from `conc` at the end (see `censor_llox()`)
 quantify_conc <- function(se, mat_id, in_log) {
   se[["conc0"]] <- proc$compute_concentration(se, mat_id, log_scale = in_log) |>
     labelled::set_label_attribute("Concentration before filtering")
@@ -545,6 +623,20 @@ quantify_conc <- function(se, mat_id, in_log) {
   neg <- se[["conc"]] < 0 & SumExp::row_df(se)$kept_calcurve
   neg[is.na(neg)] <- FALSE
   se[["conc"]][neg] <- 0
+  se[["conc_flag"]] <- proc$llox_flags(se[["conc0"]], se[["conc"]], SumExp::row_df(se)$lloq)
+  se
+}
+
+#' Without `--impute_llox`: the values replaced below the LOD / LLOQ get no value (`NA` in `conc`;
+#' `conc_flag` tells "n.d." / "n.q."). Done after the decisions that use the replaced values
+#' (e.g. which chemicals are exported), so that these are the same with and without replacement.
+#'
+#' @param se `NULL` or a `SumExp` object with `conc` and `conc_flag`
+censor_llox <- function(se) {
+  if (is.null(se)) return(se)
+  SumExp::metadata(se)$llox_imputed <- !isFALSE(params$impute_llox)
+  if (!isFALSE(params$impute_llox) || !all(c("conc", "conc_flag") %in% names(se))) return(se)
+  se[["conc"]][!is.na(se[["conc_flag"]])] <- NA
   se
 }
 
@@ -568,6 +660,7 @@ quantify_blanks <- function(blank_se, concn_se, mat_id_to_calib) {
   # Chemicals not exported have no concentrations, as for the samples
   se[["conc"]] <- util$extract_with_na(se[["conc"]], i = SumExp::row_df(se)$to_export, j = TRUE) |>
     labelled::set_label_attribute(labelled::get_label_attribute(concn_se[["conc"]]))
+  se[["conc_flag"]] <- util$extract_with_na(se[["conc_flag"]], i = SumExp::row_df(se)$to_export)
   se
 }
 
@@ -678,7 +771,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     }, numeric(1))
     low_r2 <- !is.na(r2) & r2 < params$min_r2 & has_proper_range & !kept_calcurve
     if (any(low_r2)) {
-      issue <- sprintf("R² %.3f below the minimum %.3f", r2[low_r2], params$min_r2)
+      issue <- sprintf("RÂ² %.3f below the minimum %.3f", r2[low_r2], params$min_r2)
       keep <- isTRUE(params$keep_all_calcurves)
       set_r2_issue <- function(se) {
         rd <- SumExp::row_df(se)
@@ -690,7 +783,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
       concn_se <- set_r2_issue(concn_se)
       calcurve_se <- set_r2_issue(calcurve_se)
       if (!keep) r2_failed <- low_r2
-      cat(sum(low_r2), "calibration curve(s) with R² below", params$min_r2,
+      cat(sum(low_r2), "calibration curve(s) with RÂ² below", params$min_r2,
           if (keep) "(kept)." else "(not valid).", "\n")
     }
   }
@@ -724,6 +817,9 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     labelled::set_label_attribute(paste0("Concentration [", unit, "]"))
   calcurve_se[["conc"]] <- util$extract_with_na(cc_conc[["conc"]], i = has_ex, j = TRUE) |>
     labelled::set_label_attribute(paste0("Concentration [", unit, "]"))
+  # Values replaced below the LOD / LLOQ ("n.d." / "n.q."), of the exported chemicals
+  concn_se[["conc_flag"]] <- util$extract_with_na(concn_se[["conc_flag"]], i = has_ex)
+  calcurve_se[["conc_flag"]] <- util$extract_with_na(cc_conc[["conc_flag"]], i = has_ex)
 
   return(list(
     done = TRUE,
@@ -818,6 +914,17 @@ to_report[["global calibration"]] <- list()
 # - "concn" is a SumExp object having calibrated concentrations
 lst_proc <- list()
 
+# `--average_cal_reps`: the calibration replicates of each batch are averaged (one point per level
+# and batch) and the global curve fitted on these averages is used for every batch
+AVERAGE_CAL <- isTRUE(params$average_cal_reps)
+AVERAGE_CAL_NOTE <- "calibration replicates averaged per batch (option): the global curve of all batches is used"
+cal_input_se <- if (AVERAGE_CAL) proc$average_calcurve_replicates(proc_sumexp) else proc_sumexp
+if (AVERAGE_CAL) {
+  cat("Calibration replicates averaged per batch:", sum(util$ctrl_smpl_cat(proc_sumexp) == "CalCurve"),
+      "calibration samples ->", sum(util$ctrl_smpl_cat(cal_input_se) == "CalCurve"), "averaged points.",
+      "The global curve is used for every batch.\n")
+}
+
 # Per normalization method, then per batch
 for (mat_id_to_calib in mat_ids_after_blk_subt) {
   lst_proc[[mat_id_to_calib]] <- list() # Initialize to collect the output per normalization method
@@ -825,7 +932,7 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
   norm_lab <- labelled::get_label_attribute(proc_sumexp[[mat_id_to_calib]])
   
   # Global calibration for failed batches.
-  cal_global <- try_quantify_using_calcurve(proc_sumexp, mat_id_to_calib, params, "all samples")
+  cal_global <- try_quantify_using_calcurve(cal_input_se, mat_id_to_calib, params, "all samples")
   
   if (cal_global$done) {
     # Source of the calibration curve per chemical. In batch-mode, it can be "Global" or "Batch"
@@ -850,7 +957,7 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
     
     # Batch-wise calibration, if the batch has enough calibration curve replicates
     batch_se <- per_batch_proc_se_lst[[batch_id]]
-    issue <- calcurve_replicate_issue(batch_se, params)
+    issue <- if (AVERAGE_CAL) AVERAGE_CAL_NOTE else calcurve_replicate_issue(batch_se, params)
     cal_batch <- if (is.null(issue)) {
       try_quantify_using_calcurve(batch_se, mat_id_to_calib, params, glue::glue("batch `{batch_id}`"))
     } else {
@@ -863,6 +970,11 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
       batch_in_global <- lapply(cal_global[c("calcurve", "concn")], \(se) {
         se[, colnames(se) %in% batch_samples]
       })
+      # Averaged calibration points have their own names: those of the batch, by batch ID
+      if (AVERAGE_CAL) {
+        cc <- cal_global$calcurve
+        batch_in_global$calcurve <- cc[, as.character(SumExp::col_df(cc)$batch_id) == batch_id]
+      }
       # A batch without its own calibration curve samples shows all the global ones, which made
       # its calibration curves (also keeps plots and tables from getting empty data)
       if (ncol(batch_in_global$calcurve) == 0) batch_in_global$calcurve <- cal_global$calcurve
@@ -893,7 +1005,7 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
           batch_issue <- SumExp::row_df(cal_batch$concn)$range_issue[in_only_global]
 
           # Replace the values in the batch calibration with the global calibration
-          for (m in c("conc", "conc0")) {
+          for (m in c("conc", "conc0", "conc_flag")) {
             cal_batch$concn[[m]][in_only_global, ] <- batch_in_only_global$concn[[m]]
             cal_batch$calcurve[[m]][in_only_global, ] <- batch_in_only_global$calcurve[[m]]
           }
@@ -965,6 +1077,17 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
 to_report[["calibration per batch"]] <- dplyr::bind_rows(calibration_per_batch)
 cat("\nCalibration used per batch:\n")
 print(as.data.frame(to_report[["calibration per batch"]]), right = FALSE)
+# Values below the LOD / LLOQ: replaced, or without a value ("n.d." / "n.q.") without --impute_llox
+for (mat_id_to_calib in names(lst_proc)) {
+  for (batch_id in names(lst_proc[[mat_id_to_calib]])) {
+    for (part in intersect(c("calcurve", "concn", "blank"), names(lst_proc[[mat_id_to_calib]][[batch_id]]))) {
+      lst_proc[[mat_id_to_calib]][[batch_id]][[part]] <- censor_llox(lst_proc[[mat_id_to_calib]][[batch_id]][[part]])
+    }
+  }
+}
+if (isFALSE(params$impute_llox)) {
+  cat("Concentrations below the LOD / LLOQ have no value (reported as n.d. / n.q.).\n")
+}
 # Save the processed data
 saveRDS(lst_proc, file = FILE$proc)
 cat("The `SumExp` object after processing saved to:", FILE$proc, "\n")

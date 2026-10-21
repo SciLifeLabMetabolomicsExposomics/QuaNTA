@@ -16,19 +16,28 @@ runProcessUI <- function(uiId) {
         white-space: nowrap;
       }
     ")),
-    # JS handler to enable/disable weight options
+    # JS handler to enable/disable one radio button choice (see the server)
     shiny::tags$script(HTML("
-      Shiny.addCustomMessageHandler('toggleWeightOptions', function(message) {
-        let radios = document.querySelectorAll('input[name=\"' + message.inputId + '\"]');
-        if (radios.length >= 4) {
-          radios[0].disabled = !message.enabled; // largestR2
-          radios[2].disabled = !message.enabled; // 1/x
-          radios[3].disabled = !message.enabled; // 1/x^2
-        }
+      // Enable / disable one choice of a radio button group
+      Shiny.addCustomMessageHandler('toggleRadioOption', function(message) {
+        document.querySelectorAll('input[name=\"' + message.inputId + '\"]').forEach(function(r) {
+          if (r.value === message.value) r.disabled = !message.enabled;
+        });
       });
     ")),
     settings_group(
     "Quality control", "chart-simple",
+    # Pre-normalization by the volumetric internal standard(s), before all other steps
+    shiny::checkboxInput(
+      inputId = ns("vis_prenorm"),
+      label = label_tip("Pre-normalize by the volumetric IS",
+                        paste("Before all other steps, every peak area (also of the IS) is divided by the",
+                              "volumetric IS area of its sample and multiplied by the average vIS area of",
+                              "all injections. With several vIS, one after the other; the vIS themselves",
+                              "are not changed. Greyed out when the data has no volumetric IS.")),
+      value = FALSE,
+      width = "100%"
+    ),
     # Outlier removal
     shiny::checkboxInput(
       inputId = ns("rm_outlier"),
@@ -62,7 +71,8 @@ runProcessUI <- function(uiId) {
       inputId = ns("rsd_filter"),
       label = label_tip("Remove features with QC RSD% above a threshold",
                         paste("After normalization and blank subtraction. The RSD% is computed within",
-                              "each QC group; with several groups, their median is used.")),
+                              "each QC group (all batches together); with several groups, their median is used.",
+                              "Without targeted (Quant) features, only non-targeted features can be filtered.")),
       value = FALSE,
       width = "100%"
     ),
@@ -108,7 +118,7 @@ runProcessUI <- function(uiId) {
       label = label_tip("Optimize calibration curves to exclude points outside the sample range",
                         paste("Calibration points above the highest sample signal are left out of the",
                               "curve, keeping at least 3 points. Without any sample or QC at or above",
-                              "the LLOQ, the full range is kept.")),
+                              "the LLOQ, the full range is kept. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
     ),
@@ -116,7 +126,7 @@ runProcessUI <- function(uiId) {
       inputId = ns("set_minimum_number"),
       label = label_tip("Minimum number of calibration points per curve",
                         paste("A curve always needs at least 3 calibration levels (from the LLOQ",
-                              "upwards); this is the default. Tick to require more.")),
+                              "upwards); this is the default. Tick to require more. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
     ),
@@ -135,12 +145,22 @@ runProcessUI <- function(uiId) {
       )
     ),
     shiny::checkboxInput(
+      inputId = ns("average_cal_reps"),
+      label = label_tip("Average calibration replicates per batch (global curve)",
+                        paste("The replicates of each calibration level are averaged within each batch,",
+                              "giving one point per level and batch. The global curve fitted on these",
+                              "averages is used for every batch. Without replicates, the RSD% 20% threshold",
+                              "and the SD of Cal0 (LOD/LLOQ method) cannot be used and are switched off. Greyed out when the data has no targeted (Quant) features.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::checkboxInput(
       inputId = ns("keep_all_calcurves"),
       label = label_tip("Keep all calibration curves",
                         paste("Compounds whose calibration range is not valid (e.g. no level above the",
                               "LLOQ signal, or too few levels) keep a curve from the LLOQ (or the lowest",
                               "level) to the highest level. A batch still uses a valid global curve when",
-                              "there is one. The reports show why each curve was not valid.")),
+                              "there is one. The reports show why each curve was not valid. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
     ),
@@ -149,7 +169,7 @@ runProcessUI <- function(uiId) {
       label = label_tip("Minimum R² of the calibration curves",
                         paste("A compound whose calibration curve has a lower R² is considered failed:",
                               "no concentrations, not exported (kept and marked with 'Keep all",
-                              "calibration curves'). The reports and tables show the reason.")),
+                              "calibration curves'). The reports and tables show the reason. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
     ),
@@ -166,14 +186,14 @@ runProcessUI <- function(uiId) {
       inputId = ns("linear_only"),
       label = label_tip("Linear models only",
                         paste("Fit only linear calibration curves (with the chosen weighting), even when",
-                              "a quadratic curve would fit better.")),
+                              "a quadratic curve would fit better. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
     ),
     shiny::checkboxInput(
       inputId = ns("log_calibration"),
       label = label_tip("Log scale for calibration curve fitting",
-                        "Fit on log-transformed concentrations and signals (weighting 1 only)."),
+                        "Fit on log-transformed concentrations and signals (weighting 1 only). Greyed out when the data has no targeted (Quant) features."),
       value = FALSE,
       width = "100%"
     ),
@@ -181,7 +201,10 @@ runProcessUI <- function(uiId) {
       inputId = ns("weight"),
       label = label_tip("Weighting method",
                         paste("Largest R²: per compound, the weighting (1, 1/x, 1/x²) and model",
-                              "(linear or quadratic) with the best fit.")),
+                              "(linear or quadratic) with the best fit. When choosing the model, the R²",
+                              "of quadratic models is penalized by 0.01, so a quadratic curve is chosen",
+                              "only when it fits clearly better (the R² shown is not penalized). With log-scale fitting,",
+                              "only the weighting 1 is possible. Greyed out when the data has no targeted (Quant) features.")),
       selected = "largestR2",
       inline = TRUE,   # ✅ add this
       choiceValues = list("largestR2", "1", "1_div_x", "1_div_x2"),
@@ -196,7 +219,10 @@ runProcessUI <- function(uiId) {
       inputId = ns("llox_method"),
       label = label_tip("LOD/LLOQ method",
                         paste("LOD: the lowest calibration level whose mean signal is above the",
-                              "threshold with factor 3; LLOQ: with factor 10.")),
+                              "threshold with factor 3; LLOQ: with factor 10. The 'mean + SD' method needs at least",
+                              "2 Cal0 replicates (in a batch, or in all batches together for the global curve):",
+                              "it is greyed out when the data has fewer, and with averaged calibration replicates.",
+                              "A batch with fewer uses the global curve. Greyed out when the data has no targeted (Quant) features.")),
       selected = "pt_signal_mean_plus_sd",
       choiceValues = list("pt_signal_mean", "pt_signal_mean_plus_sd"),
       choiceNames = list(
@@ -208,8 +234,23 @@ runProcessUI <- function(uiId) {
     shiny::checkboxInput(
       inputId = ns("use_rsd20"),
       label = label_tip("Use RSD% 20% threshold for LLOQ",
-                        "The replicates at the LLOQ level must also have an RSD% of at most 20%."),
+                        paste("The replicates at the LLOQ level must also have an RSD% of at most 20%. This needs",
+                              "at least 2 replicates of every calibration level (in a batch, or in all batches",
+                              "together for the global curve): greyed out when the data has fewer, and with averaged",
+                              "calibration replicates. A batch with fewer uses the global curve. Greyed out when the data has no targeted (Quant) features.")),
       value = TRUE,
+      width = "100%"
+    ),
+    # Replace the concentrations below the LOD/LLOQ, or report them as "n.d." / "n.q."
+    shiny::checkboxInput(
+      inputId = ns("impute_llox"),
+      label = label_tip("Replace values below the LOD/LLOQ",
+                        paste("Ticked: concentrations below the LOD are replaced by LLOQ/4 and those",
+                              "below the LLOQ by LLOQ/2. Unticked: they are reported as 'n.d.' (not",
+                              "detected, below the LOD) and 'n.q.' (not quantified, below the LLOQ),",
+                              "without a value, and left out of plots and statistics. Greyed out when the data has no targeted (Quant) features.")),
+      value = TRUE,
+      width = "100%"
     )
     ),
     shiny::hr(class = "q-divider"),
@@ -240,20 +281,162 @@ runProcessUI_2 <- function(uiId) {
 #'
 #' @param serverId A string that identifies the server module.
 #' @export
-runProcessServer <- function(serverId, data_info, ws, clear = NULL) {
-  
-  shiny::moduleServer(serverId, function(input, output, session) {
-    # Disable/enable weight options based on log_calibration
-    shiny::observe({
-      enabled <- !isTRUE(input$log_calibration)
-      session$sendCustomMessage("toggleWeightOptions", list(
-        inputId = session$ns("weight"), enabled = enabled
-      ))
+runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = shiny::reactive(NULL)) {
+  start <- shiny::reactiveVal(NULL)   # Starts the processing (see "Process data" below)
 
-      # Reset selection if user had picked a disabled option
-      if (!enabled && input$weight %in% c("largestR2", "1_div_x", "1_div_x2")) {
-        updateRadioButtons(session, "weight", selected = "1")
+  shiny::moduleServer(serverId, function(input, output, session) {
+    # Options that are not feasible are greyed out (and switched off), from the settings and from
+    # what the read data allows (`data_caps()`, `NULL` before a read: nothing greyed out then):
+    # - no targeted (Quant) features: all calibration options; the QC RSD% filter of targeted features
+    # - log-scale fitting: only the weighting 1
+    # - averaged calibration replicates: no RSD% 20% threshold, no LOD/LLOQ method "mean + SD"
+    # - fewer than 2 Cal0 replicates (in every batch and all together): no "mean + SD"
+    # - fewer than 2 replicates per calibration level (same): no RSD% 20% threshold
+    # - no volumetric IS: no pre-normalization by it
+    radio_option <- function(id, value, enabled) {
+      session$sendCustomMessage("toggleRadioOption", list(inputId = session$ns(id), value = value, enabled = enabled))
+    }
+    shiny::observe({
+      caps <- data_caps()
+      # Targeted features and calibration samples: without either, no calibration
+      tgt <- is.null(caps) || (isTRUE(caps$has_targeted) && isTRUE(caps$has_calib))
+      avg <- isTRUE(input$average_cal_reps)
+      log_fit <- isTRUE(input$log_calibration)
+      sd_ok <- tgt && !avg && (is.null(caps) || isTRUE(caps$cal0_ok))
+      rsd20_ok <- tgt && !avg && (is.null(caps) || isTRUE(caps$reps_ok))
+      vis_ok <- is.null(caps) || isTRUE(caps$has_vis)
+
+      for (id in c("optimize_cal_points", "set_minimum_number", "min_cal_points", "average_cal_reps",
+                   "keep_all_calcurves", "r2_filter", "min_r2", "linear_only", "log_calibration",
+                   "impute_llox")) {
+        shinyjs::toggleState(id, condition = tgt)
       }
+      # Weighting: none without targeted features, only "1" with log-scale fitting
+      for (w in c("largestR2", "1_div_x", "1_div_x2")) radio_option("weight", w, tgt && !log_fit)
+      radio_option("weight", "1", tgt)
+      if (log_fit && !identical(input$weight, "1")) shiny::updateRadioButtons(session, "weight", selected = "1")
+      # LOD/LLOQ method "mean + SD" and the RSD% 20% threshold
+      radio_option("llox_method", "pt_signal_mean", tgt)
+      radio_option("llox_method", "pt_signal_mean_plus_sd", sd_ok)
+      if (!sd_ok && identical(input$llox_method, "pt_signal_mean_plus_sd")) {
+        shiny::updateRadioButtons(session, "llox_method", selected = "pt_signal_mean")
+      }
+      if (!rsd20_ok && isTRUE(input$use_rsd20)) shiny::updateCheckboxInput(session, "use_rsd20", value = FALSE)
+      shinyjs::toggleState("use_rsd20", condition = rsd20_ok)
+      # QC RSD% filter: non-targeted features only without targeted ones
+      has_t <- is.null(caps) || isTRUE(caps$has_targeted)   # (Also without calibration samples)
+      for (s in c("both", "targeted")) radio_option("rsd_filter_scope", s, has_t)
+      shinyjs::toggleState("rsd_max_targeted", condition = has_t)
+      if (!has_t && !identical(input$rsd_filter_scope, "nontargeted")) {
+        shiny::updateRadioButtons(session, "rsd_filter_scope", selected = "nontargeted")
+      }
+      # Pre-normalization by the volumetric IS
+      if (!vis_ok && isTRUE(input$vis_prenorm)) shiny::updateCheckboxInput(session, "vis_prenorm", value = FALSE)
+      shinyjs::toggleState("vis_prenorm", condition = vis_ok)
+    })
+
+    # On "Process data": warnings about the data in a popup; processing starts only on "Proceed"
+    # (without warnings it starts at once): Comment values read by a partial match or not
+    # recognised; not the intended use without targeted features; batches that use the global
+    # curve because of a chosen option
+    shiny::observeEvent(input$run_button, {
+      caps <- data_caps()
+      msgs <- list()
+      if (is.null(caps)) {
+        start(Sys.time())
+        return()
+      }
+      # Empty or non-numeric values in the file, read as 0
+      mv <- caps$missing_values
+      if (!is.null(mv) && nrow(mv) > 0) {
+        shown <- utils::head(mv, 10)
+        msgs <- c(msgs, list(shiny::tags$li(paste0(
+          sum(mv$n), " value(s) in the file are empty or not numbers, in ", nrow(mv), " feature(s): ",
+          paste0(shown$feature, " (", shown$n, ")", collapse = ", "), if (nrow(mv) > 10) ", ...", ". ",
+          "They were read as 0 (not detected). A data export has a number in every cell, so the file ",
+          "may have been edited; please check it."))))
+      }
+      # Comment values that do not follow the naming conventions: non-targeted features
+      notes <- caps$comment_notes
+      if (!is.null(notes) && nrow(notes) > 0 && "looks_like" %in% names(notes)) {
+        # One row per Comment value; the ones that look like a convention (likely typos) in red
+        red <- "color: #D55E00; font-weight: 600;"
+        cell <- "padding: 2px 10px; border-bottom: 1px solid #DDD;"
+        rows <- lapply(seq_len(nrow(notes)), function(i) {
+          sus <- !is.na(notes$looks_like[i])
+          shiny::tags$tr(
+            style = if (sus) red,
+            shiny::tags$td(style = cell, shiny::tags$code(style = if (sus) red, notes$comment[i])),
+            shiny::tags$td(style = paste(cell, "text-align: right;"), notes$n[i])
+          )
+        })
+        msgs <- c(msgs, list(shiny::tags$li(
+          shiny::tags$b(tags$u("Naming convention:")),
+          shiny::tags$ul(
+            shiny::tags$li(shiny::tags$code("Quant"), "targeted compound"),
+            shiny::tags$li(shiny::tags$code("Quant\\<IS>"), "targeted compound with specified IS"),
+            shiny::tags$li(shiny::tags$code("IS"), "an internal standard"),
+            shiny::tags$li(shiny::tags$code("IS\\<compound>"), "an internal standard of a compound"),
+            shiny::tags$li(shiny::tags$code("vIS"), "the volumetric internal standard"),
+            shiny::tags$li(shiny::tags$code("R"), "a feature to remove (left out when the file is read)"),
+            shiny::tags$li("empty: a non-targeted feature")
+          ),
+          shiny::tags$b("Comments not following naming convention "), "(treated as non-targeted features):",
+          shiny::tags$table(
+            style = "margin: 6px 0 8px; border-collapse: collapse; font-size: 0.9em;",
+            shiny::tags$thead(shiny::tags$tr(
+              shiny::tags$th(style = cell, "Comment"), shiny::tags$th(style = paste(cell, "text-align: right;"), "Features")
+            )),
+            shiny::tags$tbody(rows)
+          ),
+          "To use them as intended, correct the Comment column and upload the file again.")))
+      }
+      batch_txt <- function(b) paste(if (length(b) > 1) "Batches" else "Batch", paste(b, collapse = ", "),
+                                     if (length(b) > 1) "have" else "has")
+      if (!isTRUE(caps$has_targeted)) {
+        msgs <- c(msgs, list(shiny::tags$li(
+          tags$b(tags$u("The data has no targeted (Quant) features:")), tags$br(),
+          "QuaNTA is made for targeted data with calibration",
+          "curves, so this is not its intended use. The data is still processed (normalization, blank",
+          "filter, QC RSD% filter of the non-targeted features), without calibration; the options for",
+          "targeted compounds are greyed out.")))
+      } else if (!isTRUE(caps$has_calib)) {
+        msgs <- c(msgs, list(shiny::tags$li(
+          "The data has no calibration curve (CalCurve) samples, so the targeted compounds cannot be",
+          "quantified. The data is still processed (normalization, blank filter, QC RSD% filter),",
+          "without calibration; the calibration options are greyed out.")))
+      } else if (isTRUE(caps$multi_batch) && !isTRUE(input$average_cal_reps)) {
+        if (identical(input$llox_method, "pt_signal_mean_plus_sd") && length(caps$cal0_fail_batches) > 0) {
+          msgs <- c(msgs, list(shiny::tags$li(
+            batch_txt(caps$cal0_fail_batches), "fewer than 2 Cal0 replicates, which",
+            "the LOD/LLOQ method 'mean + SD' needs: the global curve of all batches is used there. The other",
+            "batches use their own curves.")))
+        }
+        if (isTRUE(input$use_rsd20) && length(caps$reps_fail_batches) > 0) {
+          msgs <- c(msgs, list(shiny::tags$li(
+            batch_txt(caps$reps_fail_batches), "calibration levels with fewer than",
+            "2 replicates, which the RSD% 20% threshold needs: the global curve of all batches is used there. The",
+            "other batches use their own curves.")))
+        }
+      }
+      if (length(msgs) == 0) {
+        start(Sys.time())
+        return()
+      }
+      shiny::showModal(shiny::modalDialog(
+        title = "Please check before processing",
+        shiny::tags$ul(msgs),
+        shiny::p("Click \"Proceed\" to process the data anyway, or \"Cancel\" to change the file or the settings."),
+        easyClose = FALSE,
+        footer = shiny::tagList(
+          shiny::modalButton("Cancel"),
+          shiny::actionButton(session$ns("proceed"), "Proceed", class = "btn-primary")
+        )
+      ))
+    })
+    shiny::observeEvent(input$proceed, {
+      shiny::removeModal()
+      start(Sys.time())
     })
     # The minimum number of calibration points is 3 unless set (the hidden field would keep
     # a value set before)
@@ -265,18 +448,22 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL) {
     serverId,
     script_path = "scripts/process.R",
     what = "Processing data",
+    trigger = start,   # Set on "Process data" (after "Proceed" when there are warnings)
     param_ids = c(
       "optimize_cal_points",
+      "average_cal_reps",
       "min_cal_points",
       "keep_all_calcurves",
       "r2_filter",
       "min_r2",
       "linear_only",
+      "vis_prenorm",
       "rm_outlier",
       "log_calibration",
       "weight",
       "llox_method",
       "use_rsd20",
+      "impute_llox",
       "blank_filter",
       "blank_filter_factor",
       "rsd_filter",

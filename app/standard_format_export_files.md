@@ -72,6 +72,11 @@ Values replaced by the LOD/LLOQ rules are coloured (in all sheets): red for LLOQ
 yellow for LLOQ/2 (between the LOD and the LLOQ) and blue for the LLOQ. The last sheet, `Legend`,
 explains the colours.
 
+When the processing option **Replace values below the LOD/LLOQ** is unticked (`--impute_llox=FALSE`),
+these values are not replaced: their cells hold the text `n.d.` (not detected, below the LOD; red) or
+`n.q.` (not quantified, between the LOD and the LLOQ; yellow) instead of a number. All other cells stay
+numbers. Values set to the LLOQ (signal at or above the LLOQ level) are kept as before (blue).
+
 ### Concentration table of all samples
 
 `(source file name).(normalization method).conc_all.xlsx` has the same layout, with all samples,
