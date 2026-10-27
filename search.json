@@ -1,0 +1,55 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "QuaNTA tutorial",
+    "section": "",
+    "text": "QuaNTA (Quantitative & Nontargeted Analysis) turns an MS-DIAL alignment file into quality-checked, normalized and calibrated data, with reports and exported tables. This tutorial walks through the app’s results one figure at a time: what each figure shows, how to read it, and what to do when something looks wrong.\nAll figures here are made by QuaNTA itself from the synthetic example dataset in example_data/, processed with the app’s default settings, so they look and behave like the figures in the app. They are interactive: hover over points for details, click legend entries to hide or show groups, and drag to zoom (double-click to zoom out).",
+    "crumbs": [
+      "QuaNTA tutorial"
+    ]
+  },
+  {
+    "objectID": "index.html#try-it-yourself",
+    "href": "index.html#try-it-yourself",
+    "title": "QuaNTA tutorial",
+    "section": "Try it yourself",
+    "text": "Try it yourself\n\nOpen QuaNTA on SciLifeLab Serve, or run it locally (see the README).\nUpload QuaNTA_example_ESIpos.zip from example_data/ and click Read data file, then Process data.\nFollow the chapters in the menu; each names the section of the app it explains (e.g. 4.5).\n\n\n\n\n\n\n\nNote\n\n\n\nThis tutorial matches the QuaNTA version in the same commit of the repository. Older versions of the app may differ.",
+    "crumbs": [
+      "QuaNTA tutorial"
+    ]
+  },
+  {
+    "objectID": "calibration-curves.html",
+    "href": "calibration-curves.html",
+    "title": "Calibration curves (4.4 and 4.5)",
+    "section": "",
+    "text": "For every targeted compound (Quant in the MS-DIAL comment), QuaNTA fits a calibration curve to the calibration samples (Cal… classes) and uses it to turn the signal of every sample into a concentration. Section 4 of the app shows the curves one compound at a time: choose the compound in table 4.2, and figures 4.4 and 4.5 follow.\nThe examples below show LysoPC(18:1) in batch 1.",
+    "crumbs": [
+      "Calibration and quantification",
+      "Calibration curves (4.4 and 4.5)"
+    ]
+  },
+  {
+    "objectID": "calibration-curves.html#the-calibration-points",
+    "href": "calibration-curves.html#the-calibration-points",
+    "title": "Calibration curves (4.4 and 4.5)",
+    "section": "4.4 The calibration points",
+    "text": "4.4 The calibration points\n\n\n\n\n\n\n\n\nFigure 1\n\n\n\n\nEach point is one injection of a calibration sample: its spiked (nominal) concentration on the x axis and its measured signal on the y axis. Points of the same concentration are replicates; with several batches, the symbol tells the batch.\nHow to read it\n\nColours tell the role of each level:\n\nCal0 (red): the zero calibrant. Its signal gives the thresholds of the LOD (3×) and the LLOQ (10×, or the mean plus 3 / 10 standard deviations).\nLOD (blue): the lowest level whose mean signal is above the LOD threshold.\nWithin limits (green): the levels the curve is fitted on, from the LLOQ upwards.\nAbove the ULOQ (olive): levels in the curve but above its linear range.\nOut-of-range (grey): levels not used for the curve.\n\nShading: dark grey below the LOD, light grey below the LLOQ, and olive above the ULOQ (dashed line), the top of the linear range.\nReplicates should lie close together. A level with widely spread replicates is a sign of a pipetting or injection problem; with the RSD% option, the LLOQ level must have an RSD% of at most 20%.",
+    "crumbs": [
+      "Calibration and quantification",
+      "Calibration curves (4.4 and 4.5)"
+    ]
+  },
+  {
+    "objectID": "calibration-curves.html#the-samples-on-the-curve",
+    "href": "calibration-curves.html#the-samples-on-the-curve",
+    "title": "Calibration curves (4.4 and 4.5)",
+    "section": "4.5 The samples on the curve",
+    "text": "4.5 The samples on the curve\n\n\n\n\n\n\n\n\nFigure 2\n\n\n\n\nThe line is the fitted calibration curve (linear-1/x2 for this compound). The black points are the calibration samples, the coloured ones the QCs and the study samples by class, placed at the concentration the curve gives them.\nHow to read it\n\nSamples in the white area are within the calibration range and quantified.\nSamples in the grey areas are below the LLOQ (light) or the LOD (dark). Depending on the setting Replace values below the LOD/LLOQ, their concentrations are replaced (LLOQ/2 or LLOQ/4) or reported as n.q. / n.d..\nSamples in the olive area are above the ULOQ: within the curve but above its linear range, or extrapolated above its highest level. Treat these values with care, or dilute and re-measure.\nA curve far from its calibration points, or points bending away at the top, suggests that the linear range is shorter than the calibration range; see the notes in table 4.2 and the option Enforce linear range.\n\n\n\n\n\n\n\nTipIn the app\n\n\n\nUse the arrow keys ↑ / ↓ in table 4.2 to step through the compounds; both figures follow at once. With the processing option Log scale for calibration curve fitting, both figures have log axes, which show the low concentrations better.",
+    "crumbs": [
+      "Calibration and quantification",
+      "Calibration curves (4.4 and 4.5)"
+    ]
+  }
+]

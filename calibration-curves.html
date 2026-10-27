@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Calibration curves (4.4 and 4.5) – QuaNTA tutorial</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-7b89279ff1a6dce999919e0e67d4d9ec.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-4019300521e2fafc2e7823f47fa79fcd.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="site_libs/htmlwidgets-1.6.4/htmlwidgets.js"></script>
+
+<script src="site_libs/plotly-binding-4.11.0/plotly.js"></script>
+
+<script src="site_libs/typedarray-0.1/typedarray.min.js"></script>
+
+<script src="site_libs/jquery-3.5.1/jquery.min.js"></script>
+
+<link href="site_libs/crosstalk-1.2.2/css/crosstalk.min.css" rel="stylesheet">
+
+<script src="site_libs/crosstalk-1.2.2/js/crosstalk.min.js"></script>
+
+<link href="site_libs/plotly-htmlwidgets-css-2.11.1/plotly-htmlwidgets.css" rel="stylesheet">
+
+<script src="site_libs/plotly-main-2.11.1/plotly-latest.min.js"></script>
+
+
+
+</head>
+
+<body class="nav-sidebar docked quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./calibration-curves.html">Calibration and quantification</a></li><li class="breadcrumb-item"><a href="./calibration-curves.html">Calibration curves (4.4 and 4.5)</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+      <a href="./index.html" class="sidebar-logo-link">
+      </a>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">QuaNTA tutorial</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Calibration and quantification</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./calibration-curves.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Calibration curves (4.4 and 4.5)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#the-calibration-points" id="toc-the-calibration-points" class="nav-link active" data-scroll-target="#the-calibration-points">4.4 The calibration points</a></li>
+  <li><a href="#the-samples-on-the-curve" id="toc-the-samples-on-the-curve" class="nav-link" data-scroll-target="#the-samples-on-the-curve">4.5 The samples on the curve</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/blob/main/tutorial/calibration-curves.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./calibration-curves.html">Calibration and quantification</a></li><li class="breadcrumb-item"><a href="./calibration-curves.html">Calibration curves (4.4 and 4.5)</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Calibration curves (4.4 and 4.5)</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>For every targeted compound (<code>Quant</code> in the MS-DIAL comment), QuaNTA fits a calibration curve to the calibration samples (<code>Cal…</code> classes) and uses it to turn the signal of every sample into a concentration. Section 4 of the app shows the curves one compound at a time: choose the compound in table <strong>4.2</strong>, and figures <strong>4.4</strong> and <strong>4.5</strong> follow.</p>
+<p>The examples below show <strong>LysoPC(18:1)</strong> in batch 1.</p>
+<section id="the-calibration-points" class="level2">
+<h2 class="anchored" data-anchor-id="the-calibration-points">4.4 The calibration points</h2>
+<div class="cell">
+<div id="fig-points" class="cell-output-display quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-points-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div id="htmlwidget-7de12223246a194f943c" style="width:100%;height:386px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-7de12223246a194f943c">{"x":{"visdat":{"418412a8463a":["function () ","plotlyVisDat"]},"cur_data":"418412a8463a","attrs":{"418412a8463a":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20],"y":[5047439.9658815889,10164897.238391135,24368700.413930818,45180485.491053514,89758773.477089331,202846008.47961608,428593508.39749646,806379388.06101394,5008173.7543212455,9275696.7098505162,23723526.678954769,45154982.063601218,91189747.034987077,250501206.46202886,452139395.44960183,872025944.53265822,5062685.3808883075,9689535.965657372,22846707.810728911,48455210.45942124,93570301.618948728,238297416.92260072,450397261.33377445,865471981.46640682],"type":"scatter","mode":"markers","name":"Within limits","legendgroup":"Within limits","marker":{"color":"#009E73","size":8,"symbol":["circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle"]},"text":["Batch: 1<br>inj: 7, conc: 0.1<br>Name: Cal0-1_E_B1_7<br>int: 5.047E+06","Batch: 1<br>inj: 8, conc: 0.2<br>Name: Cal0-2_E_B1_8<br>int: 1.016E+07","Batch: 1<br>inj: 9, conc: 0.5<br>Name: Cal0-5_E_B1_9<br>int: 2.437E+07","Batch: 1<br>inj: 10, conc: 1<br>Name: Cal1_E_B1_10<br>int: 4.518E+07","Batch: 1<br>inj: 11, conc: 2<br>Name: Cal2_E_B1_11<br>int: 8.976E+07","Batch: 1<br>inj: 12, conc: 5<br>Name: Cal5_E_B1_12<br>int: 2.028E+08","Batch: 1<br>inj: 13, conc: 10<br>Name: Cal10_E_B1_13<br>int: 4.286E+08","Batch: 1<br>inj: 14, conc: 20<br>Name: Cal20_E_B1_14<br>int: 8.064E+08","Batch: 1<br>inj: 49, conc: 0.1<br>Name: Cal0-1_E_B1_49<br>int: 5.008E+06","Batch: 1<br>inj: 50, conc: 0.2<br>Name: Cal0-2_E_B1_50<br>int: 9.276E+06","Batch: 1<br>inj: 51, conc: 0.5<br>Name: Cal0-5_E_B1_51<br>int: 2.372E+07","Batch: 1<br>inj: 52, conc: 1<br>Name: Cal1_E_B1_52<br>int: 4.515E+07","Batch: 1<br>inj: 53, conc: 2<br>Name: Cal2_E_B1_53<br>int: 9.119E+07","Batch: 1<br>inj: 54, conc: 5<br>Name: Cal5_E_B1_54<br>int: 2.505E+08","Batch: 1<br>inj: 55, conc: 10<br>Name: Cal10_E_B1_55<br>int: 4.521E+08","Batch: 1<br>inj: 56, conc: 20<br>Name: Cal20_E_B1_56<br>int: 8.720E+08","Batch: 1<br>inj: 90, conc: 0.1<br>Name: Cal0-1_E_B1_90<br>int: 5.063E+06","Batch: 1<br>inj: 91, conc: 0.2<br>Name: Cal0-2_E_B1_91<br>int: 9.690E+06","Batch: 1<br>inj: 92, conc: 0.5<br>Name: Cal0-5_E_B1_92<br>int: 2.285E+07","Batch: 1<br>inj: 93, conc: 1<br>Name: Cal1_E_B1_93<br>int: 4.846E+07","Batch: 1<br>inj: 94, conc: 2<br>Name: Cal2_E_B1_94<br>int: 9.357E+07","Batch: 1<br>inj: 95, conc: 5<br>Name: Cal5_E_B1_95<br>int: 2.383E+08","Batch: 1<br>inj: 96, conc: 10<br>Name: Cal10_E_B1_96<br>int: 4.504E+08","Batch: 1<br>inj: 97, conc: 20<br>Name: Cal20_E_B1_97<br>int: 8.655E+08"],"hoverinfo":"text","inherit":true},"418412a8463a.1":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[50,50,50],"y":[1679297574.1041338,1907822303.5134561,1589983609.0379517],"type":"scatter","mode":"markers","name":"Above the ULOQ","legendgroup":"Above the ULOQ","marker":{"color":"#999933","size":8,"symbol":["circle","circle","circle"]},"text":["Batch: 1<br>inj: 15, conc: 50<br>Name: Cal50_E_B1_15<br>int: 1.679E+09","Batch: 1<br>inj: 57, conc: 50<br>Name: Cal50_E_B1_57<br>int: 1.908E+09","Batch: 1<br>inj: 98, conc: 50<br>Name: Cal50_E_B1_98<br>int: 1.590E+09"],"hoverinfo":"text","inherit":true},"418412a8463a.2":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0.0050000000000000001,0.01,0.050000000000000003,0.0050000000000000001,0.01,0.050000000000000003,0.0050000000000000001,0.01,0.050000000000000003],"y":[698491.82773995295,854794.1023017664,2586646.426119939,603666.25398353138,1008634.9928529384,2856041.1876082039,636489.86542986752,881473.73559561453,2535138.9113407154],"type":"scatter","mode":"markers","name":"Out-of-range","legendgroup":"Out-of-range","marker":{"color":"gray","size":8,"symbol":["circle","circle","circle","circle","circle","circle","circle","circle","circle"]},"text":["Batch: 1<br>inj: 3, conc: 0.005<br>Name: Cal0-005_E_B1_3<br>int: 6.985E+05","Batch: 1<br>inj: 4, conc: 0.01<br>Name: Cal0-01_E_B1_4<br>int: 8.548E+05","Batch: 1<br>inj: 6, conc: 0.05<br>Name: Cal0-05_E_B1_6<br>int: 2.587E+06","Batch: 1<br>inj: 45, conc: 0.005<br>Name: Cal0-005_E_B1_45<br>int: 6.037E+05","Batch: 1<br>inj: 46, conc: 0.01<br>Name: Cal0-01_E_B1_46<br>int: 1.009E+06","Batch: 1<br>inj: 48, conc: 0.05<br>Name: Cal0-05_E_B1_48<br>int: 2.856E+06","Batch: 1<br>inj: 86, conc: 0.005<br>Name: Cal0-005_E_B1_86<br>int: 6.365E+05","Batch: 1<br>inj: 87, conc: 0.01<br>Name: Cal0-01_E_B1_87<br>int: 8.815E+05","Batch: 1<br>inj: 89, conc: 0.05<br>Name: Cal0-05_E_B1_89<br>int: 2.535E+06"],"hoverinfo":"text","inherit":true},"418412a8463a.3":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0,0,0],"y":[332792.71047138411,449159.06250342634,430406.28870915395],"type":"scatter","mode":"markers","name":"Cal0","legendgroup":"Cal0","marker":{"color":"#D55E00","size":8,"symbol":["circle","circle","circle"]},"text":["Batch: 1<br>inj: 2, conc: 0<br>Name: Cal0_E_B1_2<br>int: 3.328E+05","Batch: 1<br>inj: 44, conc: 0<br>Name: Cal0_E_B1_44<br>int: 4.492E+05","Batch: 1<br>inj: 85, conc: 0<br>Name: Cal0_E_B1_85<br>int: 4.304E+05"],"hoverinfo":"text","inherit":true},"418412a8463a.4":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0.02,0.02,0.02],"y":[1532455.5580445,1476022.9184420314,1549500.2247687792],"type":"scatter","mode":"markers","name":"LOD","legendgroup":"LOD","marker":{"color":"#0072B2","size":8,"symbol":["circle","circle","circle"]},"text":["Batch: 1<br>inj: 5, conc: 0.02<br>Name: Cal0-02_E_B1_5<br>int: 1.532E+06","Batch: 1<br>inj: 47, conc: 0.02<br>Name: Cal0-02_E_B1_47<br>int: 1.476E+06","Batch: 1<br>inj: 88, conc: 0.02<br>Name: Cal0-02_E_B1_88<br>int: 1.550E+06"],"hoverinfo":"text","inherit":true}},"layout":{"height":400,"margin":{"b":60,"l":70,"t":60,"r":150},"font":{"family":"Lato"},"hovermode":"closest","annotations":[{"text":"LysoPC(18:1)","xref":"paper","yref":"paper","x":0.5,"y":1.05,"xanchor":"center","yanchor":"middle","showarrow":false,"font":{"size":14}}],"shapes":[{"type":"rect","xref":"x","yref":"paper","x0":0,"x1":0.10000000000000001,"y0":0,"y1":1,"layer":"below","fillcolor":"rgba(64,64,64,0.25)","line":{"width":0}},{"type":"rect","xref":"x","yref":"paper","x0":0,"x1":0.02,"y0":0,"y1":1,"layer":"below","fillcolor":"rgba(64,64,64,0.25)","line":{"width":0}},{"type":"rect","xref":"x","yref":"paper","x0":20,"x1":50,"y0":0,"y1":1,"layer":"below","fillcolor":"rgba(153,153,51,0.15)","line":{"width":0}},{"type":"line","xref":"x","yref":"paper","x0":20,"x1":20,"y0":0,"y1":1,"line":{"color":"#999933","width":1.5,"dash":"dash"}},{"type":"rect","xref":"paper","yref":"paper","x0":0,"x1":1,"y0":1.01,"y1":1.0900000000000001,"fillcolor":"lightgray","line":{"width":0}}],"xaxis":{"domain":[0,1],"automargin":true,"title":"Calibrant concentration","type":"linear","exponentformat":"E"},"yaxis":{"domain":[0,1],"automargin":true,"title":"Signal (normalized, blank-subtracted)","type":"linear","exponentformat":"E"},"legend":{"orientation":"v","x":1.02,"y":1,"xanchor":"left","tracegroupgap":10},"showlegend":true},"source":"A","config":{"modeBarButtonsToAdd":["hoverclosest","hovercompare"],"showSendToCloud":false},"data":[{"x":[0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20],"y":[5047439.9658815889,10164897.238391135,24368700.413930818,45180485.491053514,89758773.477089331,202846008.47961608,428593508.39749646,806379388.06101394,5008173.7543212455,9275696.7098505162,23723526.678954769,45154982.063601218,91189747.034987077,250501206.46202886,452139395.44960183,872025944.53265822,5062685.3808883075,9689535.965657372,22846707.810728911,48455210.45942124,93570301.618948728,238297416.92260072,450397261.33377445,865471981.46640682],"type":"scatter","mode":"markers","name":"Within limits","legendgroup":"Within limits","marker":{"color":"#009E73","size":8,"symbol":["circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle","circle"],"line":{"color":"rgba(31,119,180,1)"}},"text":["Batch: 1<br>inj: 7, conc: 0.1<br>Name: Cal0-1_E_B1_7<br>int: 5.047E+06","Batch: 1<br>inj: 8, conc: 0.2<br>Name: Cal0-2_E_B1_8<br>int: 1.016E+07","Batch: 1<br>inj: 9, conc: 0.5<br>Name: Cal0-5_E_B1_9<br>int: 2.437E+07","Batch: 1<br>inj: 10, conc: 1<br>Name: Cal1_E_B1_10<br>int: 4.518E+07","Batch: 1<br>inj: 11, conc: 2<br>Name: Cal2_E_B1_11<br>int: 8.976E+07","Batch: 1<br>inj: 12, conc: 5<br>Name: Cal5_E_B1_12<br>int: 2.028E+08","Batch: 1<br>inj: 13, conc: 10<br>Name: Cal10_E_B1_13<br>int: 4.286E+08","Batch: 1<br>inj: 14, conc: 20<br>Name: Cal20_E_B1_14<br>int: 8.064E+08","Batch: 1<br>inj: 49, conc: 0.1<br>Name: Cal0-1_E_B1_49<br>int: 5.008E+06","Batch: 1<br>inj: 50, conc: 0.2<br>Name: Cal0-2_E_B1_50<br>int: 9.276E+06","Batch: 1<br>inj: 51, conc: 0.5<br>Name: Cal0-5_E_B1_51<br>int: 2.372E+07","Batch: 1<br>inj: 52, conc: 1<br>Name: Cal1_E_B1_52<br>int: 4.515E+07","Batch: 1<br>inj: 53, conc: 2<br>Name: Cal2_E_B1_53<br>int: 9.119E+07","Batch: 1<br>inj: 54, conc: 5<br>Name: Cal5_E_B1_54<br>int: 2.505E+08","Batch: 1<br>inj: 55, conc: 10<br>Name: Cal10_E_B1_55<br>int: 4.521E+08","Batch: 1<br>inj: 56, conc: 20<br>Name: Cal20_E_B1_56<br>int: 8.720E+08","Batch: 1<br>inj: 90, conc: 0.1<br>Name: Cal0-1_E_B1_90<br>int: 5.063E+06","Batch: 1<br>inj: 91, conc: 0.2<br>Name: Cal0-2_E_B1_91<br>int: 9.690E+06","Batch: 1<br>inj: 92, conc: 0.5<br>Name: Cal0-5_E_B1_92<br>int: 2.285E+07","Batch: 1<br>inj: 93, conc: 1<br>Name: Cal1_E_B1_93<br>int: 4.846E+07","Batch: 1<br>inj: 94, conc: 2<br>Name: Cal2_E_B1_94<br>int: 9.357E+07","Batch: 1<br>inj: 95, conc: 5<br>Name: Cal5_E_B1_95<br>int: 2.383E+08","Batch: 1<br>inj: 96, conc: 10<br>Name: Cal10_E_B1_96<br>int: 4.504E+08","Batch: 1<br>inj: 97, conc: 20<br>Name: Cal20_E_B1_97<br>int: 8.655E+08"],"hoverinfo":["text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text"],"error_y":{"color":"rgba(31,119,180,1)"},"error_x":{"color":"rgba(31,119,180,1)"},"line":{"color":"rgba(31,119,180,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[50,50,50],"y":[1679297574.1041338,1907822303.5134561,1589983609.0379517],"type":"scatter","mode":"markers","name":"Above the ULOQ","legendgroup":"Above the ULOQ","marker":{"color":"#999933","size":8,"symbol":["circle","circle","circle"],"line":{"color":"rgba(255,127,14,1)"}},"text":["Batch: 1<br>inj: 15, conc: 50<br>Name: Cal50_E_B1_15<br>int: 1.679E+09","Batch: 1<br>inj: 57, conc: 50<br>Name: Cal50_E_B1_57<br>int: 1.908E+09","Batch: 1<br>inj: 98, conc: 50<br>Name: Cal50_E_B1_98<br>int: 1.590E+09"],"hoverinfo":["text","text","text"],"error_y":{"color":"rgba(255,127,14,1)"},"error_x":{"color":"rgba(255,127,14,1)"},"line":{"color":"rgba(255,127,14,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[0.0050000000000000001,0.01,0.050000000000000003,0.0050000000000000001,0.01,0.050000000000000003,0.0050000000000000001,0.01,0.050000000000000003],"y":[698491.82773995295,854794.1023017664,2586646.426119939,603666.25398353138,1008634.9928529384,2856041.1876082039,636489.86542986752,881473.73559561453,2535138.9113407154],"type":"scatter","mode":"markers","name":"Out-of-range","legendgroup":"Out-of-range","marker":{"color":"gray","size":8,"symbol":["circle","circle","circle","circle","circle","circle","circle","circle","circle"],"line":{"color":"rgba(44,160,44,1)"}},"text":["Batch: 1<br>inj: 3, conc: 0.005<br>Name: Cal0-005_E_B1_3<br>int: 6.985E+05","Batch: 1<br>inj: 4, conc: 0.01<br>Name: Cal0-01_E_B1_4<br>int: 8.548E+05","Batch: 1<br>inj: 6, conc: 0.05<br>Name: Cal0-05_E_B1_6<br>int: 2.587E+06","Batch: 1<br>inj: 45, conc: 0.005<br>Name: Cal0-005_E_B1_45<br>int: 6.037E+05","Batch: 1<br>inj: 46, conc: 0.01<br>Name: Cal0-01_E_B1_46<br>int: 1.009E+06","Batch: 1<br>inj: 48, conc: 0.05<br>Name: Cal0-05_E_B1_48<br>int: 2.856E+06","Batch: 1<br>inj: 86, conc: 0.005<br>Name: Cal0-005_E_B1_86<br>int: 6.365E+05","Batch: 1<br>inj: 87, conc: 0.01<br>Name: Cal0-01_E_B1_87<br>int: 8.815E+05","Batch: 1<br>inj: 89, conc: 0.05<br>Name: Cal0-05_E_B1_89<br>int: 2.535E+06"],"hoverinfo":["text","text","text","text","text","text","text","text","text"],"error_y":{"color":"rgba(44,160,44,1)"},"error_x":{"color":"rgba(44,160,44,1)"},"line":{"color":"rgba(44,160,44,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[0,0,0],"y":[332792.71047138411,449159.06250342634,430406.28870915395],"type":"scatter","mode":"markers","name":"Cal0","legendgroup":"Cal0","marker":{"color":"#D55E00","size":8,"symbol":["circle","circle","circle"],"line":{"color":"rgba(214,39,40,1)"}},"text":["Batch: 1<br>inj: 2, conc: 0<br>Name: Cal0_E_B1_2<br>int: 3.328E+05","Batch: 1<br>inj: 44, conc: 0<br>Name: Cal0_E_B1_44<br>int: 4.492E+05","Batch: 1<br>inj: 85, conc: 0<br>Name: Cal0_E_B1_85<br>int: 4.304E+05"],"hoverinfo":["text","text","text"],"error_y":{"color":"rgba(214,39,40,1)"},"error_x":{"color":"rgba(214,39,40,1)"},"line":{"color":"rgba(214,39,40,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[0.02,0.02,0.02],"y":[1532455.5580445,1476022.9184420314,1549500.2247687792],"type":"scatter","mode":"markers","name":"LOD","legendgroup":"LOD","marker":{"color":"#0072B2","size":8,"symbol":["circle","circle","circle"],"line":{"color":"rgba(148,103,189,1)"}},"text":["Batch: 1<br>inj: 5, conc: 0.02<br>Name: Cal0-02_E_B1_5<br>int: 1.532E+06","Batch: 1<br>inj: 47, conc: 0.02<br>Name: Cal0-02_E_B1_47<br>int: 1.476E+06","Batch: 1<br>inj: 88, conc: 0.02<br>Name: Cal0-02_E_B1_88<br>int: 1.550E+06"],"hoverinfo":["text","text","text"],"error_y":{"color":"rgba(148,103,189,1)"},"error_x":{"color":"rgba(148,103,189,1)"},"line":{"color":"rgba(148,103,189,1)"},"xaxis":"x","yaxis":"y","frame":null}],"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.20000000000000001,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-points-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;1
+</figcaption>
+</figure>
+</div>
+</div>
+<p>Each point is one injection of a calibration sample: its spiked (nominal) concentration on the x axis and its measured signal on the y axis. Points of the same concentration are replicates; with several batches, the symbol tells the batch.</p>
+<p><strong>How to read it</strong></p>
+<ul>
+<li><strong>Colours</strong> tell the role of each level:
+<ul>
+<li><em>Cal0</em> (red): the zero calibrant. Its signal gives the thresholds of the LOD (3×) and the LLOQ (10×, or the mean plus 3 / 10 standard deviations).</li>
+<li><em>LOD</em> (blue): the lowest level whose mean signal is above the LOD threshold.</li>
+<li><em>Within limits</em> (green): the levels the curve is fitted on, from the LLOQ upwards.</li>
+<li><em>Above the ULOQ</em> (olive): levels in the curve but above its linear range.</li>
+<li><em>Out-of-range</em> (grey): levels not used for the curve.</li>
+</ul></li>
+<li><strong>Shading</strong>: dark grey below the LOD, light grey below the LLOQ, and olive above the ULOQ (dashed line), the top of the linear range.</li>
+<li><strong>Replicates should lie close together.</strong> A level with widely spread replicates is a sign of a pipetting or injection problem; with the RSD% option, the LLOQ level must have an RSD% of at most 20%.</li>
+</ul>
+</section>
+<section id="the-samples-on-the-curve" class="level2">
+<h2 class="anchored" data-anchor-id="the-samples-on-the-curve">4.5 The samples on the curve</h2>
+<div class="cell">
+<div id="fig-samples" class="cell-output-display quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-samples-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div id="htmlwidget-52503012306bcda5d0db" style="width:100%;height:386px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-52503012306bcda5d0db">{"x":{"visdat":{"418438557a98":["function () ","plotlyVisDat"]},"cur_data":"418438557a98","attrs":{"418438557a98":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0.10000000000000001,0.1090909090909091,0.11818181818181819,0.12727272727272729,0.13636363636363635,0.14545454545454545,0.15454545454545454,0.16363636363636364,0.17272727272727273,0.18181818181818182,0.19090909090909092,0.20000000000000001,0.20909090909090911,0.2181818181818182,0.22727272727272727,0.23636363636363636,0.24545454545454545,0.25454545454545452,0.26363636363636367,0.27272727272727271,0.28181818181818186,0.29090909090909089,0.29999999999999999,0.30909090909090908,0.31818181818181818,0.32727272727272727,0.33636363636363636,0.34545454545454546,0.3545454545454545,0.36363636363636365,0.37272727272727268,0.38181818181818183,0.39090909090909087,0.40000000000000002,0.40909090909090906,0.41818181818181821,0.42727272727272725,0.4363636363636364,0.44545454545454544,0.45454545454545459,0.46363636363636362,0.47272727272727266,0.48181818181818181,0.49090909090909085,0.5,0.50909090909090904,0.51818181818181819,0.52727272727272723,0.53636363636363638,0.54545454545454541,0.55454545454545456,0.5636363636363636,0.57272727272727275,0.58181818181818179,0.59090909090909094,0.59999999999999998,0.60404040404040404,0.60909090909090902,0.61818181818181817,0.6272727272727272,0.63636363636363635,0.64545454545454539,0.65454545454545454,0.66363636363636358,0.67272727272727273,0.68181818181818177,0.69090909090909081,0.69999999999999996,0.70909090909090899,0.71818181818181814,0.72727272727272718,0.73636363636363633,0.74545454545454537,0.75454545454545452,0.76363636363636356,0.77272727272727271,0.78181818181818175,0.79090909090909089,0.79999999999999993,0.80909090909090908,0.81818181818181812,0.82727272727272727,0.83636363636363631,0.84545454545454535,0.8545454545454545,0.86363636363636354,0.87272727272727268,0.88181818181818172,0.89090909090909087,0.89999999999999991,0.90909090909090906,0.9181818181818181,0.92727272727272725,0.93636363636363629,0.94545454545454544,0.95454545454545447,0.96363636363636362,0.97272727272727266,0.9818181818181817,0.99090909090909085,1.1080808080808082,1.6121212121212123,2.1161616161616164,2.6202020202020204,3.1242424242424245,3.6282828282828286,4.1323232323232322,4.6363636363636367,5.1404040404040403,5.6444444444444439,6.1484848484848484,6.652525252525253,7.1565656565656566,7.6606060606060602,8.1646464646464647,8.6686868686868692,9.1727272727272737,9.6767676767676765,10.180808080808081,10.684848484848485,11.188888888888888,11.692929292929293,12.196969696969697,12.701010101010102,13.205050505050506,13.709090909090909,14.213131313131314,14.717171717171718,15.221212121212121,15.725252525252525,16.229292929292932,16.733333333333334,17.237373737373741,17.741414141414143,18.24545454545455,18.749494949494952,19.253535353535355,19.757575757575761,20.261616161616164,20.765656565656567,21.269696969696973,21.773737373737376,22.277777777777779,22.781818181818185,23.285858585858588,23.789898989898994,24.293939393939397,24.797979797979799,25.302020202020206,25.806060606060608,26.310101010101015,26.814141414141417,27.31818181818182,27.822222222222226,28.326262626262629,28.830303030303032,29.334343434343438,29.838383838383841,30.342424242424244,30.84646464646465,31.350505050505053,31.854545454545459,32.358585858585862,32.862626262626264,33.366666666666667,33.870707070707077,34.37474747474748,34.878787878787882,35.382828282828285,35.886868686868688,36.390909090909098,36.8949494949495,37.398989898989903,37.903030303030306,38.407070707070709,38.911111111111111,39.415151515151521,39.919191919191924,40.423232323232327,40.927272727272729,41.431313131313132,41.935353535353542,42.439393939393945,42.943434343434348,43.44747474747475,43.951515151515153,44.455555555555556,44.959595959595966,45.463636363636368,45.967676767676771,46.471717171717174,46.975757575757576,47.479797979797986,47.983838383838389,48.487878787878792,48.991919191919195,49.495959595959597,50],"y":[5172482.0731701851,5566180.8780183764,5959879.6828665687,6353578.48771476,6747277.2925629504,7140976.0974111417,7534674.9022593331,7928373.7071075253,8322072.5119557166,8715771.316803908,9109470.1216521002,9503168.9265002906,9896867.7313484829,10290566.536196673,10684265.341044864,11077964.145893056,11471662.950741248,11865361.755589439,12259060.560437633,12652759.365285821,13046458.170134015,13440156.974982204,13833855.779830396,14227554.584678587,14621253.389526779,15014952.194374971,15408650.999223161,15802349.804071354,16196048.608919542,16589747.413767736,16983446.218615927,17377145.023464121,17770843.828312308,18164542.633160502,18558241.438008692,18951940.242856886,19345639.047705077,19739337.852553267,20133036.657401457,20526735.462249652,20920434.267097842,21314133.071946029,21707831.876794223,22101530.681642413,22495229.486490607,22888928.291338798,23282627.096186992,23676325.901035178,24070024.705883373,24463723.510731563,24857422.315579757,25251121.120427947,25644819.925276138,26038518.730124328,26432217.534972522,26825916.339820713,27000893.58641991,27219615.144668899,27613313.949517094,28007012.754365284,28400711.559213478,28794410.364061669,29188109.168909863,29581807.973758049,29975506.778606243,30369205.583454434,30762904.388302624,31156603.193150815,31550301.997999005,31944000.802847199,32337699.60769539,32731398.412543584,33125097.21739177,33518796.022239964,33912494.827088155,34306193.631936349,34699892.436784536,35093591.24163273,35487290.046480924,35880988.851329118,36274687.656177305,36668386.461025499,37062085.265873685,37455784.07072188,37849482.875570074,38243181.68041826,38636880.485266455,39030579.290114641,39424278.094962835,39817976.899811022,40211675.704659216,40605374.50950741,40999073.314355604,41392772.119203791,41786470.924051985,42180169.728900172,42573868.533748366,42967567.33859656,43361266.143444747,43754964.948292941,48829305.099669635,70657716.61291936,92486128.126169086,114314539.63941881,136142951.15266854,157971362.66591826,179799774.17916796,201628185.69241771,223456597.20566741,245285008.71891713,267113420.23216686,288941831.74541664,310770243.25866634,332598654.77191603,354427066.28516579,376255477.79841554,398083889.3116653,419912300.82491493,441740712.33816469,463569123.85141444,485397535.36466414,507225946.87791383,529054358.39116359,550882769.90441334,572711181.41766298,594539592.93091273,616368004.44416249,638196415.95741224,660024827.47066188,681853238.98391163,703681650.49716139,725510062.01041114,747338473.5236609,769166885.03691053,790995296.55016041,812823708.06341004,834652119.57665968,856480531.08990955,878308942.60315919,900137354.11640894,921965765.6296587,943794177.14290833,965622588.65615809,987451000.16940784,1009279411.6826575,1031107823.1959074,1052936234.709157,1074764646.2224066,1096593057.7356565,1118421469.2489061,1140249880.762156,1162078292.2754056,1183906703.7886553,1205735115.3019052,1227563526.8151548,1249391938.3284044,1271220349.8416543,1293048761.3549039,1314877172.8681536,1336705584.3814034,1358533995.8946531,1380362407.407903,1402190818.9211526,1424019230.4344022,1445847641.9476519,1467676053.460902,1489504464.9741516,1511332876.4874012,1533161288.0006509,1554989699.5139005,1576818111.0271506,1598646522.5404003,1620474934.0536499,1642303345.5668995,1664131757.0801492,1685960168.5933988,1707788580.1066489,1729616991.6198986,1751445403.1331482,1773273814.6463978,1795102226.1596475,1816930637.6728976,1838759049.1861472,1860587460.6993968,1882415872.2126465,1904244283.7258961,1926072695.2391458,1947901106.7523959,1969729518.2656455,1991557929.7788951,2013386341.2921448,2035214752.8053944,2057043164.3186445,2078871575.8318942,2100699987.3451438,2122528398.8583934,2144356810.3716431,2166185221.8848929],"type":"scatter","mode":"lines","name":"Calibration curve","hoverinfo":"skip","line":{"color":"rgba(95,158,160,0.8)","width":2},"inherit":true},"418438557a98.1":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,50,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,50,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,50],"y":[5047439.9658815889,10164897.238391135,24368700.413930818,45180485.491053514,89758773.477089331,202846008.47961608,428593508.39749646,806379388.06101394,1679297574.1041338,5008173.7543212455,9275696.7098505162,23723526.678954769,45154982.063601218,91189747.034987077,250501206.46202886,452139395.44960183,872025944.53265822,1907822303.5134561,5062685.3808883075,9689535.965657372,22846707.810728911,48455210.45942124,93570301.618948728,238297416.92260072,450397261.33377445,865471981.46640682,1589983609.0379517],"type":"scatter","mode":"markers","name":"Calibration points","marker":{"color":"black","size":6},"text":["batch: 1<br>inj: 7, conc: 0.1<br>name: Cal0-1_E_B1_7<br>int: 5.047E+06","batch: 1<br>inj: 8, conc: 0.2<br>name: Cal0-2_E_B1_8<br>int: 1.016E+07","batch: 1<br>inj: 9, conc: 0.5<br>name: Cal0-5_E_B1_9<br>int: 2.437E+07","batch: 1<br>inj: 10, conc: 1<br>name: Cal1_E_B1_10<br>int: 4.518E+07","batch: 1<br>inj: 11, conc: 2<br>name: Cal2_E_B1_11<br>int: 8.976E+07","batch: 1<br>inj: 12, conc: 5<br>name: Cal5_E_B1_12<br>int: 2.028E+08","batch: 1<br>inj: 13, conc: 10<br>name: Cal10_E_B1_13<br>int: 4.286E+08","batch: 1<br>inj: 14, conc: 20<br>name: Cal20_E_B1_14<br>int: 8.064E+08","batch: 1<br>inj: 15, conc: 50<br>name: Cal50_E_B1_15<br>int: 1.679E+09","batch: 1<br>inj: 49, conc: 0.1<br>name: Cal0-1_E_B1_49<br>int: 5.008E+06","batch: 1<br>inj: 50, conc: 0.2<br>name: Cal0-2_E_B1_50<br>int: 9.276E+06","batch: 1<br>inj: 51, conc: 0.5<br>name: Cal0-5_E_B1_51<br>int: 2.372E+07","batch: 1<br>inj: 52, conc: 1<br>name: Cal1_E_B1_52<br>int: 4.515E+07","batch: 1<br>inj: 53, conc: 2<br>name: Cal2_E_B1_53<br>int: 9.119E+07","batch: 1<br>inj: 54, conc: 5<br>name: Cal5_E_B1_54<br>int: 2.505E+08","batch: 1<br>inj: 55, conc: 10<br>name: Cal10_E_B1_55<br>int: 4.521E+08","batch: 1<br>inj: 56, conc: 20<br>name: Cal20_E_B1_56<br>int: 8.720E+08","batch: 1<br>inj: 57, conc: 50<br>name: Cal50_E_B1_57<br>int: 1.908E+09","batch: 1<br>inj: 90, conc: 0.1<br>name: Cal0-1_E_B1_90<br>int: 5.063E+06","batch: 1<br>inj: 91, conc: 0.2<br>name: Cal0-2_E_B1_91<br>int: 9.690E+06","batch: 1<br>inj: 92, conc: 0.5<br>name: Cal0-5_E_B1_92<br>int: 2.285E+07","batch: 1<br>inj: 93, conc: 1<br>name: Cal1_E_B1_93<br>int: 4.846E+07","batch: 1<br>inj: 94, conc: 2<br>name: Cal2_E_B1_94<br>int: 9.357E+07","batch: 1<br>inj: 95, conc: 5<br>name: Cal5_E_B1_95<br>int: 2.383E+08","batch: 1<br>inj: 96, conc: 10<br>name: Cal10_E_B1_96<br>int: 4.504E+08","batch: 1<br>inj: 97, conc: 20<br>name: Cal20_E_B1_97<br>int: 8.655E+08","batch: 1<br>inj: 98, conc: 50<br>name: Cal50_E_B1_98<br>int: 1.590E+09"],"hoverinfo":"text","inherit":true},"418438557a98.2":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[1.3445315742981323,1.209941073301203],"y":[59069247.346841596,53240554.214336455],"type":"scatter","mode":"markers","name":"QC4","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998},"text":["batch: 1<br>inj: 17, conc: 1.345<br>name: QC4_QC_B1_17<br>int: 5.907E+07","batch: 1<br>inj: 22, conc: 1.21<br>name: QC4_QC_B1_22<br>int: 5.324E+07"],"hoverinfo":"text","inherit":true},"418438557a98.3":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[1.3485978411358734,1.3967615340624708],"y":[59245344.630204968,61331163.347855404],"type":"scatter","mode":"markers","name":"QC1","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998},"text":["batch: 1<br>inj: 28, conc: 1.349<br>name: QC1_QC_B1_28<br>int: 5.925E+07","batch: 1<br>inj: 40, conc: 1.397<br>name: QC1_QC_B1_40<br>int: 6.133E+07"],"hoverinfo":"text","inherit":true},"418438557a98.4":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[1.4013281218379303,1.2683133830259949],"y":[61528927.964293011,55768476.157573149],"type":"scatter","mode":"markers","name":"QCall","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998},"text":["batch: 1<br>inj: 34, conc: 1.401<br>name: QCall_B1_34<br>int: 6.153E+07","batch: 1<br>inj: 83, conc: 1.268<br>name: QCall_B1_83<br>int: 5.577E+07"],"hoverinfo":"text","inherit":true},"418438557a98.5":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[1.4726386438319212,1.7023109764407365],"y":[64617163.36532785,74563552.879354402],"type":"scatter","mode":"markers","name":"QC3","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998},"text":["batch: 1<br>inj: 60, conc: 1.473<br>name: QC3_QC_B1_60<br>int: 6.462E+07","batch: 1<br>inj: 72, conc: 1.702<br>name: QC3_QC_B1_72<br>int: 7.456E+07"],"hoverinfo":"text","inherit":true},"418438557a98.6":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[2.6827596544944465,2.3796496957827697],"y":[117023714.88347524,103896971.75041434],"type":"scatter","mode":"markers","name":"QC2","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998},"text":["batch: 1<br>inj: 66, conc: 2.683<br>name: QC2_QC_B1_66<br>int: 1.170E+08","batch: 1<br>inj: 78, conc: 2.38<br>name: QC2_QC_B1_78<br>int: 1.039E+08"],"hoverinfo":"text","inherit":true},"418438557a98.7":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0.47948232199037721,0.71427526948649578,0.26370104187035698,0.41507863584141058,0.32530799810712635,0.56998475061515119,0.56987444293612366,0.62377146861462585,0.65078474548209697,0.62608339881759656,0.95305046508710478,0.61764223755839331,0.3375124857415262,0.69221482631475628,0.41579262484228796,0.67995920495320694,0.48675805195107674,0.70852842674044225,0.69064821286593059,0.69176565566760295],"y":[21606673.10231927,31774820.412079934,12261861.572214145,18817551.133205991,14929865.926696749,25526049.880716819,25521272.800562959,27855384.205957808,29025244.63591104,27955506.663316026,42115426.416968755,27589946.402395319,15458404.068196002,30819451.699855052,18848471.761001211,30288699.116756521,21921762.183211084,31525942.648795042,30751606.577184256,30799999.525689766],"type":"scatter","mode":"markers","name":"Sick","marker":{"color":"#009E73","size":7,"opacity":0.84999999999999998},"text":["batch: 1<br>inj: 18, conc: 0.4795<br>name: S001_B1_18<br>int: 2.161E+07","batch: 1<br>inj: 19, conc: 0.7143<br>name: S002_B1_19<br>int: 3.177E+07","batch: 1<br>inj: 23, conc: 0.2637<br>name: S003_B1_23<br>int: 1.226E+07","batch: 1<br>inj: 24, conc: 0.4151<br>name: S004_B1_24<br>int: 1.882E+07","batch: 1<br>inj: 25, conc: 0.3253<br>name: S005_B1_25<br>int: 1.493E+07","batch: 1<br>inj: 29, conc: 0.57<br>name: S006_B1_29<br>int: 2.553E+07","batch: 1<br>inj: 36, conc: 0.5699<br>name: S007_B1_36<br>int: 2.552E+07","batch: 1<br>inj: 41, conc: 0.6238<br>name: S008_B1_41<br>int: 2.786E+07","batch: 1<br>inj: 42, conc: 0.6508<br>name: S009_B1_42<br>int: 2.903E+07","batch: 1<br>inj: 58, conc: 0.6261<br>name: S010_B1_58<br>int: 2.796E+07","batch: 1<br>inj: 59, conc: 0.9531<br>name: S011_B1_59<br>int: 4.212E+07","batch: 1<br>inj: 61, conc: 0.6176<br>name: S012_B1_61<br>int: 2.759E+07","batch: 1<br>inj: 63, conc: 0.3375<br>name: S013_B1_63<br>int: 1.546E+07","batch: 1<br>inj: 64, conc: 0.6922<br>name: S014_B1_64<br>int: 3.082E+07","batch: 1<br>inj: 69, conc: 0.4158<br>name: S015_B1_69<br>int: 1.885E+07","batch: 1<br>inj: 73, conc: 0.68<br>name: S016_B1_73<br>int: 3.029E+07","batch: 1<br>inj: 75, conc: 0.4868<br>name: S017_B1_75<br>int: 2.192E+07","batch: 1<br>inj: 77, conc: 0.7085<br>name: S018_B1_77<br>int: 3.153E+07","batch: 1<br>inj: 81, conc: 0.6906<br>name: S019_B1_81<br>int: 3.075E+07","batch: 1<br>inj: 82, conc: 0.6918<br>name: S020_B1_82<br>int: 3.080E+07"],"hoverinfo":"text","inherit":true},"418438557a98.8":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[1.0271714734680957,1.0186998116119512,1.2236781326388837,1.4277090039463332,0.7811960824296863,1.1064395359814421,1.4981408211744267,1.0812335797381885,1.6251607354774116,0.86276195860914762,1.3498279136112932,1.5838662630229792,1.1169506025615337,1.4641073104484614,2.1465499612509205,1.2310555507790559,0.96794522576436559,1.4084104074772787,1.4515519928008169],"y":[45325375.18248003,44958494.036217399,53835463.237107545,62671401.35755413,34672951.260352321,48758226.744635016,65721582.806812659,47666635.711352289,71222417.536643192,38205313.936859764,59298615.217184409,69434083.24690707,49213428.123163812,64247698.03207659,93802152.19189617,54154956.114619181,42760471.859453872,61835639.577391565,63703966.541316219],"type":"scatter","mode":"markers","name":"Healthy","marker":{"color":"#CC79A7","size":7,"opacity":0.84999999999999998},"text":["batch: 1<br>inj: 21, conc: 1.027<br>name: H002_B1_21<br>int: 4.533E+07","batch: 1<br>inj: 26, conc: 1.019<br>name: H003_B1_26<br>int: 4.496E+07","batch: 1<br>inj: 27, conc: 1.224<br>name: H004_B1_27<br>int: 5.384E+07","batch: 1<br>inj: 31, conc: 1.428<br>name: H005_B1_31<br>int: 6.267E+07","batch: 1<br>inj: 32, conc: 0.7812<br>name: H006_B1_32<br>int: 3.467E+07","batch: 1<br>inj: 33, conc: 1.106<br>name: H007_B1_33<br>int: 4.876E+07","batch: 1<br>inj: 35, conc: 1.498<br>name: H008_B1_35<br>int: 6.572E+07","batch: 1<br>inj: 37, conc: 1.081<br>name: H009_B1_37<br>int: 4.767E+07","batch: 1<br>inj: 38, conc: 1.625<br>name: H010_B1_38<br>int: 7.122E+07","batch: 1<br>inj: 39, conc: 0.8628<br>name: H011_B1_39<br>int: 3.821E+07","batch: 1<br>inj: 62, conc: 1.35<br>name: H012_B1_62<br>int: 5.930E+07","batch: 1<br>inj: 65, conc: 1.584<br>name: H013_B1_65<br>int: 6.943E+07","batch: 1<br>inj: 67, conc: 1.117<br>name: H014_B1_67<br>int: 4.921E+07","batch: 1<br>inj: 68, conc: 1.464<br>name: H015_B1_68<br>int: 6.425E+07","batch: 1<br>inj: 71, conc: 2.147<br>name: H016_B1_71<br>int: 9.380E+07","batch: 1<br>inj: 74, conc: 1.231<br>name: H017_B1_74<br>int: 5.415E+07","batch: 1<br>inj: 76, conc: 0.9679<br>name: H018_B1_76<br>int: 4.276E+07","batch: 1<br>inj: 79, conc: 1.408<br>name: H019_B1_79<br>int: 6.184E+07","batch: 1<br>inj: 80, conc: 1.452<br>name: H020_B1_80<br>int: 6.370E+07"],"hoverinfo":"text","inherit":true}},"layout":{"height":400,"margin":{"b":60,"l":70,"t":60,"r":150},"font":{"family":"Lato"},"hovermode":"closest","shapes":[{"type":"rect","xref":"x","yref":"paper","x0":0,"x1":0.10000000000000001,"y0":0,"y1":1,"layer":"below","fillcolor":"rgba(64,64,64,0.25)","line":{"width":0}},{"type":"rect","xref":"x","yref":"paper","x0":0,"x1":0.02,"y0":0,"y1":1,"layer":"below","fillcolor":"rgba(64,64,64,0.25)","line":{"width":0}},{"type":"rect","xref":"x","yref":"paper","x0":20,"x1":50,"y0":0,"y1":1,"layer":"below","fillcolor":"rgba(153,153,51,0.15)","line":{"width":0}},{"type":"line","xref":"x","yref":"paper","x0":20,"x1":20,"y0":0,"y1":1,"line":{"color":"#999933","width":1.5,"dash":"dash"}},{"type":"rect","xref":"paper","yref":"paper","x0":0,"x1":1,"y0":1.01,"y1":1.0900000000000001,"fillcolor":"lightgray","line":{"width":0}}],"annotations":[{"text":"LysoPC(18:1)","xref":"paper","yref":"paper","x":0.5,"y":1.05,"xanchor":"center","yanchor":"middle","showarrow":false,"font":{"size":14}}],"xaxis":{"domain":[0,1],"automargin":true,"title":"Concentration [ng/mL]","type":"linear","exponentformat":"E"},"yaxis":{"domain":[0,1],"automargin":true,"title":"Multivariate (PCA) normalized (blank adjusted)","type":"linear","exponentformat":"E"},"legend":{"orientation":"v","x":1.02,"y":1,"xanchor":"left"},"showlegend":true},"source":"A","config":{"modeBarButtonsToAdd":["hoverclosest","hovercompare"],"showSendToCloud":false},"data":[{"x":[0.10000000000000001,0.1090909090909091,0.11818181818181819,0.12727272727272729,0.13636363636363635,0.14545454545454545,0.15454545454545454,0.16363636363636364,0.17272727272727273,0.18181818181818182,0.19090909090909092,0.20000000000000001,0.20909090909090911,0.2181818181818182,0.22727272727272727,0.23636363636363636,0.24545454545454545,0.25454545454545452,0.26363636363636367,0.27272727272727271,0.28181818181818186,0.29090909090909089,0.29999999999999999,0.30909090909090908,0.31818181818181818,0.32727272727272727,0.33636363636363636,0.34545454545454546,0.3545454545454545,0.36363636363636365,0.37272727272727268,0.38181818181818183,0.39090909090909087,0.40000000000000002,0.40909090909090906,0.41818181818181821,0.42727272727272725,0.4363636363636364,0.44545454545454544,0.45454545454545459,0.46363636363636362,0.47272727272727266,0.48181818181818181,0.49090909090909085,0.5,0.50909090909090904,0.51818181818181819,0.52727272727272723,0.53636363636363638,0.54545454545454541,0.55454545454545456,0.5636363636363636,0.57272727272727275,0.58181818181818179,0.59090909090909094,0.59999999999999998,0.60404040404040404,0.60909090909090902,0.61818181818181817,0.6272727272727272,0.63636363636363635,0.64545454545454539,0.65454545454545454,0.66363636363636358,0.67272727272727273,0.68181818181818177,0.69090909090909081,0.69999999999999996,0.70909090909090899,0.71818181818181814,0.72727272727272718,0.73636363636363633,0.74545454545454537,0.75454545454545452,0.76363636363636356,0.77272727272727271,0.78181818181818175,0.79090909090909089,0.79999999999999993,0.80909090909090908,0.81818181818181812,0.82727272727272727,0.83636363636363631,0.84545454545454535,0.8545454545454545,0.86363636363636354,0.87272727272727268,0.88181818181818172,0.89090909090909087,0.89999999999999991,0.90909090909090906,0.9181818181818181,0.92727272727272725,0.93636363636363629,0.94545454545454544,0.95454545454545447,0.96363636363636362,0.97272727272727266,0.9818181818181817,0.99090909090909085,1.1080808080808082,1.6121212121212123,2.1161616161616164,2.6202020202020204,3.1242424242424245,3.6282828282828286,4.1323232323232322,4.6363636363636367,5.1404040404040403,5.6444444444444439,6.1484848484848484,6.652525252525253,7.1565656565656566,7.6606060606060602,8.1646464646464647,8.6686868686868692,9.1727272727272737,9.6767676767676765,10.180808080808081,10.684848484848485,11.188888888888888,11.692929292929293,12.196969696969697,12.701010101010102,13.205050505050506,13.709090909090909,14.213131313131314,14.717171717171718,15.221212121212121,15.725252525252525,16.229292929292932,16.733333333333334,17.237373737373741,17.741414141414143,18.24545454545455,18.749494949494952,19.253535353535355,19.757575757575761,20.261616161616164,20.765656565656567,21.269696969696973,21.773737373737376,22.277777777777779,22.781818181818185,23.285858585858588,23.789898989898994,24.293939393939397,24.797979797979799,25.302020202020206,25.806060606060608,26.310101010101015,26.814141414141417,27.31818181818182,27.822222222222226,28.326262626262629,28.830303030303032,29.334343434343438,29.838383838383841,30.342424242424244,30.84646464646465,31.350505050505053,31.854545454545459,32.358585858585862,32.862626262626264,33.366666666666667,33.870707070707077,34.37474747474748,34.878787878787882,35.382828282828285,35.886868686868688,36.390909090909098,36.8949494949495,37.398989898989903,37.903030303030306,38.407070707070709,38.911111111111111,39.415151515151521,39.919191919191924,40.423232323232327,40.927272727272729,41.431313131313132,41.935353535353542,42.439393939393945,42.943434343434348,43.44747474747475,43.951515151515153,44.455555555555556,44.959595959595966,45.463636363636368,45.967676767676771,46.471717171717174,46.975757575757576,47.479797979797986,47.983838383838389,48.487878787878792,48.991919191919195,49.495959595959597,50],"y":[5172482.0731701851,5566180.8780183764,5959879.6828665687,6353578.48771476,6747277.2925629504,7140976.0974111417,7534674.9022593331,7928373.7071075253,8322072.5119557166,8715771.316803908,9109470.1216521002,9503168.9265002906,9896867.7313484829,10290566.536196673,10684265.341044864,11077964.145893056,11471662.950741248,11865361.755589439,12259060.560437633,12652759.365285821,13046458.170134015,13440156.974982204,13833855.779830396,14227554.584678587,14621253.389526779,15014952.194374971,15408650.999223161,15802349.804071354,16196048.608919542,16589747.413767736,16983446.218615927,17377145.023464121,17770843.828312308,18164542.633160502,18558241.438008692,18951940.242856886,19345639.047705077,19739337.852553267,20133036.657401457,20526735.462249652,20920434.267097842,21314133.071946029,21707831.876794223,22101530.681642413,22495229.486490607,22888928.291338798,23282627.096186992,23676325.901035178,24070024.705883373,24463723.510731563,24857422.315579757,25251121.120427947,25644819.925276138,26038518.730124328,26432217.534972522,26825916.339820713,27000893.58641991,27219615.144668899,27613313.949517094,28007012.754365284,28400711.559213478,28794410.364061669,29188109.168909863,29581807.973758049,29975506.778606243,30369205.583454434,30762904.388302624,31156603.193150815,31550301.997999005,31944000.802847199,32337699.60769539,32731398.412543584,33125097.21739177,33518796.022239964,33912494.827088155,34306193.631936349,34699892.436784536,35093591.24163273,35487290.046480924,35880988.851329118,36274687.656177305,36668386.461025499,37062085.265873685,37455784.07072188,37849482.875570074,38243181.68041826,38636880.485266455,39030579.290114641,39424278.094962835,39817976.899811022,40211675.704659216,40605374.50950741,40999073.314355604,41392772.119203791,41786470.924051985,42180169.728900172,42573868.533748366,42967567.33859656,43361266.143444747,43754964.948292941,48829305.099669635,70657716.61291936,92486128.126169086,114314539.63941881,136142951.15266854,157971362.66591826,179799774.17916796,201628185.69241771,223456597.20566741,245285008.71891713,267113420.23216686,288941831.74541664,310770243.25866634,332598654.77191603,354427066.28516579,376255477.79841554,398083889.3116653,419912300.82491493,441740712.33816469,463569123.85141444,485397535.36466414,507225946.87791383,529054358.39116359,550882769.90441334,572711181.41766298,594539592.93091273,616368004.44416249,638196415.95741224,660024827.47066188,681853238.98391163,703681650.49716139,725510062.01041114,747338473.5236609,769166885.03691053,790995296.55016041,812823708.06341004,834652119.57665968,856480531.08990955,878308942.60315919,900137354.11640894,921965765.6296587,943794177.14290833,965622588.65615809,987451000.16940784,1009279411.6826575,1031107823.1959074,1052936234.709157,1074764646.2224066,1096593057.7356565,1118421469.2489061,1140249880.762156,1162078292.2754056,1183906703.7886553,1205735115.3019052,1227563526.8151548,1249391938.3284044,1271220349.8416543,1293048761.3549039,1314877172.8681536,1336705584.3814034,1358533995.8946531,1380362407.407903,1402190818.9211526,1424019230.4344022,1445847641.9476519,1467676053.460902,1489504464.9741516,1511332876.4874012,1533161288.0006509,1554989699.5139005,1576818111.0271506,1598646522.5404003,1620474934.0536499,1642303345.5668995,1664131757.0801492,1685960168.5933988,1707788580.1066489,1729616991.6198986,1751445403.1331482,1773273814.6463978,1795102226.1596475,1816930637.6728976,1838759049.1861472,1860587460.6993968,1882415872.2126465,1904244283.7258961,1926072695.2391458,1947901106.7523959,1969729518.2656455,1991557929.7788951,2013386341.2921448,2035214752.8053944,2057043164.3186445,2078871575.8318942,2100699987.3451438,2122528398.8583934,2144356810.3716431,2166185221.8848929],"type":"scatter","mode":"lines","name":"Calibration curve","hoverinfo":["skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip"],"line":{"color":"rgba(95,158,160,0.8)","width":2},"marker":{"color":"rgba(31,119,180,1)","line":{"color":"rgba(31,119,180,1)"}},"error_y":{"color":"rgba(31,119,180,1)"},"error_x":{"color":"rgba(31,119,180,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,50,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,50,0.10000000000000001,0.20000000000000001,0.5,1,2,5,10,20,50],"y":[5047439.9658815889,10164897.238391135,24368700.413930818,45180485.491053514,89758773.477089331,202846008.47961608,428593508.39749646,806379388.06101394,1679297574.1041338,5008173.7543212455,9275696.7098505162,23723526.678954769,45154982.063601218,91189747.034987077,250501206.46202886,452139395.44960183,872025944.53265822,1907822303.5134561,5062685.3808883075,9689535.965657372,22846707.810728911,48455210.45942124,93570301.618948728,238297416.92260072,450397261.33377445,865471981.46640682,1589983609.0379517],"type":"scatter","mode":"markers","name":"Calibration points","marker":{"color":"black","size":6,"line":{"color":"rgba(255,127,14,1)"}},"text":["batch: 1<br>inj: 7, conc: 0.1<br>name: Cal0-1_E_B1_7<br>int: 5.047E+06","batch: 1<br>inj: 8, conc: 0.2<br>name: Cal0-2_E_B1_8<br>int: 1.016E+07","batch: 1<br>inj: 9, conc: 0.5<br>name: Cal0-5_E_B1_9<br>int: 2.437E+07","batch: 1<br>inj: 10, conc: 1<br>name: Cal1_E_B1_10<br>int: 4.518E+07","batch: 1<br>inj: 11, conc: 2<br>name: Cal2_E_B1_11<br>int: 8.976E+07","batch: 1<br>inj: 12, conc: 5<br>name: Cal5_E_B1_12<br>int: 2.028E+08","batch: 1<br>inj: 13, conc: 10<br>name: Cal10_E_B1_13<br>int: 4.286E+08","batch: 1<br>inj: 14, conc: 20<br>name: Cal20_E_B1_14<br>int: 8.064E+08","batch: 1<br>inj: 15, conc: 50<br>name: Cal50_E_B1_15<br>int: 1.679E+09","batch: 1<br>inj: 49, conc: 0.1<br>name: Cal0-1_E_B1_49<br>int: 5.008E+06","batch: 1<br>inj: 50, conc: 0.2<br>name: Cal0-2_E_B1_50<br>int: 9.276E+06","batch: 1<br>inj: 51, conc: 0.5<br>name: Cal0-5_E_B1_51<br>int: 2.372E+07","batch: 1<br>inj: 52, conc: 1<br>name: Cal1_E_B1_52<br>int: 4.515E+07","batch: 1<br>inj: 53, conc: 2<br>name: Cal2_E_B1_53<br>int: 9.119E+07","batch: 1<br>inj: 54, conc: 5<br>name: Cal5_E_B1_54<br>int: 2.505E+08","batch: 1<br>inj: 55, conc: 10<br>name: Cal10_E_B1_55<br>int: 4.521E+08","batch: 1<br>inj: 56, conc: 20<br>name: Cal20_E_B1_56<br>int: 8.720E+08","batch: 1<br>inj: 57, conc: 50<br>name: Cal50_E_B1_57<br>int: 1.908E+09","batch: 1<br>inj: 90, conc: 0.1<br>name: Cal0-1_E_B1_90<br>int: 5.063E+06","batch: 1<br>inj: 91, conc: 0.2<br>name: Cal0-2_E_B1_91<br>int: 9.690E+06","batch: 1<br>inj: 92, conc: 0.5<br>name: Cal0-5_E_B1_92<br>int: 2.285E+07","batch: 1<br>inj: 93, conc: 1<br>name: Cal1_E_B1_93<br>int: 4.846E+07","batch: 1<br>inj: 94, conc: 2<br>name: Cal2_E_B1_94<br>int: 9.357E+07","batch: 1<br>inj: 95, conc: 5<br>name: Cal5_E_B1_95<br>int: 2.383E+08","batch: 1<br>inj: 96, conc: 10<br>name: Cal10_E_B1_96<br>int: 4.504E+08","batch: 1<br>inj: 97, conc: 20<br>name: Cal20_E_B1_97<br>int: 8.655E+08","batch: 1<br>inj: 98, conc: 50<br>name: Cal50_E_B1_98<br>int: 1.590E+09"],"hoverinfo":["text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text"],"error_y":{"color":"rgba(255,127,14,1)"},"error_x":{"color":"rgba(255,127,14,1)"},"line":{"color":"rgba(255,127,14,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[1.3445315742981323,1.209941073301203],"y":[59069247.346841596,53240554.214336455],"type":"scatter","mode":"markers","name":"QC4","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998,"line":{"color":"rgba(44,160,44,1)"}},"text":["batch: 1<br>inj: 17, conc: 1.345<br>name: QC4_QC_B1_17<br>int: 5.907E+07","batch: 1<br>inj: 22, conc: 1.21<br>name: QC4_QC_B1_22<br>int: 5.324E+07"],"hoverinfo":["text","text"],"error_y":{"color":"rgba(44,160,44,1)"},"error_x":{"color":"rgba(44,160,44,1)"},"line":{"color":"rgba(44,160,44,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[1.3485978411358734,1.3967615340624708],"y":[59245344.630204968,61331163.347855404],"type":"scatter","mode":"markers","name":"QC1","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998,"line":{"color":"rgba(214,39,40,1)"}},"text":["batch: 1<br>inj: 28, conc: 1.349<br>name: QC1_QC_B1_28<br>int: 5.925E+07","batch: 1<br>inj: 40, conc: 1.397<br>name: QC1_QC_B1_40<br>int: 6.133E+07"],"hoverinfo":["text","text"],"error_y":{"color":"rgba(214,39,40,1)"},"error_x":{"color":"rgba(214,39,40,1)"},"line":{"color":"rgba(214,39,40,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[1.4013281218379303,1.2683133830259949],"y":[61528927.964293011,55768476.157573149],"type":"scatter","mode":"markers","name":"QCall","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998,"line":{"color":"rgba(148,103,189,1)"}},"text":["batch: 1<br>inj: 34, conc: 1.401<br>name: QCall_B1_34<br>int: 6.153E+07","batch: 1<br>inj: 83, conc: 1.268<br>name: QCall_B1_83<br>int: 5.577E+07"],"hoverinfo":["text","text"],"error_y":{"color":"rgba(148,103,189,1)"},"error_x":{"color":"rgba(148,103,189,1)"},"line":{"color":"rgba(148,103,189,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[1.4726386438319212,1.7023109764407365],"y":[64617163.36532785,74563552.879354402],"type":"scatter","mode":"markers","name":"QC3","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998,"line":{"color":"rgba(140,86,75,1)"}},"text":["batch: 1<br>inj: 60, conc: 1.473<br>name: QC3_QC_B1_60<br>int: 6.462E+07","batch: 1<br>inj: 72, conc: 1.702<br>name: QC3_QC_B1_72<br>int: 7.456E+07"],"hoverinfo":["text","text"],"error_y":{"color":"rgba(140,86,75,1)"},"error_x":{"color":"rgba(140,86,75,1)"},"line":{"color":"rgba(140,86,75,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[2.6827596544944465,2.3796496957827697],"y":[117023714.88347524,103896971.75041434],"type":"scatter","mode":"markers","name":"QC2","marker":{"color":"#0072B2","size":7,"opacity":0.84999999999999998,"line":{"color":"rgba(227,119,194,1)"}},"text":["batch: 1<br>inj: 66, conc: 2.683<br>name: QC2_QC_B1_66<br>int: 1.170E+08","batch: 1<br>inj: 78, conc: 2.38<br>name: QC2_QC_B1_78<br>int: 1.039E+08"],"hoverinfo":["text","text"],"error_y":{"color":"rgba(227,119,194,1)"},"error_x":{"color":"rgba(227,119,194,1)"},"line":{"color":"rgba(227,119,194,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[0.47948232199037721,0.71427526948649578,0.26370104187035698,0.41507863584141058,0.32530799810712635,0.56998475061515119,0.56987444293612366,0.62377146861462585,0.65078474548209697,0.62608339881759656,0.95305046508710478,0.61764223755839331,0.3375124857415262,0.69221482631475628,0.41579262484228796,0.67995920495320694,0.48675805195107674,0.70852842674044225,0.69064821286593059,0.69176565566760295],"y":[21606673.10231927,31774820.412079934,12261861.572214145,18817551.133205991,14929865.926696749,25526049.880716819,25521272.800562959,27855384.205957808,29025244.63591104,27955506.663316026,42115426.416968755,27589946.402395319,15458404.068196002,30819451.699855052,18848471.761001211,30288699.116756521,21921762.183211084,31525942.648795042,30751606.577184256,30799999.525689766],"type":"scatter","mode":"markers","name":"Sick","marker":{"color":"#009E73","size":7,"opacity":0.84999999999999998,"line":{"color":"rgba(127,127,127,1)"}},"text":["batch: 1<br>inj: 18, conc: 0.4795<br>name: S001_B1_18<br>int: 2.161E+07","batch: 1<br>inj: 19, conc: 0.7143<br>name: S002_B1_19<br>int: 3.177E+07","batch: 1<br>inj: 23, conc: 0.2637<br>name: S003_B1_23<br>int: 1.226E+07","batch: 1<br>inj: 24, conc: 0.4151<br>name: S004_B1_24<br>int: 1.882E+07","batch: 1<br>inj: 25, conc: 0.3253<br>name: S005_B1_25<br>int: 1.493E+07","batch: 1<br>inj: 29, conc: 0.57<br>name: S006_B1_29<br>int: 2.553E+07","batch: 1<br>inj: 36, conc: 0.5699<br>name: S007_B1_36<br>int: 2.552E+07","batch: 1<br>inj: 41, conc: 0.6238<br>name: S008_B1_41<br>int: 2.786E+07","batch: 1<br>inj: 42, conc: 0.6508<br>name: S009_B1_42<br>int: 2.903E+07","batch: 1<br>inj: 58, conc: 0.6261<br>name: S010_B1_58<br>int: 2.796E+07","batch: 1<br>inj: 59, conc: 0.9531<br>name: S011_B1_59<br>int: 4.212E+07","batch: 1<br>inj: 61, conc: 0.6176<br>name: S012_B1_61<br>int: 2.759E+07","batch: 1<br>inj: 63, conc: 0.3375<br>name: S013_B1_63<br>int: 1.546E+07","batch: 1<br>inj: 64, conc: 0.6922<br>name: S014_B1_64<br>int: 3.082E+07","batch: 1<br>inj: 69, conc: 0.4158<br>name: S015_B1_69<br>int: 1.885E+07","batch: 1<br>inj: 73, conc: 0.68<br>name: S016_B1_73<br>int: 3.029E+07","batch: 1<br>inj: 75, conc: 0.4868<br>name: S017_B1_75<br>int: 2.192E+07","batch: 1<br>inj: 77, conc: 0.7085<br>name: S018_B1_77<br>int: 3.153E+07","batch: 1<br>inj: 81, conc: 0.6906<br>name: S019_B1_81<br>int: 3.075E+07","batch: 1<br>inj: 82, conc: 0.6918<br>name: S020_B1_82<br>int: 3.080E+07"],"hoverinfo":["text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text"],"error_y":{"color":"rgba(127,127,127,1)"},"error_x":{"color":"rgba(127,127,127,1)"},"line":{"color":"rgba(127,127,127,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[1.0271714734680957,1.0186998116119512,1.2236781326388837,1.4277090039463332,0.7811960824296863,1.1064395359814421,1.4981408211744267,1.0812335797381885,1.6251607354774116,0.86276195860914762,1.3498279136112932,1.5838662630229792,1.1169506025615337,1.4641073104484614,2.1465499612509205,1.2310555507790559,0.96794522576436559,1.4084104074772787,1.4515519928008169],"y":[45325375.18248003,44958494.036217399,53835463.237107545,62671401.35755413,34672951.260352321,48758226.744635016,65721582.806812659,47666635.711352289,71222417.536643192,38205313.936859764,59298615.217184409,69434083.24690707,49213428.123163812,64247698.03207659,93802152.19189617,54154956.114619181,42760471.859453872,61835639.577391565,63703966.541316219],"type":"scatter","mode":"markers","name":"Healthy","marker":{"color":"#CC79A7","size":7,"opacity":0.84999999999999998,"line":{"color":"rgba(188,189,34,1)"}},"text":["batch: 1<br>inj: 21, conc: 1.027<br>name: H002_B1_21<br>int: 4.533E+07","batch: 1<br>inj: 26, conc: 1.019<br>name: H003_B1_26<br>int: 4.496E+07","batch: 1<br>inj: 27, conc: 1.224<br>name: H004_B1_27<br>int: 5.384E+07","batch: 1<br>inj: 31, conc: 1.428<br>name: H005_B1_31<br>int: 6.267E+07","batch: 1<br>inj: 32, conc: 0.7812<br>name: H006_B1_32<br>int: 3.467E+07","batch: 1<br>inj: 33, conc: 1.106<br>name: H007_B1_33<br>int: 4.876E+07","batch: 1<br>inj: 35, conc: 1.498<br>name: H008_B1_35<br>int: 6.572E+07","batch: 1<br>inj: 37, conc: 1.081<br>name: H009_B1_37<br>int: 4.767E+07","batch: 1<br>inj: 38, conc: 1.625<br>name: H010_B1_38<br>int: 7.122E+07","batch: 1<br>inj: 39, conc: 0.8628<br>name: H011_B1_39<br>int: 3.821E+07","batch: 1<br>inj: 62, conc: 1.35<br>name: H012_B1_62<br>int: 5.930E+07","batch: 1<br>inj: 65, conc: 1.584<br>name: H013_B1_65<br>int: 6.943E+07","batch: 1<br>inj: 67, conc: 1.117<br>name: H014_B1_67<br>int: 4.921E+07","batch: 1<br>inj: 68, conc: 1.464<br>name: H015_B1_68<br>int: 6.425E+07","batch: 1<br>inj: 71, conc: 2.147<br>name: H016_B1_71<br>int: 9.380E+07","batch: 1<br>inj: 74, conc: 1.231<br>name: H017_B1_74<br>int: 5.415E+07","batch: 1<br>inj: 76, conc: 0.9679<br>name: H018_B1_76<br>int: 4.276E+07","batch: 1<br>inj: 79, conc: 1.408<br>name: H019_B1_79<br>int: 6.184E+07","batch: 1<br>inj: 80, conc: 1.452<br>name: H020_B1_80<br>int: 6.370E+07"],"hoverinfo":["text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text"],"error_y":{"color":"rgba(188,189,34,1)"},"error_x":{"color":"rgba(188,189,34,1)"},"line":{"color":"rgba(188,189,34,1)"},"xaxis":"x","yaxis":"y","frame":null}],"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.20000000000000001,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-samples-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;2
+</figcaption>
+</figure>
+</div>
+</div>
+<p>The line is the fitted calibration curve (linear-1/x2 for this compound). The black points are the calibration samples, the coloured ones the QCs and the study samples by class, placed at the concentration the curve gives them.</p>
+<p><strong>How to read it</strong></p>
+<ul>
+<li><strong>Samples in the white area</strong> are within the calibration range and quantified.</li>
+<li><strong>Samples in the grey areas</strong> are below the LLOQ (light) or the LOD (dark). Depending on the setting <em>Replace values below the LOD/LLOQ</em>, their concentrations are replaced (LLOQ/2 or LLOQ/4) or reported as <em>n.q.</em> / <em>n.d.</em>.</li>
+<li><strong>Samples in the olive area</strong> are above the ULOQ: within the curve but above its linear range, or extrapolated above its highest level. Treat these values with care, or dilute and re-measure.</li>
+<li><strong>A curve far from its calibration points</strong>, or points bending away at the top, suggests that the linear range is shorter than the calibration range; see the notes in table 4.2 and the option <em>Enforce linear range</em>.</li>
+</ul>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>In the app
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Use the arrow keys ↑ / ↓ in table 4.2 to step through the compounds; both figures follow at once. With the processing option <em>Log scale for calibration curve fitting</em>, both figures have log axes, which show the low concentrations better.</p>
+</div>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/blob/main/tutorial/calibration-curves.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
