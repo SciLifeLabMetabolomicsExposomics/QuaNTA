@@ -1,0 +1,143 @@
+---
+title: Calibration
+params:
+  norm_method: closest_norm
+---
+
+```{r}
+#| purl: true
+#| file: !expr setup_file
+#| eval: !expr '!knitr::opts_knit$get("child")'
+params <- list(norm_method = "closest_norm", project_title = "Test")
+source(setup_file) # For "Run Cell" functionality
+```
+
+```{r}
+#| purl: true
+calcurve_lst <- lst_proc |>
+  lapply(\(x) x$calcurve)
+```
+
+## Calibration curve samples
+
+The data of the samples for the calibration curve is extracted from the quantification samples after the outlier removal and normalization.
+The number of samples in the calibration curve after outlier removal is presented below.
+
+```{r}
+#| label: 'calcurve-samples-summary-calibration'
+# Present the number of samples in the calibration curve
+for (ii in names(calcurve_lst)) {
+  se <- calcurve_lst[[ii]]
+  v <- util$spiked_conc_pts(se)
+  v <- v[!is.na(v)] |>
+    labelled::copy_labels_from(v)
+  if (length(v) == 0) {   # The batch is quantified by the global calibration curve
+    cat("\n\n**Batch ", ii, "**: no calibration curve samples.\n\n", sep = "")
+    next
+  }
+  table(v) |>
+    knitr::kable(
+      align = c("r", "r"),
+      col.names = c(labelled::get_label_attribute(v), "Number of Samples"),
+      caption = paste("Batch", ii),
+      # col.names = c("Concentration (ng/ml)", "Number of Samples")
+    ) |>
+    kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE) |>
+    print()
+}
+```
+
+## Calibration curve limits
+
+```{r}
+#| purl: true
+limit_df <- lapply(calcurve_lst, \(se) {
+  SumExp::row_df(se) |>
+    dplyr::select(min_c_conc, max_c_conc, lod, lloq, has_proper_range, src_calcurve) |>
+    tibble::as_tibble(rownames = "feature_id")
+}) |>
+  purrr::list_rbind(names_to = "batch")
+```
+
+* LOD and LLOQ
+
+```{r}
+cat(switch(to_report$params$llox_method,
+  "pt_signal_mean" = paste(
+    "LOD and LLOQ were defined as the lowest concentrations at which the mean signal exceeded 3×",
+    "or 10× the mean signal of the blank (zero concentration point) respectively."
+  ),
+  "pt_signal_mean_plus_sd" = paste(
+    "LOD and LLOQ were defined as the lowest concentrations at which the mean signal exceeded the",
+    "mean signal of the blank (zero concentration point) plus 3× or 10× its standard deviation,",
+    "respectively."
+  )
+))
+if (to_report$params$use_rsd20) {
+  cat(" Additionally, LLOQ required a signal RSD ≤ 20%.")
+}
+```
+
+* Calibration working range
+
+In order to fit a calibration curve to a meaningful range of concentration, the fitting range is adjusted.
+The lower-limit of the range is chosen as the LLOQ.
+Concentration points below the limit are excluded from the calibration curve.
+
+As quite a few concentration points in the calibration curve samples of a chemical can be too far from the range observed in the samples for quantification (non-`CalCurve` and non-`QC` sample categories), the upper-limit of the calibration range is set. 
+When there are sufficient number (≥ 3) of calibration points, that the points that produce signal after normalization exceeding the **highest** signal of the quantification samples are excluded except the lowest one.
+
+If the lower-limit (LLOQ) is set so high that fewer than three concentration points remain, that chemical is excluded from the calibration curve, because the curve cannot be fitted properly.
+As a result, `r sum(!limit_df$has_proper_range)` chemicals have been excluded from the calibration.
+
+The concentration range for each chemical is detailed below.
+
+```{r}
+#| label: 'calcurve-conc-range-table'
+
+show_df <- limit_df |>
+  dplyr::rename(min_c = min_c_conc, max_c = max_c_conc) |>
+  dplyr::mutate(
+    lod = ifelse(is.na(lod), "N.A.", as.character(lod)),
+    min_c = ifelse(is.na(min_c), "No valid pts.", as.character(min_c)),
+    Note = dplyr::case_when(
+      max_c == 0 ~ "All zero",
+      src_calcurve == "Global" ~ "Global calibration",
+      is.na(max_c) ~ "<3 valid pts.",
+      !has_proper_range ~ "Excluded",
+      .default = ""
+    ),
+    max_c = dplyr::case_when(
+      max_c == -9 ~ "No valid max",
+      max_c == 0 | is.na(max_c) ~ "",
+      .default = as.character(max_c)
+    ),
+  ) |>
+  dplyr::left_join(feature_id_name_tbl, by = "feature_id") |>
+  dplyr::select(
+    "Batch" = batch,
+    "Chemical Name" = feature_name,
+    "LOD" = lod,
+    "Minimum conc. (LLOQ)" = min_c,
+    "Maximum conc." = max_c,
+    Note,
+  )
+
+stopifnot(nrow(show_df) == nrow(limit_df))
+knitr::kable(
+  show_df,
+  caption = "Concentration range of the calibration curve samples",
+  align = "lrrrrl",
+) |>
+  kableExtra::kable_classic(lightable_options = "striped", full_width = FALSE) |>
+  kableExtra::scroll_box(height = "350px") |>
+  # Color the rows that are marked in Note
+  kableExtra::row_spec(
+    which(limit_df$has_proper_range == FALSE),
+    background = "lightcoral"
+  ) |>
+  kableExtra::row_spec(
+    which(limit_df$src_calcurve == "Global"),
+    background = "lightblue"
+  )
+```

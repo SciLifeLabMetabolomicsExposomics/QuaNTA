@@ -1,0 +1,167 @@
+---
+title: Normalization by closest internal standard in retention time
+params:
+  norm_method: "loess_norm"        # No need here but needed by `_internal-shared_setup_chunk.R`
+---
+
+```{r}
+#| purl: true
+#| file: !expr setup_file
+#| eval: !expr '!knitr::opts_knit$get("child")'
+# The code in this chunk is NOT evaluated here when knitting this file directly.
+# It is included for DEBUGGING purposes only. 
+params <- list(norm_method = "loess_norm") 
+source(setup_file)
+```
+
+```{r}
+#| label: 'loaded-varibles-before-norm-closest-istd'
+#| purl: true
+#| eval: !expr '!knitr::opts_knit$get("child")'
+# Feature intensity to be used for normalization
+norm_se <- to_report[["normalized"]]
+```
+
+The closest internal standard features to each feature will be identified based on the retention time.
+The measured peak area of each feature will be divided by the peak area of the closest internal standard feature.
+
+When a compound target class is specified, the closest internal standard will be selected from the same compound target class.
+
+#### Evaluation of normalization
+
+Normalization is evaluated by comparing the relative standard deviation (RSD) of the peak areas of quantification standards before and after normalization.
+Quality control (QC) samples are used for this evaluation because they are technical replicates and should have low RSD values.
+
+```{r}
+#| results: 'asis'
+if (!show$has_enough_qc(norm_se)) cat("\n\n*", show$not_enough_qc_msg, "*\n\n", sep = "")
+```
+
+```{r}
+#| label: 'evaluation-normalization-closest-istd'
+#| out.width: '80%'
+#| eval: !expr show$has_enough_qc(norm_se)
+
+# Quantification standard samples
+qc_se <- show$extract_quant_qc(norm_se)
+
+mat_ids <- c("raw", "closest_norm")
+rsd_qstd <- show$calc_rsd_qstd(qc_se, mat_ids)
+rsd_qstd <- rsd_qstd |> 
+  dplyr::mutate(
+    sign = .data[["raw"]] > closest_norm,
+    sign = ifelse(sign, "↓", "↑"),
+    sign = ifelse(is.na(sign), "All 0s", sign),
+    sign = factor(sign, levels = c("↓", "↑", "All 0s"))
+  ) 
+show$ggplot_rsdp_metab(rsd_qstd, mat_ids) +
+  aes(color = sign) +
+  scale_color_manual(values = c("#00BFC4", "#F8766D", "#7f7f7f")) +
+  facet_grid(~ QC)
+```
+
+`r if (show$has_enough_qc(norm_se)) "The number of features with higher/lower RSD after normalization is counted below."`
+
+```{r}
+#| label: 'evaluation-normalization-closest-istd-count'
+#| results: 'markup'
+#| eval: !expr show$has_enough_qc(norm_se)
+rsd_qstd |> 
+  janitor::tabyl(QC, sign)
+```
+
+#### Samples by injection order
+
+```{r}
+#| purl: true
+is_vIS <- util$std_type(norm_se) == "vIS"
+mat_ids_to_compare <- c("raw", "closest_norm")
+```
+
+Bar charts of the values of internal standard (`IS`) features are compared for raw and normalized data.
+The size of the bars represent the peak area before and after normalization. 
+Please note the injection orders may have gaps, as they are obtained information from the source file.
+
+```{r}
+#| label: 'injection-order-closest-istd'
+#| fig-width: 20
+#| fig-height: 6
+if (any(is_vIS)) {
+  cat("\n\nThe bars represent the peak areas of volumetric internal standards (vIS).\n\n")
+  df_show <- norm_se[is_vIS, ] |> 
+    show$df_for_injection_order(mat_ids_to_compare)
+  plotly::ggplotly(
+    show$ggplot_col_injection_order(df_show, fill = feature_name) +
+      labs(title = "Volumetric internal standards") +
+      # Skip the legend. Too long feature names make the plots too narrow.
+      theme(legend.position = "none")
+  )
+}
+```
+
+The bars are colored by the given `Class` of the samples
+
+```{r}
+#| fig-width: 20
+#| fig-height: 6
+df_show <- norm_se[util$is_internal_std(norm_se), ] |> 
+  show$df_for_injection_order(mat_ids_to_compare) |>
+  dplyr::mutate(
+    batch_id = factor(batch_id) |>         # Discrete color scale
+      labelled::copy_labels_from(batch_id)
+  )
+
+plotly::ggplotly(
+  show$ggplot_col_injection_order(df_show, fill = Class) +
+    labs(title = "Internal standards") +
+    scale_fill_manual(values = COLORS_OF_CLASSES)
+)
+```
+
+The bars are colored by the given `Batch ID` of the samples
+
+```{r}
+#| fig-width: 20
+#| fig-height: 6
+plotly::ggplotly(
+  show$ggplot_col_injection_order(df_show, fill = batch_id) +
+    labs(title = "Internal standards") 
+)
+```
+
+The bars are colored by the internal standards and stacked for each sample.
+
+```{r}
+#| fig-width: 20
+#| fig-height: 6
+plotly::ggplotly(
+  show$ggplot_col_injection_order(df_show, fill = feature_name) +
+    labs(title = "Internal standards") +
+    # Skip the legend. Too long feature names make the plots too narrow.
+    theme(legend.position = "none")
+)
+```
+
+#### Principal component analysis
+
+Principal component analysis (PCA) is performed to evaluate the normalization.
+Here the PCA is performed on the internal standard features only.
+
+```{r}
+#| label: 'pca-normalization-closest-istd'
+#| fig-width: 14
+#| fig-height: 6
+# PCA
+box::use(patchwork)           # Combine ggplot objects. `+`
+
+se <- norm_se[util$is_internal_std(norm_se), ]
+# Plot
+p_lst <- lapply(mat_ids_to_compare, \(.x) {
+  out <- show$ggplot_pca(se, .x, colour = "Class")
+  if (is.null(out)) return(NULL)
+  out + scale_color_manual(values = COLORS_OF_CLASSES)
+})
+# Requires patchwork package
+Reduce("+", p_lst) + patchwork::plot_layout(ncol = length(p_lst))
+```
+

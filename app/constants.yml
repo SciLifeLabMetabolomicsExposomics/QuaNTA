@@ -1,0 +1,10 @@
+# ------------------------------------------------------------------------------
+# Constants used in analyses and/or visualization
+# ------------------------------------------------------------------------------
+
+# colors in plots
+COLORS:
+  .ctrl_cat:
+    Blank: '#D55E00'   # Vermillion (colour-blind safe, Okabe-Ito)
+    QC: '#0072B2'      # Blue (Okabe-Ito)
+

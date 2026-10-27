@@ -1,0 +1,45 @@
+
+The concentration of the samples has been computed using the calibration curve in the [section above](#calibration).
+The distribution of the concentration of the samples is shown below.
+
+```{r}
+#| results: 'asis'
+qmd_out <- list()
+for (batch_id in names(concn_lst)) {
+  concn_se <- concn_lst[[batch_id]]
+
+  cl <- unique(SumExp::col_df(concn_se)$Class)
+  n_class <- length(cl)
+  max_nchar_feature <- max(nchar(cl))
+  qmd_out <- c(
+    qmd_out, 
+    rlang::chr(
+      "## Batch {{batch_id}}",
+      "```{r}",
+      "#| fig-height: {{max_nchar_feature * 0.1 + 2}}",
+      "#| fig-width: {{n_class * 0.4 + 0.7}}",
+      "#| out.width: {{paste0(n_class * 4 + 7, '%')}}",
+      "show_df <- SumExp::as_tibble(concn_se)",
+      "show_df_by_feature <- split(show_df, show_df$feature_name)",
+      "for(df1 in show_df_by_feature) {",
+      "  p <- ggplot(df1) +",
+      "    geom_boxplot(aes(x = Class, y = conc, fill = Class)) +",
+      "    labs(",
+      "      title = df1$feature_name[1],",
+      "      x = labelled::get_label_attribute(df1$Class),",
+      "      y = labelled::get_label_attribute(df1$conc),",
+      "    ) +",
+      "    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +    # Vertical x-axis",
+      "    theme(legend.position = 'none') +      # No legend",
+      "    scale_fill_manual(values = COLORS_OF_CLASSES) +",
+      "    scale_y_log10()",
+      "  print(p)",
+      "}",
+      "```",
+    ) |>
+      knitr::knit_expand(text = _) |>
+      knitr::knit_child(text = _, quiet = TRUE)
+  )
+}
+knitr::asis_output(paste(qmd_out, collapse = "\n"))
+```

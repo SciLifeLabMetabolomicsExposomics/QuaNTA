@@ -1,0 +1,8 @@
+`r if (length(vis_rows) > 1) paste("###", SumExp::row_df(raw)$feature_name[VIS_I]) else ""`
+
+```{r}
+# The same plot as in the app (3.6), from projlib/show.R
+show$plotly_vis_bars(unname(raw[["raw"]][VIS_I, smp$sample_id]), smp, SumExp::row_df(raw)$feature_name[VIS_I],
+                     switchable = TRUE)
+```
+

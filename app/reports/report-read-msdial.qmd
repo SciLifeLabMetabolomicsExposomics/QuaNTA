@@ -1,0 +1,31 @@
+---
+title: "Read MS-DIAL output file"
+---
+
+```{r}
+#| label: 'setup-read-msdial'
+#| purl: true
+# Load packages and project local libraries
+options(
+  box.path = Sys.getenv("R_BOX_PATH", "app/"),           # Path to project local libraries
+  box.warn.legacy = FALSE       # No warnings for source inside a module
+)
+box::use(
+  projlib/msdial,     # Handle MS-Dial files and data
+  projlib/proc,       # Processing functions
+  ggplot2[...],        # Too long to write and usually specific enough
+  # Some methods were defined using S4 system, e.g. dim, `[`
+  SummarizedExperiment[row_df, `row_df<-`, col_df, `col_df<-`, assays, `assays<-`],
+  tidySummarizedExperiment,      # Defined using S3 but not exported, e.g. ggplot, as_tibble 
+)
+# Read `params.yml` if `params` not provided
+if (! exists("params")) params <- yaml::read_yaml("params.yml")
+overall_sumexp <- msdial$read_parsed_msdial_data(params)
+set.seed(7579)
+
+# Extract standard features
+is_targeted <- SumExp::row_df(overall_sumexp)$.std_type != ""
+targeted_features_se <- overall_sumexp[is_targeted, ]
+```
+
+{{< include chapters/_read-msdial.qmd >}}

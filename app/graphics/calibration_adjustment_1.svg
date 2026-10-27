@@ -1,0 +1,943 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="900"
+   height="620"
+   viewBox="0 0 900 620"
+   version="1.1"
+   id="svg73"
+   sodipodi:docname="calibration_adjustment_1.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   inkscape:export-filename="/Users/mun-gwanhong/Downloads/calibration rules.png"
+   inkscape:export-xdpi="300"
+   inkscape:export-ydpi="300"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview73"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d0d1d1"
+     showgrid="false"
+     inkscape:zoom="2.8147917"
+     inkscape:cx="444.08259"
+     inkscape:cy="322.22633"
+     inkscape:window-width="3840"
+     inkscape:window-height="2101"
+     inkscape:window-x="1920"
+     inkscape:window-y="31"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg73"
+     showguides="false"
+     inkscape:export-bgcolor="#ffffffff" />
+  <defs
+     id="defs1">
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Strips1_3"
+       preserveAspectRatio="xMidYMid"
+       id="pattern70"
+       patternTransform="matrix(1.5722776,-1.0041478,0.91520806,1.753515,2.3890462,-1.9643834)"
+       x="0"
+       y="0" />
+    <pattern
+       inkscape:collect="always"
+       patternUnits="userSpaceOnUse"
+       width="4"
+       height="1"
+       patternTransform="translate(0,0) scale(2,2)"
+       preserveAspectRatio="xMidYMid"
+       id="Strips1_3"
+       style="fill:#00e100"
+       inkscape:stockid="Stripes 04 (1:3)"
+       inkscape:isstock="true"
+       inkscape:label="Stripes 04 (1:3)">
+      <rect
+         style="stroke:none"
+         x="0"
+         y="-0.5"
+         width="1"
+         height="2"
+         id="rect152" />
+    </pattern>
+    <linearGradient
+       id="swatch68">
+      <stop
+         style="stop-color:#cc1012;stop-opacity:1;"
+         offset="0"
+         id="stop68" />
+    </linearGradient>
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Strips1_1.5"
+       preserveAspectRatio="xMidYMid"
+       id="pattern67"
+       patternTransform="matrix(2.1213203,2.1213203,-2.1213203,2.1213203,-128.28185,53.159502)"
+       x="0"
+       y="0" />
+    <pattern
+       inkscape:collect="always"
+       patternUnits="userSpaceOnUse"
+       width="2.5"
+       height="1"
+       patternTransform="translate(0,0) scale(2,2)"
+       preserveAspectRatio="xMidYMid"
+       id="Strips1_1.5"
+       style="fill:#ea0000"
+       inkscape:stockid="Stripes 02 (2:3)"
+       inkscape:isstock="true"
+       inkscape:label="Stripes 02 (2:3)">
+      <rect
+         style="stroke:none"
+         x="0"
+         y="-0.5"
+         width="1"
+         height="2"
+         id="rect140" />
+    </pattern>
+    <linearGradient
+       id="swatch64"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#000000;stop-opacity:1;"
+         offset="0"
+         id="stop64" />
+    </linearGradient>
+    <linearGradient
+       id="swatch58"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#000000;stop-opacity:1;"
+         offset="0"
+         id="stop58" />
+    </linearGradient>
+    <linearGradient
+       id="swatch46"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#06b6d4;stop-opacity:1;"
+         offset="0"
+         id="stop46" />
+    </linearGradient>
+    <linearGradient
+       id="swatch43"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#f59e0b;stop-opacity:1;"
+         offset="0"
+         id="stop43" />
+    </linearGradient>
+    <linearGradient
+       id="swatch42"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#111827;stop-opacity:1;"
+         offset="0"
+         id="stop42" />
+    </linearGradient>
+    <linearGradient
+       id="swatch41"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#10b981;stop-opacity:1;"
+         offset="0"
+         id="stop41" />
+    </linearGradient>
+    <linearGradient
+       id="swatch40"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#e35454;stop-opacity:1;"
+         offset="0"
+         id="stop40" />
+    </linearGradient>
+    <linearGradient
+       id="swatch39"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#ffdde6;stop-opacity:1;"
+         offset="0"
+         id="stop39" />
+    </linearGradient>
+    <linearGradient
+       id="swatch10"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#d97706;stop-opacity:1;"
+         offset="0"
+         id="stop10" />
+    </linearGradient>
+    <linearGradient
+       id="swatch9"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#4b5563;stop-opacity:1;"
+         offset="0"
+         id="stop9" />
+    </linearGradient>
+    <linearGradient
+       id="swatch88"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#7c3aed;stop-opacity:1;"
+         offset="0"
+         id="stop88" />
+    </linearGradient>
+    <linearGradient
+       id="swatch79"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#e35454;stop-opacity:1;"
+         offset="0"
+         id="stop79" />
+    </linearGradient>
+    <linearGradient
+       id="swatch73"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#0e971d;stop-opacity:1;"
+         offset="0"
+         id="stop73" />
+    </linearGradient>
+    <style
+       id="style1">
+      .title{font:700 28px Arial,Helvetica,sans-serif; fill:#1f2937}
+      .subtitle{font:400 16px Arial,Helvetica,sans-serif; fill:#4b5563}
+      .axis{stroke:#111827; stroke-width:2.5}
+      .grid{stroke:#e5e7eb; stroke-width:1}
+      .curve{fill:none; stroke:#2563eb; stroke-width:4}
+      .pt{stroke:#111827; stroke-width:1.5}
+      .label{font:600 16px Arial,Helvetica,sans-serif; fill:#111827}
+      .small{font:400 14px Arial,Helvetica,sans-serif; fill:#374151}
+      .tiny{font:400 13px Arial,Helvetica,sans-serif; fill:#4b5563}
+      .boxTitle{font:700 15px Arial,Helvetica,sans-serif; fill:#111827}
+      .boxText{font:400 13px Arial,Helvetica,sans-serif; fill:#111827}
+      .white{fill:#fff}
+      .legend{font:500 13px Arial,Helvetica,sans-serif; fill:#111827}
+      .dashLOD{stroke:#dc2626; stroke-width:3; stroke-dasharray:10 7}
+      .dashLLOQ{stroke:#d97706; stroke-width:3; stroke-dasharray:8 6}
+      .dashHalf{stroke:#7c3aed; stroke-width:2.5; stroke-dasharray:6 5}
+      .dashQuarter{stroke:#059669; stroke-width:2.5; stroke-dasharray:6 5}
+      .arrow{stroke:#374151; stroke-width:2; fill:none; marker-end:url(#arrowhead)}
+      .panel{fill:#f9fafb; stroke:#d1d5db; stroke-width:1.5}
+      .decision{fill:#ffffff; stroke:#9ca3af; stroke-width:1.5}
+      .note{fill:#fef3c7; stroke:#f59e0b; stroke-width:1.2}
+    </style>
+    <marker
+       id="arrowhead"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="0,0 8,3 0,6 "
+         fill="#374151"
+         id="polygon1" />
+    </marker>
+    <marker
+       id="arrowhead-4"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="8,3 0,6 0,0 "
+         fill="#374151"
+         id="polygon1-1" />
+    </marker>
+    <marker
+       id="arrowhead-0"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="8,3 0,6 0,0 "
+         fill="#374151"
+         id="polygon1-5" />
+    </marker>
+    <marker
+       id="arrowhead-9"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="8,3 0,6 0,0 "
+         fill="#374151"
+         id="polygon1-15" />
+    </marker>
+    <marker
+       id="arrowhead-9-6"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="0,6 0,0 8,3 "
+         fill="#374151"
+         id="polygon1-15-7" />
+    </marker>
+    <marker
+       id="arrowhead-9-6-9"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="0,0 8,3 0,6 "
+         fill="#374151"
+         id="polygon1-15-7-4" />
+    </marker>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#swatch42"
+       id="linearGradient42"
+       x1="488.19827"
+       y1="221.56956"
+       x2="505.69827"
+       y2="221.56956"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(31.801726)" />
+    <marker
+       id="arrowhead-0-3"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="0,6 0,0 8,3 "
+         fill="#374151"
+         id="polygon1-5-8" />
+    </marker>
+    <marker
+       id="arrowhead-9-6-9-3"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="8,3 0,6 0,0 "
+         fill="#374151"
+         id="polygon1-15-7-4-5" />
+    </marker>
+    <marker
+       id="arrowhead-9-6-9-3-9"
+       markerWidth="10"
+       markerHeight="10"
+       refX="8"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="0,6 0,0 8,3 "
+         fill="#374151"
+         id="polygon1-15-7-4-5-3" />
+    </marker>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#swatch10"
+       id="linearGradient1"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(100)"
+       x1="480"
+       y1="515.09717"
+       x2="513.25537"
+       y2="515.09717" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#swatch10"
+       id="linearGradient2"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(100,-383.32322)"
+       x1="480"
+       y1="515.09717"
+       x2="513.25537"
+       y2="515.09717" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#swatch79"
+       id="linearGradient3"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(-10.952146,-0.5292693)"
+       x1="210.95215"
+       y1="515.34399"
+       x2="236.03809"
+       y2="515.34399" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#swatch79"
+       id="linearGradient4"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(-10.952144,-382.38447)"
+       x1="210.95215"
+       y1="515.34399"
+       x2="236.03809"
+       y2="515.34399" />
+  </defs>
+  <!-- Background -->
+  <!-- Title -->
+  <!-- Plot area -->
+  <rect
+     x="41.930374"
+     y="97.269791"
+     width="837.04779"
+     height="440.9567"
+     class="white"
+     stroke="#d1d5db"
+     stroke-width="1.56253"
+     id="rect2"
+     style="stroke-width:1.61006;stroke-dasharray:none"
+     inkscape:label="plotbg" />
+  <!-- Grid -->
+  <!-- Axes -->
+  <!-- Axis labels -->
+  <text
+     x="-320"
+     y="30"
+     class="label"
+     transform="rotate(-90)"
+     id="text17"
+     style="font-style:normal;font-variant:normal;font-weight:600;font-stretch:normal;font-size:16px;line-height:normal;font-family:Arial, Helvetica, sans-serif">Signal</text>
+  <!-- Tick labels -->
+  <!-- Calibration curve -->
+  <!-- Threshold lines -->
+  <rect
+     style="opacity:0.3;fill:url(#pattern70);fill-rule:nonzero;stroke:none;stroke-width:1.4379;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;paint-order:markers fill stroke"
+     id="rect67"
+     width="600"
+     height="142.40805"
+     x="119"
+     y="119.149"
+     inkscape:label="quant shade" />
+  <text
+     xml:space="preserve"
+     style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:14px;font-family:Arial, Helvetica, sans-serif;-inkscape-font-specification:'Arial, Helvetica, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;writing-mode:lr-tb;direction:ltr;opacity:1;fill:#2ab32b;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:1.5;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;paint-order:markers fill stroke"
+     x="730.30273"
+     y="193.02971"
+     id="text74"><tspan
+       sodipodi:role="line"
+       id="tspan74"
+       x="730.30273"
+       y="193.02971">Count as quantified</tspan></text>
+  <text
+     xml:space="preserve"
+     style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:14px;font-family:Arial, Helvetica, sans-serif;-inkscape-font-specification:'Arial, Helvetica, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;writing-mode:lr-tb;direction:ltr;fill:#e7e700;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:1.5;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;paint-order:markers fill stroke"
+     x="730.30273"
+     y="303.81174"
+     id="text74-2"><tspan
+       sodipodi:role="line"
+       id="tspan74-9"
+       x="730.30273"
+       y="303.81174">Count as detected</tspan></text>
+  <rect
+     style="opacity:0.2;fill:url(#pattern67);fill-rule:nonzero;stroke:none;stroke-width:1.64224;stroke-dasharray:none;stroke-dashoffset:0;paint-order:markers fill stroke"
+     id="rect57"
+     width="600"
+     height="158"
+     x="119"
+     y="341.5"
+     inkscape:label="red shade" />
+  <line
+     x1="120"
+     y1="340"
+     x2="720"
+     y2="340"
+     class="dashLOD"
+     id="line27"
+     style="stroke-dasharray:3, 6;stroke-dashoffset:0" />
+  <text
+     x="358"
+     y="559"
+     class="label"
+     id="text16"
+     style="font-style:normal;font-variant:normal;font-weight:600;font-stretch:normal;font-size:16px;line-height:normal;font-family:Arial, Helvetica, sans-serif"
+     inkscape:label="x-axis title">Concentration</text>
+  <g
+     class="tiny"
+     id="g27"
+     style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif">
+    <text
+       x="104"
+       y="520"
+       id="text18">0</text>
+    <text
+       x="648.95898"
+       y="519.30566"
+       id="text22"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:13px;font-family:Arial, Helvetica, sans-serif;-inkscape-font-specification:'Arial, Helvetica, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal"><tspan
+         sodipodi:role="line"
+         id="tspan1"
+         x="648.95898"
+         y="519.30566">High concentration</tspan></text>
+    <text
+       x="52.672512"
+       y="198.38412"
+       id="text27">High signal</text>
+  </g>
+  <g
+     id="g4"
+     inkscape:label="1/4 LLOQ"
+     style="fill:#000000;stroke:#000000">
+    <text
+       x="217.3208"
+       y="527.4707"
+       id="text20-7"
+       inkscape:highlight-color="#7c3aed"
+       style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif;fill:#000000;fill-rule:evenodd;stroke:none"
+       inkscape:label="1/4 LLOQ text">¼ LOQ</text>
+    <line
+       x1="238.75"
+       y1="498.63007"
+       x2="238.75"
+       y2="138.63007"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       stroke-dasharray="5, 6"
+       id="line34-5"
+       style="fill:#000000;stroke:#000000;stroke-opacity:1"
+       inkscape:label="1/4 LLOQ line" />
+  </g>
+  <g
+     id="g3"
+     inkscape:label="1/2 LLOQ">
+    <text
+       x="336.3208"
+       y="527.4707"
+       id="text20"
+       inkscape:highlight-color="#7c3aed"
+       style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif;fill:#000000;fill-rule:evenodd"
+       inkscape:label="1/2 LLOQ">½ LOQ</text>
+    <line
+       x1="357.75"
+       y1="500"
+       x2="357.75"
+       y2="140"
+       stroke="#7c3aed"
+       stroke-width="1.5"
+       stroke-dasharray="5, 6"
+       id="line34"
+       inkscape:label="1/2 LLOQ line"
+       style="stroke:#000000" />
+  </g>
+  <g
+     id="g2"
+     inkscape:label="LLOQ">
+    <text
+       x="583.04785"
+       y="519.4707"
+       id="text21"
+       style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif;fill:url(#linearGradient1);stroke:none"
+       inkscape:label="LLOQ text bot">LOQ</text>
+    <text
+       x="583.04785"
+       y="136.14749"
+       id="text21-3"
+       style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif;fill:url(#linearGradient2);stroke:none"
+       inkscape:label="LLOQ text top">LOQ</text>
+    <line
+       x1="596.75"
+       y1="500"
+       x2="596.75"
+       y2="140"
+       stroke="#d97706"
+       stroke-width="1.5"
+       stroke-dasharray="5, 6"
+       id="line35"
+       style="stroke-width:3.5;stroke-dasharray:14, 3.5;stroke-dashoffset:0;paint-order:markers fill stroke"
+       inkscape:label="LLOQ line" />
+  </g>
+  <g
+     id="g1"
+     inkscape:label="LOD"
+     transform="translate(300)">
+    <text
+       x="199.04785"
+       y="519.4707"
+       id="text19"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif;-inkscape-font-specification:'Arial, Helvetica, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:url(#linearGradient3)"
+       inkscape:label="LOD text bottom">LOD</text>
+    <line
+       x1="212.255"
+       y1="500"
+       x2="212.255"
+       y2="140"
+       stroke="#dc2626"
+       stroke-width="1.5"
+       stroke-dasharray="5, 6"
+       id="line33"
+       style="stroke-width:3.5;stroke-dasharray:14, 3.5;stroke-dashoffset:0"
+       inkscape:label="LOD line" />
+    <text
+       x="199.04785"
+       y="137.61551"
+       id="text19-9"
+       style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif;fill:url(#linearGradient4)"
+       inkscape:label="LOD text top">LOD</text>
+  </g>
+  <line
+     x1="120"
+     y1="260"
+     x2="720"
+     y2="260"
+     class="dashLLOQ"
+     id="line28"
+     style="stroke-dasharray:3, 6;stroke-dashoffset:0" />
+  <!-- Threshold labels -->
+  <text
+     x="729.97461"
+     y="344"
+     class="small"
+     fill="#dc2626"
+     id="text30"
+     style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:14px;line-height:normal;font-family:Arial, Helvetica, sans-serif;-inkscape-font-specification:'Arial, Helvetica, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:#374151"><tspan
+       sodipodi:role="line"
+       id="tspan43"
+       x="729.97461"
+       y="344">LOD signal</tspan></text>
+  <path
+     d="m 160,400 h 71"
+     class="arrow"
+     id="0_1_4lloq-low-1_4_lloq"
+     sodipodi:nodetypes="cc"
+     style="stroke-width:2;stroke-dasharray:none;paint-order:markers fill stroke" />
+  <text
+     x="729.97461"
+     y="264"
+     class="small"
+     fill="#d97706"
+     id="text31"
+     style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:14px;line-height:normal;font-family:Arial, Helvetica, sans-serif">LOQ signal(avg.)</text>
+  <!-- Concentration guides -->
+  <path
+     d="M 533,379 H 247"
+     class="arrow"
+     id="lod_lloq-low-1_4_lloq"
+     sodipodi:nodetypes="cc"
+     style="fill:none;stroke:#374151;stroke-width:2;stroke-dasharray:none;marker-end:url(#arrowhead-9);paint-order:markers fill stroke" />
+  <!-- Example points -->
+  <!-- Negative concentration -->
+  <path
+     d="M 85,448.75 H 231"
+     class="arrow"
+     id="neg_conc-low-1_4_lloq"
+     sodipodi:nodetypes="cc"
+     style="paint-order:markers fill stroke" />
+  <path
+     d="M 85.000003,315 H 231"
+     class="arrow"
+     id="neg_conc-mid-1_4_lloq"
+     sodipodi:nodetypes="cc"
+     style="fill:none;stroke:#374151;stroke-width:2;stroke-dasharray:none;marker-end:url(#arrowhead-4);paint-order:markers fill stroke" />
+  <!-- Below LOD signal -->
+  <path
+     d="m 157.99999,287.25 h 73"
+     class="arrow"
+     id="0_1_4lloq-mid-1_4_lloq"
+     sodipodi:nodetypes="cc"
+     style="fill:none;stroke:#374151;stroke-width:2;stroke-dasharray:none;marker-end:url(#arrowhead-0);paint-order:markers fill stroke" />
+  <path
+     d="m 163.43541,204 h 427"
+     class="arrow"
+     id="0_1_4lloq-high-lloq"
+     sodipodi:nodetypes="cc"
+     style="fill:none;stroke:#374151;stroke-width:2;stroke-dasharray:none;marker-end:url(#arrowhead-0-3);paint-order:markers fill stroke" />
+  <circle
+     cx="238.75"
+     cy="287.25"
+     r="8"
+     fill="#10b981"
+     class="pt"
+     id="circle36-7-2"
+     style="fill:#ff0000;stroke:#111827;stroke-width:1.5" />
+  <circle
+     cx="238.75"
+     cy="399.75"
+     r="8"
+     fill="#10b981"
+     class="pt"
+     id="circle36-7-2-9"
+     style="fill:#ff0000;stroke:#111827;stroke-width:1.5" />
+  <circle
+     cx="238.75"
+     cy="448.5"
+     r="8"
+     fill="#10b981"
+     class="pt"
+     id="circle36-7-2-9-5"
+     style="fill:#ff0000;stroke:#111827;stroke-width:1.5" />
+  <circle
+     cx="238.75"
+     cy="424"
+     r="8"
+     fill="#10b981"
+     class="pt"
+     id="circle36-7-2-99"
+     style="fill:#ff0000;stroke:#111827;stroke-width:1.5" />
+  <circle
+     cx="238.75"
+     cy="315"
+     r="8"
+     fill="#10b981"
+     class="pt"
+     id="circle36-7-2-6"
+     style="fill:#ff0000;stroke:#111827;stroke-width:1.5" />
+  <circle
+     cx="238.75"
+     cy="378.75"
+     r="8"
+     fill="#10b981"
+     class="pt"
+     id="circle36-7-2-2"
+     style="fill:#ff0000;stroke:#111827;stroke-width:1.5" />
+  <!-- Between LOD and LLOQ -->
+  <path
+     d="M 535,314 H 365"
+     class="arrow"
+     id="lod_lloq-mid-1_2_lloq"
+     sodipodi:nodetypes="cc"
+     style="fill:none;stroke:#374151;stroke-width:2;stroke-dasharray:none;marker-end:url(#arrowhead-9-6);paint-order:markers fill stroke" />
+  <circle
+     cx="357.75"
+     cy="314"
+     r="8"
+     fill="#8b5cf6"
+     class="pt"
+     id="circle38-7"
+     style="fill:#ffff00;stroke:#111827;stroke-width:1.5" />
+  <path
+     d="M 654.50006,292 H 365"
+     class="arrow"
+     id="ge_lloq-mid-1_2_lloq"
+     sodipodi:nodetypes="cc"
+     style="fill:none;stroke:#374151;stroke-width:2;stroke-dasharray:none;marker-end:url(#arrowhead-9-6-9-3);paint-order:markers fill stroke" />
+  <path
+     d="m 528.95092,224 c 22.36666,0 38.63333,0 61,0"
+     class="arrow"
+     id="lod_lloq-high-lloq"
+     style="stroke-width:2;stroke-dasharray:none;paint-order:markers fill stroke" />
+  <!-- Below LLOQ but above avg signal of LLOQ -->
+  <circle
+     cx="357.75"
+     cy="291.75"
+     r="8"
+     fill="#f59e0b"
+     class="pt"
+     id="circle40"
+     style="fill:#ffff00;stroke:url(#linearGradient42)" />
+  <!-- Below avg LLOQ signal -->
+  <circle
+     cx="596.75"
+     cy="203.75"
+     r="8"
+     fill="#06b6d4"
+     class="pt"
+     id="circle43"
+     style="fill:#2a7fff" />
+  <path
+     d="M 647,424 H 247"
+     class="arrow"
+     id="ge_lloq-low-1_4_lloq"
+     sodipodi:nodetypes="cc"
+     style="fill:none;stroke:#374151;stroke-width:2;stroke-dasharray:none;marker-end:url(#arrowhead-9-6-9-3-9);paint-order:markers fill stroke" />
+  <circle
+     cx="596.75"
+     cy="223.75"
+     r="8"
+     fill="#06b6d4"
+     class="pt"
+     id="circle43-9"
+     style="fill:#2a7fff;stroke:#111827;stroke-width:1.5" />
+  <!-- Normal quantified -->
+  <circle
+     cx="695.37067"
+     cy="189.10825"
+     r="8"
+     fill="#2563eb"
+     class="pt"
+     id="circle45"
+     style="fill:#ffffff" />
+  <text
+     x="657.22583"
+     y="177.63463"
+     class="small"
+     id="text46"
+     style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:14px;line-height:normal;font-family:Arial, Helvetica, sans-serif">Calibrated</text>
+  <!-- Region labels -->
+  <!-- Right-side rule summary -->
+  <!-- Bottom note -->
+  <line
+     x1="120.25"
+     y1="500"
+     x2="120.25"
+     y2="120"
+     class="axis"
+     id="line15" />
+  <line
+     x1="120"
+     y1="500"
+     x2="720"
+     y2="500"
+     class="axis"
+     id="line16" />
+  <!-- Legend -->
+  <g
+     transform="translate(-23.348542,61.846456)"
+     id="g73">
+    <circle
+       cx="205"
+       cy="0"
+       r="7"
+       fill="#10b981"
+       class="pt"
+       id="circle69"
+       style="fill:#ff0000" />
+    <text
+       x="219"
+       y="5"
+       class="legend"
+       id="text70"
+       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif">¼ LOQ</text>
+    <circle
+       cx="330"
+       cy="0"
+       r="7"
+       fill="#8b5cf6"
+       class="pt"
+       id="circle70"
+       style="fill:#ffff00" />
+    <text
+       x="344"
+       y="5"
+       class="legend"
+       id="text71"
+       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif">½ LOQ</text>
+    <circle
+       cx="461"
+       cy="0"
+       r="7"
+       fill="#f59e0b"
+       class="pt"
+       id="circle71"
+       style="fill:#2a7fff" />
+    <text
+       x="475"
+       y="5"
+       class="legend"
+       id="text72"
+       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif">LOQ</text>
+    <circle
+       cx="593"
+       cy="0"
+       r="7"
+       fill="#2563eb"
+       class="pt"
+       id="circle72"
+       style="fill:#ffffff" />
+    <text
+       x="607"
+       y="5"
+       class="legend"
+       id="text73"
+       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:13px;line-height:normal;font-family:Arial, Helvetica, sans-serif">&gt; LOQ (calibrated)</text>
+  </g>
+  <circle
+     id="path73"
+     style="fill:#000000;stroke:#000000"
+     cx="318.94794"
+     cy="166.67603"
+     r="0.34530702" />
+  <text
+     xml:space="preserve"
+     style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:14px;font-family:Arial, Helvetica, sans-serif;-inkscape-font-specification:'Arial, Helvetica, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;writing-mode:lr-tb;direction:ltr;fill:#cc1012;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:1.5;stroke-dasharray:none;stroke-dashoffset:0;paint-order:markers fill stroke"
+     x="729.93359"
+     y="418.16983"
+     id="text57"><tspan
+       sodipodi:role="line"
+       id="tspan62"
+       x="729.93359"
+       y="418.16983">Count as not detected</tspan></text>
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3"
+     width="12"
+     height="12"
+     x="153"
+     y="197.99998" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-7"
+     width="12"
+     height="12"
+     x="528"
+     y="218" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-2"
+     width="12"
+     height="12"
+     x="645"
+     y="286" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-5"
+     width="12"
+     height="12"
+     x="528"
+     y="308" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-71"
+     width="12"
+     height="12"
+     x="528"
+     y="373" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-8"
+     width="12"
+     height="12"
+     x="645"
+     y="418" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-4"
+     width="12"
+     height="12"
+     x="153"
+     y="281.25" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-4-4"
+     width="12"
+     height="12"
+     x="153"
+     y="394" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-4-0"
+     width="12"
+     height="12"
+     x="80"
+     y="309" />
+  <rect
+     style="fill:#373e48;fill-opacity:1;stroke-width:0.182574;stroke-linecap:round"
+     id="rect11-3-4-0-0"
+     width="12"
+     height="12"
+     x="80"
+     y="442.75" />
+</svg>

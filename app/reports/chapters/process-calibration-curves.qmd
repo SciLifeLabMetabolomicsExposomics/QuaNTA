@@ -1,0 +1,434 @@
+---
+title: Calibration - curves
+params:
+  norm_method: loess_norm
+  interactive_plot: false
+---
+
+```{r}
+#| purl: true
+#| file: !expr setup_file
+#| eval: !expr '!knitr::opts_knit$get("child")'
+# The code in this chunk is NOT evaluated here when knitting this file directly.
+# It is included for DEBUGGING purposes only. 
+params <- rlang::list2(
+  norm_method = "loess_norm", 
+  interactive_plot = FALSE,
+  project_title = "Test",
+) 
+source(setup_file)
+```
+
+## Calibration curve per chemical
+
+The calibration curve of each of the chemicals is presented below.
+
+```{r}
+#| purl: true
+# Whether the calibration curve is fitted to the log-transformed data
+log_scale <- to_report[["params"]][["log_calibration"]]
+
+calcurve_lst <- lapply(lst_proc, \(ea) ea$calcurve)
+# To keep the order
+seq_feat_id <- rownames(calcurve_lst[[1]])  # All batches have the same features
+
+calcurve_to_show_df <- lapply(calcurve_lst, SumExp::as_tibble) |> 
+  dplyr::bind_rows(.id = "Batch") 
+# Copy labels from the first batch
+for (ii in names(calcurve_lst[[1]])) {
+  labelled::label_attribute(calcurve_to_show_df[[ii]]) <- 
+    labelled::label_attribute(calcurve_lst[[1]][[ii]])
+}
+for (ii in names(SumExp::col_df(calcurve_lst[[1]]))) {
+  l <- labelled::label_attribute(SumExp::col_df(calcurve_lst[[1]])[[ii]])
+  labelled::label_attribute(calcurve_to_show_df[[ii]]) <- l
+}
+calcurve_to_show_df <- calcurve_to_show_df |>
+  dplyr::rename(.cc_pt = util$spiked_conc_pts_name) |>    # Rename for clarity
+  dplyr::mutate(
+    "c_type" = dplyr::case_when(
+      lod == lloq & .cc_pt == lod ~ "LOD/LLOQ",
+      .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "Within limits",
+      .cc_pt == lod ~ "LOD",
+      .cc_pt == 0 ~ "Cal0",
+      TRUE ~ "Out-of-range"
+    )
+  )
+# Split the data by feature
+lst_calcurve_to_show_df <- split(calcurve_to_show_df, calcurve_to_show_df$.row_id)
+# Keep the order of features as in the data
+lst_calcurve_to_show_df <- local({
+  nms <- names(lst_calcurve_to_show_df)
+  lst_calcurve_to_show_df[match(seq_feat_id, nms, nomatch = 0)]
+})
+```
+
+```{r}
+# Adjust the normalization method text
+txt_norm <- show$label_if_has(calcurve_to_show_df[[params$norm_method]], params$norm_method) |>
+  sub("normalized", "normalization", x = _, fixed = TRUE)
+```
+
+The peak areas were normalized by the internal standards applying the `r txt_norm`.
+The concentration range was narrowed down to the range after the trimming step described in the [previous section](#calibration-curve-limits).
+
+```{r}
+#| label: 'calibration-curve-by-chemical-legend'
+#| fig-width: 10
+#| fig-height: 1
+# Point shape per batch, named by batch ID so that every plot and the shared legend agree.
+# The default shape palette has only 6 shapes; repeat the list for any number of batches.
+batch_ids <- sort(unique(as.character(calcurve_to_show_df$Batch)))
+batch_shapes <- rep_len(c(16, 17, 15, 18, 8, 3, 4, 7, 9, 10, 11, 12, 13, 14), length(batch_ids)) |>
+  setNames(batch_ids)
+# Plot calibration curves
+calcurve_plot <- function(dfm, y = params$norm_method) {
+  dfm <- dfm |>
+    dplyr::mutate(
+      # Label for the points
+      txt = paste0("Batch: ", Batch,
+                   "\ninj: ", injection_order, ", conc: ", .cc_pt,
+                   "\nName: ", sample_name,
+                   "\nint: ", signif(.data[[y]], 6))
+    )
+  facet_fill <- if (any(!dfm$has_proper_range)) "lightcoral" else "lightgray"
+  ggplot(dfm, aes(x = .cc_pt, y = .data[[y]], shape = Batch)) +
+    suppressWarnings(geom_point(aes(color = c_type, text = txt))) +
+    scale_shape_manual(values = batch_shapes) +
+    labs(
+      x = show$label_if_has(dfm$.cc_pt, "Calibrant Concentration"),
+      y = show$label_if_has(dfm[[y]], "Signal"),
+      color = "Concentration\ncategory"
+    ) +
+    scale_color_manual(
+      values = c(
+        "Within limits" = "green4",
+        "Out-of-range" = "gray",
+        "Cal0" = "red",
+        "LOD" = "blue",
+        "LOD/LLOQ" = "yellow"
+      )
+    ) +
+    facet_wrap(~ feature_name, scales = "free", ncol = 1) +
+    theme(
+      strip.background = element_rect(fill = facet_fill),
+    )
+}
+# Show legend only at the top
+p <- calcurve_plot(calcurve_to_show_df)
+leg <- ggpubr::get_legend(p, position = "top")
+ggpubr::as_ggplot(leg)
+```
+
+```{r}
+#| results: 'asis'
+p_by_feature <- lapply(lst_calcurve_to_show_df, \(dfm) {
+  p <- calcurve_plot(dfm)
+  if (log_scale) {
+    p <- p + scale_x_log10() + scale_y_log10()
+  }
+  p <- p + theme(legend.position = "none")
+  if (params$interactive_plot) {
+    plotly::ggplotly(p, tooltip = c("text")) |> 
+      plotly::layout(margin = list(t = 50, b = 100, l = 50, r = 5))
+  } else {
+    p
+  }
+})
+
+sapply(names(p_by_feature), \(ii) {
+  rlang::chr(
+    "```{r}",
+    "#| label: 'calcurve-cal_pts-{{ii}}'",
+    "#| fig-width: 7",
+    "#| fig-height: 7",
+    "#| out-width: '70%'",
+    "p_by_feature${{ii}}",
+    "```",
+  ) |> 
+    knitr::knit_expand(text = _)
+}) |>
+  knitr::knit_child(text = _, quiet = TRUE) |> 
+  knitr::asis_output()    # print `asis`
+```
+
+## Calibration of the chemicals
+
+```{r}
+#| purl: true
+concn_lst <- lapply(lst_proc, \(ea) {
+  se <- ea$concn
+  se[SumExp::row_df(se)$has_proper_range, ]
+})
+concn_row_df <- lapply(concn_lst, \(se) {
+  SumExp::row_df(se) |>
+    tibble::as_tibble(rownames = "feature_id")
+}) |>
+  purrr::list_rbind(names_to = "Batch")
+concn_col_df <- lapply(concn_lst, \(se) {
+  SumExp::col_df(se) |>
+    tibble::as_tibble(rownames = "sample_id")
+}) |> 
+  purrr::list_rbind(names_to = "Batch")
+calib_lst <- lapply(calcurve_lst, \(se) {
+  se[SumExp::row_df(se)$has_proper_range, ]
+})
+```
+
+### Calibration models
+
+```{r}
+weight_method <- to_report$params$weight
+if (weight_method == "largestR2") {
+  n_models <- 6
+  weight_txt <- "three different weights, $1$, $\\frac{1}{x}$ and $\\frac{1}{x^2}$"
+} else {
+  n_models <- 2
+  weight_txt <- switch(
+    weight_method,
+    "1" = "constant",
+    "1_div_x" = "$\\frac{1}{x}$",
+    "1_div_x2" = "$\\frac{1}{x^2}$"
+  )
+  weight_txt <- paste(weight_txt, "weight")
+}
+```
+
+The calibration curve is fitted to the `r switch(params$norm_method, "loess_norm" = "LOESS normalized", "closest_norm" = "Closest RT normalized", "mvis_norm" = "multivariate (PCA) normalized", "raw" = "non-normalized", params$norm_method)` data using `r n_models` different models.
+Linear models and quadratic models are fitted to the data with `r weight_txt`.
+The best model is selected based on the $R^2$ value.
+Preferring simpler models, the measures of explained variation of quadratic models were penalized by 0.01.
+
+The distribution of $R^2$ values after penalty by different models for the calibration curves is compared below.
+
+```{r}
+#| label: 'calibration-R2-by-mmodels'
+R2s_adj <- concn_row_df |>
+  dplyr::mutate(R2s_adj = lapply(calcurve_model, \(m) m$R2s_adj), .keep = "unused") |>
+  tidyr::unnest_longer(R2s_adj, values_to = "R2", indices_to = "Model")
+
+ggplot(R2s_adj) +
+  geom_boxplot(aes(x = Model, y = R2)) +
+  labs(y = expression(paste(R^2, " with penalty"))) +
+  facet_wrap(~Batch)
+```
+
+The count of chemicals favoring each model is shown below.
+
+```{r}
+#| label: 'present-model-count-by-chemical'
+#| results: 'markup'
+concn_row_df |>
+  dplyr::mutate(best_model = sapply(calcurve_model, \(m) m$best_model_name)) |>
+  janitor::tabyl(Batch, best_model)
+```
+
+### Calibration curves
+
+The concentration of the sample classes, `r knitr::combine_words(unique(concn_col_df$Class), before = "\x60")`,
+are computed using the calibration curve.
+After the computation, the following adjustments are applied to the data:
+
+```{r}
+#| label: 'calibration-curve-steps-txt'
+lod_signal_txt <- switch(to_report$params$llox_method,
+  "pt_signal_mean" = "3× the mean signal of the blank (zero concentration point)",
+  "pt_signal_mean_plus_sd" = 
+    "mean signal of the blank (zero concentration point) plus 3× its standard deviation"
+)
+```
+
+* Any calibrated concentration between the LOD and LLOQ is adjusted to the 1/2 of LLOQ.
+* Any calibrated concentration below the LOD is adjusted to the 1/4 of LLOQ.
+* Any calibrated concentration below LLOQ while peak signal > the average signal of LLOQ is adjusted to LLOQ.
+* Any calibrated concentration whose signal is below the average signal of LLOQ is adjusted to the 1/2 of LLOQ.
+* Any calibrated concentration whose signal is below the LOD signal threshold (`r lod_signal_txt`) is adjusted to 1/4 of LLOQ.
+* Any chemical with values below LLOQ in all samples is removed from the quantification report.
+
+#### All measurement samples
+
+The shaded gray area represents the region below the lower-limit of quantification (LLOQ) for each chemical.
+
+```{r}
+#| results: 'asis'
+qmd_out <- list()
+for (batch_id in names(concn_lst)) {
+
+  concn_se <- concn_lst[[batch_id]]
+  calib_se <- calib_lst[[batch_id]]
+
+  # Show legend only at the top
+  qmd_out <- c(
+    qmd_out,
+    rlang::chr(
+      "##### Batch: {{batch_id}}",
+      "```{r}",
+      "#| label: 'calibration-curve-with-all-samples-legend-{{batch_id}}'",
+      "#| fig-width: 10",
+      "#| fig-height: 1",
+      "p <- show$ggplot_calcurve_samples(", 
+      "  concn_se, calib_se, MAT_ID_IN_CALIB, COLORS_OF_CLASSES, log_scale", 
+      ")",
+      "leg <- ggpubr::get_legend(p, position = 'top')",
+      "ggpubr::as_ggplot(leg)",
+      "```",
+    ) |> 
+      knitr::knit_expand(text = _) |>
+      knitr::knit_child(text = _, quiet = TRUE)
+  )
+
+  # Show calibration curves for each feature
+  lst_concn_se <- SumExp::split_rows(concn_se, rownames(SumExp::row_df(concn_se)))
+  # Keep the order of features as in the data
+  lst_concn_se <- local({
+    nms <- names(lst_concn_se)
+    lst_concn_se[match(seq_feat_id, nms, nomatch = 0)]
+  })
+
+  p_by_feature <- lapply(lst_concn_se, \(se) {
+    p <- show$ggplot_calcurve_samples_facet(se, calib_se, MAT_ID_IN_CALIB, COLORS_OF_CLASSES, 
+                                            ncol = 1, log_scale = log_scale)
+    p <- p + theme(legend.position = "none")
+    if (params$interactive_plot) {
+      plotly::ggplotly(p, tooltip = c("text")) |> 
+        plotly::layout(margin = list(t = 50, b = 100, l = 50, r = 5))
+    } else {
+      p
+    }
+  })
+
+  qmd_out <- c(
+    qmd_out,
+    sapply(names(p_by_feature), \(ii) {
+      rlang::chr(
+        "```{r}",
+        "#| label: 'calcurve-with-all-samples-{{batch_id}}-{{ii}}'",
+        "#| fig-width: 7",
+        "#| fig-height: 7",
+        "#| out-width: '70%'",
+        "p_by_feature${{ii}}",
+        "```",
+      ) |> 
+        knitr::knit_expand(text = _)
+    }) |>
+      knitr::knit_child(text = _, quiet = TRUE)
+  )
+}
+knitr::asis_output(paste(qmd_out, collapse = "\n"))    # print `asis`
+```
+
+#### All except `QC` samples
+
+```{r}
+#| purl: true
+to_show_excl_qc_lst <- lapply(concn_lst, \(se) util$exclude_ctrl_smpl_cat(se, "QC"))
+classes_excl_qc_blank <- lapply(to_show_excl_qc_lst, \(se) SumExp::col_df(se)[["Class"]]) |> 
+  unlist() |> 
+  unique()
+```
+
+The data of those `r english::words(length(classes_excl_qc_blank))` classes are presented on the calibration curve.
+
+The best model name is displayed at the bottom right corner of each plot.
+The shaded gray area represents the region below the lower-limit of quantification (LLOQ) for each chemical.
+
+```{r}
+#| label: 'calibration-curve-with-all-samples-excl-qc'
+#| results: 'asis'
+qmd_out <- list()
+for (batch_id in names(to_show_excl_qc_lst)) {
+
+  to_show_excl_qc <- to_show_excl_qc_lst[[batch_id]]
+  calib_se <- calib_lst[[batch_id]]
+
+  qmd_out <- c(
+    qmd_out,
+    rlang::chr(
+      "##### Batch: {{batch_id}}",
+      "```{r}",
+      "#| label: 'calibration-curve-with-all-samples-excl-qc-legend-{{batch_id}}'",
+      "#| fig-width: 10",
+      "#| fig-height: 1",
+      "p <- show$ggplot_calcurve_samples(",
+      "  to_show_excl_qc, calib_se, MAT_ID_IN_CALIB, COLORS_OF_CLASSES, log_scale", 
+      ")",
+      "leg <- ggpubr::get_legend(p, position = 'top')",
+      "ggpubr::as_ggplot(leg)",
+      "```",
+    ) |> 
+      knitr::knit_expand(text = _) |>
+      knitr::knit_child(text = _, quiet = TRUE)
+  )
+
+  if (nrow(to_show_excl_qc) == 0) {
+    qmd_out <- c(
+      qmd_out,
+      "No chemicals to show in the calibration curve.\n"
+    )
+  } else {
+    # Keep the order of features as in the data
+    to_show_excl_qc <- local({
+      nms <- rownames(to_show_excl_qc)
+      to_show_excl_qc[match(seq_feat_id, nms, nomatch = 0), ]
+    })
+    # Split by each row
+    n_chem <- nrow(to_show_excl_qc)
+    n_cols <- 2    # Number of columns in the plot (facets)
+    n_rows <- ceiling(n_chem / n_cols)    # Number of rows in the plot
+    i_grp <- rep(seq_len(n_rows - 1), each = n_cols)
+    i_grp <- c(i_grp, rep(n_rows, (n_chem - 1) %% n_cols + 1))
+    i_grp <- sprintf("g%04d", i_grp)
+    lst_show_se <- SumExp::split_rows(to_show_excl_qc, i_grp)
+
+    p_by_row <- lapply(lst_show_se, \(se) {
+      p <- show$ggplot_calcurve_samples_facet(se, calib_se, MAT_ID_IN_CALIB, COLORS_OF_CLASSES, 
+                                              ncol = n_cols, log_scale = log_scale)
+      p <- p + show$geom_best_model_text(se)
+      p + theme(legend.position = "none")
+      # plotly::ggplotly(
+      #   p + theme(legend.position = "none"),
+      #   tooltip = c("text")
+      # ) |> 
+      #   plotly::layout(margin = list(t = 50, b = 100, l = 50, r = 50))
+    })
+
+    qmd_out <- c(
+      qmd_out,
+      sapply(names(p_by_row), \(ii) {
+        n_chem_in_row <- nrow(lst_show_se[[ii]])
+        fig_width <- n_chem_in_row * 4.5    # Width 
+        out_width <- paste0(fig_width * 10, "%")
+        rlang::chr(
+          "```{r}",
+          "#| label: 'calcurve-with-all-samples-excl-qc-{{batch_id}}-{{ii}}'",
+          "#| fig-width: {{fig_width}}",
+          "#| fig-height: 4.8",
+          "#| out-width: '{{out_width}}'",
+          "p_by_row[['{{ii}}']]",
+          "```",
+        ) |> 
+          knitr::knit_expand(text = _)
+      }) |>
+        knitr::knit_child(text = _, quiet = TRUE)
+    )
+  }
+}
+knitr::asis_output(paste(qmd_out, collapse = "\n"))
+```
+
+## Removal of the chemicals with no measurement samples
+
+If all values of non-QC samples were below LLOQ, the chemical was removed from the final reports.
+After the removal, the number of reported chemicals is,
+
+```{r}
+#| label: 'number-of-chemicals-after-removal'
+#| results: 'markup'
+lapply(concn_lst, \(se) {
+  tibble::tibble(
+    "Number of chemicals" = apply(se[["conc"]], 1, \(r) any(!is.na(r))) |> 
+      sum()
+  )
+}) |>
+  purrr::list_rbind(names_to = "Batch")
+```

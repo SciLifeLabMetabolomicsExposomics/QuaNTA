@@ -1,0 +1,334 @@
+/* ------------------------------------------------------------------------------------------- *
+ * QuaNTA design: a light canvas with white cards; the logo's blue as the accent (navigation,
+ * headings, selections) and its orange only for the primary actions.
+ * Loaded after the Bootstrap theme (app.R), so these rules win over the theme's defaults.
+ * ------------------------------------------------------------------------------------------- */
+
+:root {
+  --q-blue: #1A0DF2;          /* QuaNTA logo blue */
+  --q-blue-hover: #1408C2;
+  --q-blue-light: #EEF0FE;    /* selected / group backgrounds */
+  --q-blue-soft: #DDE1FD;
+  --q-row-selected: #553CAB;  /* Selected table rows: the middle of the logo's blue-orange fade */
+  --q-navy: #0D1B3E;          /* headings, text */
+  --q-text: #1F2A44;
+  --q-muted: #667085;
+  --q-orange: #FFB326;        /* QuaNTA logo orange: primary actions only */
+  --q-orange-hover: #F5A30F;
+  --q-bg: #F5F7FA;            /* page background */
+  --q-border: #E3E7EE;
+  --q-input-border: #D0D5DD;
+  --q-radius: 12px;
+}
+
+body {
+  background-color: var(--q-bg) !important;
+  color: var(--q-text) !important;
+}
+h1, h2, h3, h4, h5, h6 { color: var(--q-navy); }
+a { color: var(--q-blue); }
+a:hover { color: var(--q-blue-hover); }
+
+/* ---------- Header: logo + stepper navigation ---------- */
+.navbar {
+  background-color: #FFFFFF !important;
+  border-bottom: 1px solid var(--q-border) !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  padding: 8px 16px 22px !important;   /* Room below the logo for the tagline */
+}
+.navbar > .container-fluid { align-items: center; }
+.navbar-brand { padding: 0 !important; margin-right: 0 !important; }
+/* The tagline hangs below the logo, so the steps are centered on the logo itself */
+/* QuaNTA logo (with the tagline below it), a divider and the SciLifeLab logo, centred on the
+   QuaNTA logo */
+.quanta-brand { display: flex; align-items: center; gap: 16px; line-height: 1; }
+.quanta-brand-main { position: relative; display: block; }
+.quanta-brand-main img { height: 46px; width: auto; object-fit: contain; display: block; }
+.quanta-brand-divider { width: 1px; height: 34px; background: var(--q-border); }
+.quanta-brand img.quanta-brand-partner { height: 26px; width: auto; display: block; }
+.quanta-tagline {
+  position: absolute; left: 0; top: 100%; margin-top: 3px; white-space: nowrap;
+  font-size: .82rem; color: var(--q-text); letter-spacing: .01em;
+}
+/* The steps start a bit to the right of the logo */
+.navbar-collapse > .navbar-nav:first-child { margin-left: 48px; }
+/* Steps and the About link in one row; the labels keep their two lines */
+@media (min-width: 992px) {
+  .navbar-collapse > .navbar-nav { flex-wrap: nowrap; column-gap: 8px; }
+  .q-step-label, #help-open { white-space: nowrap; }
+}
+/* Laptop widths: a slightly smaller header so that everything fits in the row */
+@media (max-width: 1500px) {
+  .quanta-brand { gap: 10px; }
+  .quanta-brand-main img { height: 40px; }
+  .quanta-brand img.quanta-brand-partner { height: 22px; }
+  .quanta-brand-divider { height: 28px; }
+  .navbar-collapse > .navbar-nav:first-child { margin-left: 24px; }
+  .q-step-label { font-size: .88rem; }
+  #help-open { font-size: 1.2rem !important; padding: 0 4px !important; }
+}
+
+.navbar-nav .nav-link {
+  color: var(--q-text) !important;
+  padding: 12px 10px 13px !important;
+  border-bottom: 3px solid transparent;
+  background: transparent !important;
+}
+.navbar-nav .nav-link.active { border-bottom-color: var(--q-blue); }
+.navbar-nav .nav-link:hover .q-step-label { color: var(--q-blue); }
+.q-step { display: flex; align-items: center; gap: 10px; }
+.q-step-num {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #E9ECF2; color: var(--q-text); font-weight: 700; font-size: 1.05rem;
+}
+.q-step-label { font-size: .95rem; line-height: 1.2; text-align: left; color: var(--q-text); }
+.nav-link.active .q-step-num { background: var(--q-blue); color: #FFFFFF; }
+.nav-link.active .q-step-label { color: var(--q-blue); font-weight: 600; }
+/* Connector line between the steps */
+.q-step:not(.q-step-last)::after {
+  content: ""; width: 36px; height: 2px; background: #D5DAE3; margin-left: 8px;
+}
+@media (max-width: 1800px) { .q-step:not(.q-step-last)::after { width: 22px; } }
+@media (max-width: 1400px) { .q-step:not(.q-step-last)::after { width: 14px; } }
+
+/* ---------- Cards ---------- */
+.card {
+  background-color: #FFFFFF !important;
+  color: var(--q-text) !important;
+  border: 1px solid var(--q-border) !important;
+  border-radius: var(--q-radius) !important;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, .06) !important;
+  overflow: auto;
+}
+.card-header, .bslib-card-header {
+  background: transparent !important;
+  border-bottom: none !important;
+  padding: 20px 22px 6px !important;
+}
+.card-body { padding: 8px 22px 20px !important; }
+.q-card-head { display: flex; align-items: flex-start; gap: 14px; width: 100%; }
+.q-card-icon { color: var(--q-blue); font-size: 1.9rem; line-height: 1; margin-top: 2px; }
+.q-card-titles { flex: 1 1 auto; min-width: 0; }
+.q-card-title { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--q-navy); line-height: 1.2; }
+.q-card-sub { margin: 4px 0 0; font-size: .92rem; color: var(--q-muted); }
+.q-card-actions { margin-left: auto; }
+.q-card-actions .btn { white-space: nowrap; }
+/* A plot or table that shows a message instead (e.g. "Not enough QCs ...") takes only the height of
+   the message, not the height reserved for the plot or table */
+/* (htmlwidgets shows the message in a box laid over the hidden plot / table, which keeps its height
+   or, for an empty table, has none: the message then runs into the next title) */
+/* Height 0, not `display: none`: Shiny suspends hidden outputs, which would then not update (e.g.
+   3.5 stuck loading after selecting an IS) */
+*:has(> .htmlwidgets-error.shiny-output-error-validation) > .html-widget-output {
+  height: 0 !important; min-height: 0 !important; overflow: hidden !important;
+}
+/* Room for the loading spinner, also where the output had no height (e.g. after a message) */
+/* (The spinner and its caption are centred in the area: 240 px keeps it clear of the title above) */
+.shiny-spinner-output-container:has(> .load-container:not(.shiny-spinner-hidden)) { min-height: 240px; }
+.htmlwidgets-error.shiny-output-error-validation {
+  position: static !important; max-width: none !important; height: auto !important; margin: 4px 0 22px;
+}
+
+/* Plots: grey grid lines on the light grey plot area (set by a script in app.R) (pale colours stand out better than on
+   white); all plotly plots, the same as in the internal report */
+.js-plotly-plot .plotly .gridlayer path { stroke: #C8CDD5 !important; }
+
+/* A row under the title and subtitle (e.g. "Download settings"), aligned with the title text */
+.q-card-below { margin: 10px 0 0 calc(1.9rem + 14px); }
+.q-card-below .btn { white-space: nowrap; }
+
+/* Section titles inside the cards of the analysis tabs */
+.q-section-title { margin: 18px 0 8px; font-size: 1.15rem; font-weight: 700; color: var(--q-navy); }
+.q-section-title:first-child { margin-top: 4px; }
+.card-body h3 { font-size: 1.15rem !important; font-weight: 700; color: var(--q-navy); margin: 18px 0 8px !important; }
+
+/* Settings groups (Processing / Quality control / Calibration) */
+.q-group-head {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--q-blue-light); color: var(--q-blue);
+  font-weight: 700; font-size: 1.05rem;
+  padding: 9px 14px; border-radius: 8px; margin: 2px 0 8px;
+}
+.q-group-body { padding: 0 6px; }
+.q-group-body .shiny-input-container { margin-bottom: 6px; }
+.q-group-body .checkbox, .q-group-body .form-check { margin-top: 2px; margin-bottom: 2px; }
+.q-divider { border: 0; border-top: 1px solid var(--q-border); margin: 14px 0; opacity: 1; }
+
+/* Info icons with tooltips */
+.q-info { color: #98A2B3; margin-left: 6px; cursor: help; font-size: .9em; }
+.q-info:hover { color: var(--q-blue); }
+
+/* ---------- Controls ---------- */
+.form-control, .selectize-input, .form-select {
+  background-color: #FFFFFF !important;
+  color: var(--q-text) !important;
+  border: 1px solid var(--q-input-border) !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+/* ---------- File Inputs ---------- */
+.shiny-file-input {
+  height: 40px !important; /* Double the default height */
+  min-height: 40px !important;
+}
+
+/* For Bootstrap file input styling */
+.form-control[type="file"] {
+  height: 40px !important; /* Double the default height */
+  min-height: 40px !important;
+  padding: 8px 12px !important;
+}
+
+/* Custom file input styling for better visibility */
+.custom-file-input {
+  height: 40px !important; /* Double the default height */
+  min-height: 40px !important;
+}
+.form-control:focus, .selectize-input.focus, .form-select:focus {
+  border-color: var(--q-blue) !important;
+  box-shadow: 0 0 0 3px rgba(26, 13, 242, .12) !important;
+}
+.form-control[readonly] { background-color: #FFFFFF !important; }
+.control-label, .form-label, .shiny-input-container > label { font-weight: 600; color: var(--q-text); }
+.form-check-input:checked { background-color: var(--q-blue) !important; border-color: var(--q-blue) !important; }
+.form-check-input:focus { box-shadow: 0 0 0 3px rgba(26, 13, 242, .12) !important; border-color: var(--q-blue) !important; }
+.form-check-label { white-space: nowrap; display: inline-flex; align-items: center; flex-wrap: nowrap; }
+.form-check { display: flex; align-items: center; flex-wrap: nowrap; }
+.shiny-input-container { margin-bottom: 14px; }
+.help-block, .form-text { color: var(--q-muted); }
+
+/* ---------- Buttons: secondary by default, orange for primary actions ---------- */
+.btn {
+  background-color: #FFFFFF !important;
+  color: var(--q-blue) !important;
+  border: 1px solid #C7CBF9 !important;
+  border-radius: 6px !important;
+  font-weight: 600;
+  font-size: 1rem;
+}
+.btn:hover, .btn:focus {
+  background-color: var(--q-blue-light) !important;
+  border-color: var(--q-blue) !important;
+  color: var(--q-blue) !important;
+  box-shadow: none !important;
+}
+/* Primary actions of the pipeline: read, process, reports, export (by their Shiny IDs) */
+#read_msdial-run_button, #proc-run_button, #report-gen_internal, #report-gen_external,
+#export_data-run_button,
+.btn-quanta-primary, .btn-primary {
+  background-color: var(--q-orange) !important;
+  border-color: var(--q-orange) !important;
+  color: var(--q-navy) !important;
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 10px 18px;
+}
+#read_msdial-run_button:hover, #proc-run_button:hover, #report-gen_internal:hover,
+#report-gen_external:hover, #export_data-run_button:hover,
+.btn-quanta-primary:hover, .btn-quanta-primary:focus, .btn-primary:hover, .btn-primary:focus {
+  background-color: var(--q-orange-hover) !important;
+  border-color: var(--q-orange-hover) !important;
+  color: var(--q-navy) !important;
+  box-shadow: 0 2px 8px rgba(245, 163, 15, .35) !important;
+}
+.btn-quanta-wide, #read_msdial-run_button, #proc-run_button { width: 100%; margin: 4px 0 8px; }
+.btn-sm-quanta { font-size: .88rem !important; padding: 5px 12px !important; }
+.btn:disabled, .btn.disabled, .btn:disabled:hover, .btn.disabled:hover {
+  background-color: #E4E7EC !important;
+  border-color: #E4E7EC !important;
+  color: #98A2B3 !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+}
+
+/* ---------- Log: console ---------- */
+pre.shiny-text-output, pre.shiny-text-output.monospace {
+  background-color: #0F172A !important;
+  color: #E5E7EB !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 12px 14px !important;
+  font-family: "JetBrains Mono", monospace !important;
+  font-size: .82rem !important;
+  line-height: 1.6;
+}
+.q-log pre[id$='script_output'] { min-height: 420px; max-height: 62vh !important; }
+pre[id$='script_output'] { max-height: 35vh; overflow-y: auto; }
+.q-log .nav-underline .nav-link, .q-log .nav-link { color: var(--q-muted) !important; font-weight: 600; }
+.q-log .nav-link.active { color: var(--q-blue) !important; border-bottom-color: var(--q-blue) !important; }
+.q-log .tab-content { padding-top: 10px; }
+
+/* Note on the best normalization method (pages 3 and 4) */
+.q-best-norm { color: var(--q-blue); font-weight: 600; margin: 4px 0 8px; }
+
+/* ---------- Tables ---------- */
+table.dataTable { background-color: #FFFFFF !important; color: var(--q-text) !important; }
+table.dataTable thead th {
+  background-color: var(--q-blue-light) !important;
+  color: var(--q-navy) !important;
+  font-weight: 600;
+  border-bottom: 1px solid var(--q-blue-soft) !important;
+}
+table.dataTable tbody tr { background-color: #FFFFFF !important; }
+table.dataTable tbody tr:nth-child(even) { background-color: #F9FAFC !important; }
+table.dataTable tbody tr:hover { background-color: #F2F4FE !important; }
+table.dataTable.no-footer { border-bottom: 1px solid var(--q-border) !important; }
+table.dataTable tbody tr.failed-row td { background-color: #F8D0D0 !important; color: var(--q-text) !important; }
+/* Selected rows: the violet-blue in the middle of the logo's blue-orange fade, with white text
+   (DataTables draws its own selection colour as an inset shadow on the cells, replaced here) */
+table.dataTable tbody tr.selected, table.dataTable tbody tr.selected > td,
+table.dataTable tbody tr.selected:hover, table.dataTable tbody tr.selected:hover > td {
+  background: var(--q-row-selected) !important;
+  --bs-table-bg: var(--q-row-selected) !important;
+  --bs-table-accent-bg: var(--q-row-selected) !important;
+  --dt-row-selected: 85, 60, 171 !important;
+  --dt-row-selected-text: 255, 255, 255 !important;
+  color: #FFFFFF !important;
+  box-shadow: none !important;
+}
+table.dataTable tbody tr.selected > td:first-child { box-shadow: inset 3px 0 0 var(--q-orange) !important; }
+table.dataTable tbody tr.selected a { color: #FFFFFF !important; }
+/* Tables with column filters keep room for a whole filter dropdown (at most 200px before it
+   scrolls), also when filtered down to a row or two: the scroll area would clip it */
+.dataTables_scrollHead:has(.form-group) + .dataTables_scrollBody { min-height: 215px; }
+[data-bs-theme] .card table, [data-bs-theme] .card table th, [data-bs-theme] .card table td { color: var(--q-text) !important; }
+
+/* ---------- Resizable panes (analysis tabs) ---------- */
+.split-pane { display: flex; flex-direction: row; width: 100%; }
+.split-pane > div { overflow: auto; min-width: 0; }
+/* Pages 2-3 as page 4: the cards fill the window and each card body scrolls on its own (the card
+   headers stay visible) */
+.split-pane { flex: 1 1 auto; min-height: 0; height: 100%; }
+.split-pane > div { display: flex; flex-direction: column; min-height: 0; overflow: hidden !important; }
+.split-pane > div > .card { flex: 1 1 auto; min-height: 0; margin-bottom: 0; }
+.split-pane > div > .card > .card-body { overflow-y: auto; min-height: 0; }
+.gutter { background-color: var(--q-border); background-repeat: no-repeat; background-position: 50%; cursor: col-resize; border-radius: 4px; }
+.gutter:hover { background-color: var(--q-blue-soft); }
+.gutter.gutter-horizontal { width: 8px; }
+
+/* Card titles on one line in wide windows */
+@media (min-width: 992px) { .q-card-title { white-space: nowrap; } }
+
+/* Report buttons (page 5): as wide as their label, not the whole card */
+.q-gen-group { display: flex; flex-direction: column; align-items: flex-start; }
+.q-gen-group > .shiny-html-output, .q-gen-group > .shiny-text-output { align-self: stretch; }
+.q-gen-btn { width: auto; min-width: 220px; margin: 0 0 4px; }
+
+/* A row of controls above a figure (e.g. 3.11): all labels at the same height, and the radio
+   buttons as high as the dropdowns, so that the controls line up too */
+.q-controls-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.q-controls-row > .form-group, .q-controls-row > .shiny-input-container { margin-bottom: 6px; }
+.q-controls-row .control-label { display: block; margin-bottom: 4px; line-height: 1.3; }
+.q-controls-row .shiny-options-group { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+.q-controls-row .shiny-options-group .radio-inline,
+.q-controls-row .shiny-options-group .form-check-inline { margin: 0; }
+/* A short note under controls (e.g. how many features the blank filter removed) */
+.q-note-line { color: #333; font-size: 0.92em; margin: 0 0 6px; }
+
+/* The "Please check before processing" popup (R/runProcess.R): 2.5 times the default width (500 px)
+   and at most 75% of the window high; only its content scrolls, the title and the buttons stay */
+.modal-dialog:has(.q-proc-popup) { max-width: min(1250px, 95vw); }
+.modal-content:has(.q-proc-popup) .modal-body { max-height: min(75vh, calc(100vh - 230px)); overflow-y: auto; }
+.modal-dialog:has(.q-proc-popup) { margin-top: 1rem; margin-bottom: 1rem; }

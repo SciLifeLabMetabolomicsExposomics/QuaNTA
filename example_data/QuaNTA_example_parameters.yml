@@ -1,0 +1,33 @@
+project_title: QuaNTA example dataset (synthetic)
+user: Example user
+university: Example university
+concentration_unit: ng/mL
+free_text: >-
+  Synthetic example dataset: 120 serum samples (60 healthy, 60 sick) measured in 3 batches,
+  with 3 calibration curve injections, QCs and blanks in each batch.
+processing:
+  per_batch: yes
+  optimize_cal_points: no
+  set_minimum_number: no
+  min_cal_points: 3
+  average_cal_reps: no
+  keep_all_calcurves: no
+  r2_filter: no
+  min_r2: 0.99
+  linear_only: no
+  enforce_linear_range: no
+  linear_range_tol: 15
+  vis_prenorm: no
+  rm_outlier: yes
+  rm_outlier_scope: all
+  log_calibration: no
+  blank_filter: yes
+  blank_filter_factor: 5
+  rsd_filter: yes
+  rsd_filter_scope: nontargeted
+  rsd_max_targeted: 30
+  rsd_max_nontargeted: 30
+  weight: largestR2
+  llox_method: pt_signal_mean_plus_sd
+  use_rsd20: yes
+  impute_llox: yes
