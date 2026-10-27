@@ -18,9 +18,13 @@
 #' @param on_done A function `function(ok, log)` called in the app when the process has finished;
 #'   `ok` is `TRUE` for exit status 0 and `log` holds the output lines of the process.
 #' @param env A named character vector of extra environment variables for the process.
+#' @param on_progress `NULL`, or a function `function(log)` called every second while the process
+#'   runs, with the output lines so far (e.g. to show the progress of a report in the page). The
+#'   progress notification is then not shown.
 #' @returns The `processx::process` object, invisibly.
 #' @export
-run_bg_rscript <- function(session, ws, script, job, progress_message, on_done, env = character()) {
+run_bg_rscript <- function(session, ws, script, job, progress_message, on_done, env = character(),
+                           on_progress = NULL) {
   jobs_dir <- file.path(ws$base, "jobs")
   dir.create(jobs_dir, showWarnings = FALSE)
   id <- paste0(format(Sys.time(), "%Y%m%d_%H%M%S"), "_", sample.int(1e6, 1))
@@ -42,15 +46,20 @@ run_bg_rscript <- function(session, ws, script, job, progress_message, on_done, 
   )
   session$onSessionEnded(function() if (p$is_alive()) p$kill_tree())
 
-  progress <- shiny::Progress$new(session)
-  progress$set(message = progress_message, value = 0.3)
+  progress <- if (is.null(on_progress)) shiny::Progress$new(session)
+  if (!is.null(progress)) progress$set(message = progress_message, value = 0.3)
 
   # Poll the process without blocking the app
   watcher <- shiny::observe({
     shiny::invalidateLater(1000, session)
-    if (p$is_alive()) return()
+    if (p$is_alive()) {
+      if (!is.null(on_progress) && file.exists(log_file)) {
+        on_progress(tryCatch(readLines(log_file, warn = FALSE), error = function(e) character(0)))
+      }
+      return()
+    }
     watcher$destroy()
-    progress$close()
+    if (!is.null(progress)) progress$close()
     ok <- identical(p$get_exit_status(), 0L)
     log <- if (file.exists(log_file)) readLines(log_file, warn = FALSE) else character(0)
     unlink(c(job_file, log_file))

@@ -1,0 +1,33 @@
+project:
+  type: website
+  output-dir: _site
+  render: ["*.qmd"]   # Not README.md (for the repository)
+
+website:
+  title: "QuaNTA tutorial"
+  description: "How to read and use the results of QuaNTA, step by step, with interactive figures."
+  repo-url: https://github.com/Exposomics-SciLifeLab/QuaNTA
+  repo-subdir: tutorial
+  repo-actions: [source, issue]
+  sidebar:
+    style: docked
+    search: true
+    contents:
+      - index.qmd
+      - section: "Calibration and quantification"
+        contents:
+          - calibration-curves.qmd
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    mainfont: Lato, 'Segoe UI', sans-serif
+
+execute:
+  # Rendered locally (with R and the packages of the app); the results are stored in `_freeze/`,
+  # so that GitHub only publishes the pages and needs no R. Re-rendered when a page changes.
+  freeze: auto
+  echo: false
+  warning: false
+  message: false

@@ -99,9 +99,9 @@ SECTION_TIPS <- list(
   "2.4" = "Every feature by retention time and m/z. After processing, the targeted compounds are coloured by their outcome (quantified, no valid calibration, removed, ...). Non-targeted features can be shown via the legend.",
   "2.5" = "Number of features per m/z, in bins of 0.5. Hover over a bar for its range; drag to zoom, double-click to reset.",
   "2.6" = "All raw peak areas of all features and samples, in linear scale (left) and log scale (right, positive values only): the dynamic range of the data and the share of zeros.",
-  "3.1" = "All internal standards (IS) with retention time, m/z, the RSD% of the raw peak areas over all samples and the number of zero values; failed IS are coloured. Select a row to show the IS in 3.4 and 3.5.",
+  "3.1" = "All internal standards (IS) with retention time, m/z, the RSD% of the raw peak areas over all samples and the number of zero values; failed IS are coloured. Select a row (or use the arrow keys) to show the IS in 3.4 and 3.5.",
   "3.2" = "An IS fails when more than 10% of the samples have a zero value. Failed IS are removed before normalization.",
-  "3.3" = "A sample is an outlier when more than 20% of the IS deviate by more than 3 SD from their mean (log scale). Outlier samples are removed before normalization.",
+  "3.3" = "A sample is an outlier when more than 20% of the IS deviate by more than 3 SD from their mean (log scale). Outlier samples are removed before normalization; with the processing option \"Non-calibration samples only\", calibration samples are always kept.",
   "3.4" = "RSD% of the raw peak areas of the IS selected in 3.1, within each QC group and each sample class (with the number of samples). An RSD% needs at least 2 samples.",
   "3.5" = "Raw peak areas of the IS selected in 3.1, by sample group (left) and along the injection order (right).",
   "3.6" = "Raw peak area of each volumetric IS per sample along the injection order (all samples, also outliers), and its RSD% per group: how constant the added volume was.",
@@ -111,15 +111,38 @@ SECTION_TIPS <- list(
   "3.10" = "Features removed by the blank filter or by the QC RSD% filter, for the chosen normalization method, with the reason.",
   "3.11" = "One feature in the blanks next to the QCs, study samples (and calibrants), with the threshold of the blank filter (factor × blank mean). Groups: mean ± SD and the samples; per sample: one bar per injection.",
   "4.1" = "Number of calibration curve samples per concentration in the selected batch.",
-  "4.2" = "Per chemical: the calibration curve used (batch or global), the LOD, the LLOQ (start of the curve) and the highest level, with a note when the curve is not valid. Red: no valid curve; blue: global curve; orange: kept although not valid; grey: removed before calibration. Select a row to show the chemical in the figures.",
+  "4.2" = "Per chemical: the calibration curve used (batch or global), the LOD, the LLOQ (start of the curve), the highest level and the ULOQ (linear curves, or the top of the linear range with log calibration; empty for a quadratic curve: no ULOQ), with a note when the curve is not valid. Red: no valid curve; blue: global curve; orange: kept although not valid; grey: removed before calibration. Select a row (or use the arrow keys) to show the chemical in the figures; the first chemical is shown at the start.",
   "4.3" = "Number of chemicals per batch with a valid calibration curve and concentrations in the samples.",
-  "4.4" = "The calibration points of the selected chemical with the fitted curve, coloured by their place: within the calibration range, at the LOD, Cal0 or out of range; one shape per batch.",
-  "4.5" = "The samples of the selected chemical on its calibration curve (signal against the calculated concentration); the shaded areas are below the LOD and the LLOQ.",
+  "4.4" = "The calibration points of the selected chemical with the fitted curve, coloured by their place: within the calibration range, at the LOD, Cal0 or out of range; one shape per batch. The title is coloured as the row in 4.2 (red: not valid, orange: kept although not valid, blue: global curve), where the reason is given.",
+  "4.5" = "The samples of the selected chemical on its calibration curve (signal against the calculated concentration); the shaded areas are below the LOD and the LLOQ. The title is coloured as in 4.4.",
   "4.6" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
   "4.7" = "The selected chemical in the QC samples of all batches along the injection order, a line per QC group: the values should be stable over the run. Open points: values replaced by the LOD/LLOQ rules."
 )
 #' A title with its number and the info icon of `SECTION_TIPS`, e.g. tip_title("Features", "2.3")
 tip_title <- function(title, num) tagList(paste0(title, " (", num, ")"), info_tip(SECTION_TIPS[[num]]))
+
+#' `onInitialize` of a dropdown (selectize): the arrow keys up / down choose the previous / next
+#' choice, so that the figure follows at once (as the arrow keys in the tables 3.1 and 4.2). An open
+#' list is closed first (choosing in it would take the focus away); the box keeps the focus, so
+#' that the next key goes on. While searching (text typed), the arrow keys move in the list.
+ARROW_KEYS_SELECTIZE <- I("function() {
+  var self = this;
+  self.$control_input[0].addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    if (self.isOpen && self.$control_input.val()) return;   // Searching: move in the found choices
+    e.preventDefault(); e.stopImmediatePropagation();
+    // From the highlighted choice of an open list, otherwise from the chosen one
+    var from = self.isOpen && self.$activeOption && self.$activeOption.length ?
+      self.$activeOption.attr('data-value') : self.getValue();
+    var vals = Object.values(self.options).sort(function (a, b) { return a.$order - b.$order; })
+      .map(function (o) { return String(o[self.settings.valueField]); });
+    var i = vals.indexOf(String(from)) + (e.key === 'ArrowDown' ? 1 : -1);
+    if (self.isOpen) self.close();
+    if (i >= 0 && i < vals.length) self.setValue(vals[i]);
+    // Keep the focus for the next key (choosing can blur the box); the list stays closed
+    setTimeout(function () { self.focus(); if (self.isOpen) self.close(); }, 0);
+  }, true);
+}")
 
 ################################################################################################
 ######################################## UI ####################################################
@@ -169,7 +192,14 @@ ui <-
               var orig = Plotly[fn];
               Plotly[fn] = function (gd, data, layout) {
                 var lay = (data && !Array.isArray(data) && data.layout) ? data.layout : layout;
-                if (lay && typeof lay === 'object') lay.plot_bgcolor = BG;
+                if (lay && typeof lay === 'object') {
+                  lay.plot_bgcolor = BG;
+                  // Large numbers on the axes in scientific notation (1E+4), not as 10k
+                  Object.keys(lay).forEach(function (k) {
+                    var ax = lay[k];
+                    if (/^[xy]axis[0-9]*$/.test(k) && ax && typeof ax === 'object' && !ax.exponentformat) ax.exponentformat = 'E';
+                  });
+                }
                 return orig.apply(this, arguments);
               };
             });
@@ -179,7 +209,26 @@ ui <-
           setInterval(function () {
             if (!window.Plotly) return;
             document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
-              if (el._fullLayout && el._fullLayout.plot_bgcolor !== BG) Plotly.relayout(el, { plot_bgcolor: BG });
+              if (!el._fullLayout) return;
+              var upd = {};
+              if (el._fullLayout.plot_bgcolor !== BG) upd.plot_bgcolor = BG;
+              // Scientific axis labels also for these plots (unless a plot sets its own format)
+              Object.keys(el._fullLayout).forEach(function (k) {
+                if (!/^[xy]axis[0-9]*$/.test(k)) return;
+                var own = el.layout && el.layout[k] && el.layout[k].exponentformat;
+                var fa = el._fullLayout[k];
+                if (!own && fa.exponentformat !== 'E') upd[k + '.exponentformat'] = 'E';
+                // Plotly writes exponents from 10000 on: from 1000 on as e.g. 2.5e+3 (while the axis
+                // shows that range; also after zooming)
+                if (fa.type !== 'linear' || !fa.range) return;
+                el.__qTf = el.__qTf || {};
+                var own_tf = el.layout && el.layout[k] && el.layout[k].tickformat && !el.__qTf[k];
+                var m = Math.max(Math.abs(+fa.range[0]), Math.abs(+fa.range[1]));
+                var want = m >= 1000 && m < 10000;
+                if (!own_tf && want && !el.__qTf[k]) { upd[k + '.tickformat'] = '.2~e'; el.__qTf[k] = true; }
+                if (!want && el.__qTf[k]) { upd[k + '.tickformat'] = ''; el.__qTf[k] = false; }
+              });
+              if (Object.keys(upd).length) Plotly.relayout(el, upd);
             });
           }, 1000);
         })();
@@ -196,6 +245,54 @@ ui <-
           var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;  // Before the update
           setTimeout(function() { if (atBottom) el.scrollTop = el.scrollHeight; }, 0);
         });
+      ")),
+      # Tables (DT) in scrolling boxes:
+      # - the selected row (tables where a row chooses what is shown: 3.1, 4.2) is scrolled into view
+      # - the arrow keys up / down select the previous / next row of the table clicked last,
+      #   instead of scrolling the page
+      # - the column headers are re-aligned when a hidden page is shown or a pane is resized
+      tags$script(HTML("
+        (function () {
+          var lastTable = null;
+          function scrollToSelected(wrapper) {
+            var tr = $(wrapper).find('tbody tr.selected')[0], box = $(wrapper).find('.dataTables_scrollBody')[0];
+            if (!tr || !box) return;
+            var top = tr.offsetTop, h = tr.offsetHeight;
+            if (top < box.scrollTop || top + h > box.scrollTop + box.clientHeight) box.scrollTop = top - box.clientHeight / 2 + h / 2;
+          }
+          $(document).on('init.dt', function (e, settings) {
+            var wrapper = $(settings.nTable).closest('.dataTables_wrapper')[0];
+            setTimeout(function () { scrollToSelected(wrapper); }, 200);
+          });
+          $(document).on('mousedown', '.dataTables_wrapper tbody tr', function () {
+            lastTable = $(this).closest('.dataTables_wrapper')[0];
+          });
+          // A click on the selected row does not deselect it (3.1, 4.2: there is always one IS /
+          // compound shown). Caught before the table's own handler (capture phase).
+          document.addEventListener('mousedown', function (e) {
+            var tr = e.target.closest && e.target.closest('.dataTables_wrapper tbody tr.selected');
+            if (!tr) return;
+            lastTable = tr.closest('.dataTables_wrapper');
+            e.stopPropagation();
+          }, true);
+          $(document).on('keydown', function (e) {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            if (!lastTable || !document.body.contains(lastTable) || $(lastTable).is(':hidden')) return;
+            if ($(e.target).is('input, textarea, select, [contenteditable]')) return;
+            var cur = $(lastTable).find('tbody tr.selected').first();
+            if (!cur.length) return;   // Only tables where a row is selected
+            var next = e.key === 'ArrowDown' ? cur.nextAll('tr:visible').first() : cur.prevAll('tr:visible').first();
+            e.preventDefault();
+            if (!next.length) return;
+            next.trigger('mousedown');   // DT selects a row on mousedown
+            scrollToSelected(lastTable);
+          });
+          function adjust() {
+            if ($.fn.dataTable) $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+          }
+          $(document).on('shown.bs.tab', function () { setTimeout(adjust, 50); });
+          $(window).on('resize', function () { clearTimeout(window.__qAdj); window.__qAdj = setTimeout(adjust, 150); });
+        })();
       "))
     ),
     nav_panel(
@@ -274,7 +371,7 @@ ui <-
             return;
           }
           Split(['#ov-left', '#ov-right'], {
-            sizes: [50, 50],
+            sizes: [33, 67],   // Tables 1/3, figures 2/3
             minSize: 250,
             gutterSize: 8,
             onDragEnd: function() { window.dispatchEvent(new Event('resize')); }
@@ -373,27 +470,38 @@ ui <-
                       # QC/QA: one feature in the blanks compared to the other sample groups
                       h3(tip_title("Blanks compared to samples", "3.11"), style = "margin: 16px 0 4px 0;"),
                       p("One feature at a time: the (method) blanks in red next to the QCs, study",
-                        "samples and calibrants, with the threshold of the blank filter. Type in the",
-                        "feature box to search."),
+                        "samples and calibrants, with the threshold of the blank filter. The values are",
+                        "normalized but before blank filtering and blank subtraction. Type in the feature",
+                        "box to search; in the Feature, Normalization and View boxes, the arrow keys up /",
+                        "down switch to the previous / next choice.",
+                        "Internal standards are not blank-filtered (see 3.1 and 3.5)."),
                       div(
-                        style = "display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;",
+                        class = "q-controls-row",   # Labels at the same height (www/quanta.css)
                         radioButtons("blank_type", "Features",
                                      choices = c(Targeted = "targeted", "Non-targeted" = "nontargeted",
-                                                 "Internal standards (incl. vIS)" = "is", All = "all"),
+                                                 All = "all"),
                                      selected = "targeted", inline = TRUE),
-                        selectizeInput("blank_feature", "Feature", choices = NULL, width = "320px",
-                                       options = list(placeholder = "Type to search…")),
-                        selectInput("blank_values", "Values", choices = c(Raw = "raw"), width = "200px"),
-                        radioButtons("blank_view", "View",
-                                     choices = c("Groups" = "groups", "Per sample" = "samples"),
-                                     selected = "groups", inline = TRUE)
+                        selectizeInput("blank_feature", "Feature", choices = NULL, width = "250px",
+                                       options = list(
+                                         placeholder = "Type to search…",
+                                         openOnFocus = FALSE,   # Opens on a click, not when the focus is given back
+                                         onInitialize = ARROW_KEYS_SELECTIZE   # Arrow keys switch the feature
+                                       )),
+                        selectizeInput("blank_values", "Normalization", choices = c(Raw = "raw"), width = "170px",
+                                       options = list(openOnFocus = FALSE, onInitialize = ARROW_KEYS_SELECTIZE)),
+                        selectizeInput("blank_view", "View",
+                                       choices = c("Groups" = "groups", "Per sample" = "samples"),
+                                       selected = "groups", width = "140px",
+                                       options = list(openOnFocus = FALSE, onInitialize = ARROW_KEYS_SELECTIZE))
                       ),
                       div(
-                        style = "display: flex; gap: 20px; flex-wrap: wrap;",
+                        style = "display: flex; gap: 20px; flex-wrap: wrap; align-items: center;",
                         checkboxInput("blank_removed_only", "Only features removed by the blank filter",
                                       value = FALSE),
                         checkboxInput("blank_show_calibrants", "Show calibration samples", value = FALSE)
                       ),
+                      # How many features of the chosen kind the blank filter removed
+                      uiOutput("blank_removed_count"),
                       spinner(plotlyOutput("ggplot3_3", height = "500px"))
                     )
                   )
@@ -405,7 +513,7 @@ ui <-
             return;
           }
           Split(['#qc-left', '#qc-right'], {
-            sizes: [50, 50],
+            sizes: [33, 67],   // Tables 1/3, figures 2/3
             minSize: 250,
             gutterSize: 8,
             onDragEnd: function() { window.dispatchEvent(new Event('resize')); }
@@ -416,9 +524,10 @@ ui <-
     nav_panel(
       title = quanta_step(4, "Calibration\nand quantification"),
       value = "calibration",
-      layout_columns(
-        col_widths = c(6, 6),
-        quanta_card("Tables", icon_name = "table",
+      div(
+        id = "cal-split",
+        class = "split-pane html-fill-item",   # Resizable, as pages 2 and 3
+        quanta_card_resize("Tables", "cal-left",
                     uiOutput("best_norm_note_4"),
                     shiny::radioButtons(
                       inputId = "norm_method",
@@ -457,7 +566,7 @@ ui <-
                       ),
                       spinner( DT::DTOutput("tb_4_5")),
                     )),
-        quanta_card("Figures", icon_name = "chart-column",
+        quanta_card_resize("Figures", "cal-right",
                     # Which calibration points to show for a chemical quantified with the global
                     # curve: all points of the global curve, or only those of the selected batch
                     div(
@@ -498,8 +607,9 @@ ui <-
                         style = "margin: 0;"
                       ),
                       div(
-                        style = "width: 100%;", # ✅ shorter height
-                        spinner(plotlyOutput("ggplot5_1")),
+                        style = "width: 100%;",
+                        # As high as the plot (460 px), so that it does not cover the title of 4.7
+                        spinner(plotlyOutput("ggplot5_1", height = "470px")),
                       )
                     ),
                     div(
@@ -515,7 +625,18 @@ ui <-
                       )
                     )
                   )
-      )
+      ),
+      tags$script(HTML("
+        $(document).on('shiny:sessioninitialized', function() {
+          if (typeof Split === 'undefined') return;
+          Split(['#cal-left', '#cal-right'], {
+            sizes: [33, 67],   // Tables 1/3, figures 2/3
+            minSize: 250,
+            gutterSize: 8,
+            onDragEnd: function() { window.dispatchEvent(new Event('resize')); }
+          });
+        });
+      "))
     ),
     nav_panel(
       title = quanta_step(5, "Report\nexport", last = TRUE),
@@ -548,7 +669,7 @@ ui <-
           ),
           spinner(uiOutput("the_report"))
         ),
-        quanta_card("Extract data",
+        quanta_card("Export datasets",
                     icon_name = "table",
                     subtitle = "Export the tables of the final normalization method.",
                     # Exports the normalized, blank-subtracted and concentration tables of the
@@ -579,14 +700,32 @@ server <- function(input, output, session) {
   # ---- 1. Private workspace of this session (deleted when the session ends) ----
   ws <- create_session_workspace(session)
   
+  # ---- Removing all results (read data, processing, tables, reports; not the uploaded file) ----
+  # E.g. when a parameters file is loaded: the results no longer match the settings. The
+  # reactives that load the results depend on `results_reset()` (server_setup.R), so that all
+  # tables and figures are emptied.
+  results_reset <- shiny::reactiveVal(0)
+  remove_all_results <- function() {
+    unlink(list.files(ws$intermediate, full.names = TRUE), recursive = TRUE)
+    unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
+    unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
+    results_reset(shiny::isolate(results_reset()) + 1)
+    report_obj$reset()   # Defined below; called later only
+  }
+
   # ---- 2. Parameters: come from the inputs; a loaded file only pre-fills them ----
   data_info <- msdialInfoServer(
     "data_info",
     ws = ws,
-    processing_params = shiny::reactive(collect_processing_params(input))
+    processing_params = shiny::reactive(collect_processing_params(input)),
+    on_params_loaded = remove_all_results
   )
+  # Settings of a loaded parameters file that were not valid (set to their default): shown when
+  # "Process data" is clicked
+  param_notes <- shiny::reactiveVal(NULL)
   shiny::observeEvent(data_info$loaded_processing, {
-    apply_processing_params(session, data_info$loaded_processing)
+    notes <- apply_processing_params(session, data_info$loaded_processing)
+    param_notes(if (length(notes) > 0) notes else NULL)
   }, ignoreNULL = TRUE)
   
   # ---- Normalization methods computed by process.R and the final choice for report/export ----
@@ -635,7 +774,7 @@ server <- function(input, output, session) {
   read_done <- runReadMsdialServer("read_msdial", data_info = data_info, ws = ws, clear = clear_log)
   # `data_caps_r()` is defined below (reactives are evaluated lazily)
   proc_done <- runProcessServer("proc", data_info = data_info, ws = ws, clear = clear_log,
-                                data_caps = shiny::reactive(data_caps_r()))
+                                data_caps = shiny::reactive(data_caps_r()), param_notes = param_notes)
   # Show the log of the step that is started
   shiny::observeEvent(input[["read_msdial-run_button"]], {
     bslib::nav_select("log_tabs", "Data reading log")
@@ -676,9 +815,11 @@ server <- function(input, output, session) {
   )
 
   output$the_report <- shiny::renderUI({
-    # Re-reading / a new upload deletes the report (see below / msdialInfo.R): hide it then
+    # Re-reading / a new upload / loading parameters deletes the report (see below / msdialInfo.R):
+    # hide it then
     input[["read_msdial-run_button"]]
     input[["data_info-input_file_upload"]]
+    results_reset()
     shiny::req(report_obj$report_ready())
     path <- report_obj$report_path()
     shiny::req(file.exists(path))
@@ -708,7 +849,10 @@ server <- function(input, output, session) {
   shiny::observeEvent(input[["read_msdial-run_button"]], {
     f <- data_info[["input_file"]]
     # Also the earlier read data: after a read with input errors, nothing can be processed
-    if (!is.null(f) && nzchar(f)) unlink(c(rds_file(""), rds_file("proc"), rds_file("to_report")))
+    if (!is.null(f) && nzchar(f)) {
+      unlink(c(rds_file(""), rds_file("proc"), rds_file("to_report"), rds_file("app")))
+      unlink(Sys.glob(sub("\\.rds$", "*.rds", rds_file("blank_"))))   # The values of 3.11 per method
+    }
     unlink(file.path(ws$intermediate, "input_errors.txt"))
     unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
     unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
@@ -866,6 +1010,7 @@ server <- function(input, output, session) {
       reps_fail_batches = batches[!per_batch["reps", ]],
       multi_batch = length(batches) > 1,
       comment_notes = SumExp::metadata(se)$comment_notes,   # NULL for data read by older versions
+      column_notes = SumExp::metadata(se)$column_notes,     # Columns similar to a required one
       missing_values = SumExp::metadata(se)$missing_values
     )
   })
@@ -889,7 +1034,8 @@ server <- function(input, output, session) {
       Category = catg,
       Class = SumExp::col_df(raw_se_r())$Class,
     ) |>
-      dplyr::mutate(Class = ifelse(Category %in% c("CalCurve", "QC"), "", Class)) |>
+      # Every class of every category; the calibration samples as one total (their levels are in 2.2)
+      dplyr::mutate(Class = ifelse(Category == "CalCurve", "All levels", Class)) |>
       tidyr::unite("catg_cl", c(Category, Class), sep = ":", remove = FALSE)
     tb <- janitor::tabyl(catg_cl, catg_cl) |>
       janitor::adorn_pct_formatting() |>
@@ -908,11 +1054,13 @@ server <- function(input, output, session) {
 
     DT::datatable(
       tb,
+      selection = "none",   # Clicking a row has no effect
       options = list(
         scrollX = TRUE,
         lengthChange = FALSE,
         searching = FALSE,
         paging = FALSE, # remove Previous/Next
+        scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
         info = FALSE, # remove "Showing X to Y of Z entries"
         dom = "t",
         headerCallback = JS(
@@ -958,11 +1106,13 @@ server <- function(input, output, session) {
 
     DT::datatable(
       df_conc_summary,
+      selection = "none",   # Clicking a row has no effect
       options = list(
         scrollX = TRUE,
         lengthChange = FALSE,
         searching = FALSE,
         paging = FALSE, # remove Previous/Next
+        scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
         info = FALSE, # remove "Showing X to Y of Z entries"
         dom = "t",
         headerCallback = JS(
@@ -1001,8 +1151,10 @@ server <- function(input, output, session) {
     colnames(tb) <- c("Standard Type", "Number of Features", "Percent")
     DT::datatable(
       tb,
+      selection = "none",   # Clicking a row has no effect
       options = list(
         scrollX = TRUE, lengthChange = FALSE, searching = FALSE, paging = FALSE, info = FALSE, dom = "t",
+        scrollY = "400px", scrollCollapse = TRUE,
         headerCallback = JS(
           "function(thead){",
           "$(thead).find('th').css({'color': 'green', 'font-weight': 'bold'});", "}"
@@ -1045,7 +1197,8 @@ server <- function(input, output, session) {
   ### This is figure 2.5: number of features per m/z (bins of 0.5), the same as in the internal report
 
   output$ggplot2_2_2 <- plotly::renderPlotly({
-    df1 <- SumExp::row_df(shiny::req(raw_se_r()))
+    se <- shiny::req(raw_se_r())   # Not inside `row_df()`: S4 dispatch turns the message into an error
+    df1 <- SumExp::row_df(se)
     show$plotly_binned_hist(df1$mz, binwidth = 0.5, x_title = show$label_if_has(df1$mz, "m/z"))
   })
 
@@ -1055,7 +1208,8 @@ server <- function(input, output, session) {
 
   output$ggplot2_3 <- plotly::renderPlotly({
     se <- shiny::req(raw_se_r())
-    show$plotly_value_distribution(se[["raw"]])
+    # Counted when the file was read (read-msdial.R); counted here for data read by older versions
+    show$plotly_value_distribution(SumExp::metadata(se)$value_bins %||% se[["raw"]])
   })
 
   ################################################################################################################
@@ -1099,7 +1253,8 @@ server <- function(input, output, session) {
     df$is_failed_istd <- is_failed_istd # ensure it's inside render
     DT::datatable(
       df,
-      selection = "single", # or "multiple"
+      # The first IS is shown at once; a click on the selected row keeps it (see the header script)
+      selection = list(mode = "single", selected = 1L),
       rownames = FALSE,
 
       options = list(
@@ -1107,6 +1262,7 @@ server <- function(input, output, session) {
         lengthChange = FALSE,
         searching = FALSE,
         paging = FALSE, # remove Previous/Next
+        scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
         info = FALSE, # remove "Showing X to Y of Z entries"
         dom = "t",
         headerCallback = JS(
@@ -1212,20 +1368,23 @@ server <- function(input, output, session) {
 
     df$is_failed_istd <- is_failed_istd # ensure it's inside render
 
-    if (any(is_failed_istd)) {
-      text_3_1_1 <- "The internal standard features  identified as failed IS were colored in the table above.\n\n"
-      failed_istd <- internal_std_se_r()[is_failed_istd, ]
-      # Table of failed internal standard features
-
-
-      ################################################################# 3
-
-      # Remove the failed internal standard features
-    } else {
-      text_3_1_1 <- "No failed internal standard features were identified.\n"
+    # The failed IS (also coloured in 3.1), as in the internal report
+    if (!any(is_failed_istd)) {
+      return(shiny::div(class = "q-note-line", "No failed internal standards (none with zeros in more than 10% of the samples)."))
     }
-
-    HTML(paste0("<h4 style='color:white;'>", text_3_1_1, "</h4>"))
+    n <- ncol(internal_std_se_r())
+    zeros <- count_zeros_per_feature(internal_std_se_r()[["raw"]])
+    failed <- data.frame(
+      `Internal standard` = df$feature_name, RT = df$.rt, `m/z` = df$mz,
+      `Zero values` = paste0(zeros, " of ", n, " (", round(100 * zeros / n, 1), "%)"),
+      check.names = FALSE
+    )[is_failed_istd, , drop = FALSE]
+    shiny::tagList(
+      shiny::div(class = "q-note-line", sprintf("%d failed internal standard(s), removed before normalization:", nrow(failed))),
+      DT::datatable(failed, rownames = FALSE, selection = "none",
+                    options = list(dom = "t", paging = FALSE, scrollX = TRUE, scrollY = "300px",
+                                   scrollCollapse = TRUE, searching = FALSE, info = FALSE))
+    )
   })
 
 
@@ -1245,7 +1404,7 @@ server <- function(input, output, session) {
         text_3_1_2 <- paste0("No outliers were identified.\n")
 
         output$text_3_1_2 <- renderUI({
-          HTML(paste0("<h3 style='color:white;'>", text_3_1_2, "</h3>"))
+          shiny::div(class = "q-note-line", text_3_1_2)
         })
       } else {
         text_3_1_2 <- paste0("The following samples were identified as outliers and excluded.\n\n")
@@ -1271,17 +1430,19 @@ server <- function(input, output, session) {
 
 
         output$text_3_1_2 <- renderUI({
-          HTML(paste0("<h4 style='color:white;'>", text_3_1_2, "</h4>"))
+          shiny::div(class = "q-note-line", text_3_1_2)
         })
 
         output$tb_3_1_2 <- DT::renderDataTable({
           DT::datatable(
             show_tb,
+            selection = "none",   # Clicking a row has no effect
             options = list(
               scrollX = TRUE,
               lengthChange = FALSE,
               searching = FALSE,
               paging = FALSE, # remove Previous/Next
+              scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
               info = FALSE, # remove "Showing X to Y of Z entries"
               dom = "t",
               headerCallback = JS(
@@ -1331,49 +1492,21 @@ server <- function(input, output, session) {
 
 
   output$tb_3_4_1 <- DT::renderDataTable({
-    shiny::req(internal_std_se_r())
-    # RSD% per QC class; no columns when there are no QC samples
-    qc_lst <- show$extract_qc_samples_to_list(internal_std_se_r())
-    m_rsd1 <- if (length(qc_lst) > 0) {
-      m <- qc_lst |>
-        lapply(function(se) {
-          apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
-        }) |>
-        do.call(cbind, args = _) # Make sure the result is a matrix even if there is only one value
-      # The `rownames` are syntactically valid names, not the original feature names
-      stopifnot(identical(rownames(m), rownames(internal_std_se_r())))
-      data.frame(m, check.names = FALSE)
-    } else {
-      data.frame(row.names = rownames(internal_std_se_r()))
-    }
-    rownames(m_rsd1) <- SumExp::row_df(internal_std_se_r())$feature_name
-
-
-    se <- util$exclude_ctrl_smpl_cat(internal_std_se_r(), "QC")
-    m_rsd2 <- setNames(nm = unique(SumExp::col_df(se)$Class)) |>
-      lapply(function(cls) {
-        se <- se[, SumExp::col_df(se)$Class == cls]
-        apply(se[["raw"]], 1, \(.x) round(show$rsd_perc(.x), 2))
-      }) |>
-      do.call(cbind, args = _) # Make sure the result is a matrix even if there is only a vector
-    stopifnot(identical(rownames(m_rsd2), rownames(se)))
-    rownames(m_rsd2) <- SumExp::row_df(se)$feature_name
-
-    m_rsd2 <- data.frame(m_rsd2,
-      check.names = FALSE
-    )
-
-    m_rsd <- cbind.data.frame(m_rsd1, m_rsd2)
-    # Number of samples per group (rows below), in the same order as the columns
-    n_smpl <- c(vapply(qc_lst, ncol, integer(1)),
-                vapply(colnames(m_rsd2), \(cls) sum(SumExp::col_df(se)$Class == cls), integer(1)))
-
-    m_rsd <- t(m_rsd)
+    # RSD% of each IS per QC group and sample class (prepared by process.R; computed here for data
+    # processed by older versions)
+    prep <- app_data_r()[["is rsd"]]
+    if (is.null(prep)) prep <- show$is_rsd_by_group(shiny::req(internal_std_se_r()))
+    m_rsd <- prep$rsd
+    n_smpl <- prep$n
 
     shiny::validate(shiny::need(input$tb_3_1_rows_selected, MSG_SELECT_IS))
     selected <- input$tb_3_1_rows_selected
 
     m_rsd <- m_rsd[, selected, drop = FALSE]
+    # A fixed column name (the IS is in the caption): a table drawn for another IS would otherwise
+    # ask for a column that no longer exists when the selection changes quickly
+    is_name <- colnames(m_rsd)[1]
+    colnames(m_rsd) <- "RSD%"
     # Why a group has no RSD%: it needs at least two samples (or values that are not all 0)
     rsd_v <- m_rsd[, 1]
     note <- dplyr::case_when(
@@ -1386,11 +1519,14 @@ server <- function(input, output, session) {
 
     DT::datatable(
       m_rsd,
+      selection = "none",   # Clicking a row has no effect
+      caption = is_name,
       options = list(
         scrollX = TRUE,
         lengthChange = FALSE,
         searching = FALSE,
         paging = FALSE, # remove Previous/Next
+        scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
         info = FALSE, # remove "Showing X to Y of Z entries"
         dom = "t",
         headerCallback = JS(
@@ -1439,8 +1575,9 @@ server <- function(input, output, session) {
     # RSD% of the vIS within groups of samples, as in the internal report
     rsd <- show$vis_rsd_table(se[["raw"]][vis, , drop = FALSE], SumExp::row_df(se)$feature_name[vis], cd) |>
       dplyr::mutate(Grouping = factor(Grouping), Group = factor(Group))
-    rsd_tbl <- DT::datatable(rsd, rownames = FALSE, filter = "top",
-                             options = list(pageLength = 10, scrollX = TRUE, dom = "rtip"))   # Column filters only
+    rsd_tbl <- DT::datatable(rsd, rownames = FALSE, filter = "top", selection = "none",
+                             options = list(paging = FALSE, scrollY = "400px", scrollCollapse = TRUE, scrollX = TRUE,
+                                            dom = "rti"))   # Column filters only; scrolls
     shiny::tagList(
       if (length(plots) == 1) plots[[1]]$plot else
         do.call(shiny::tabsetPanel, lapply(plots, \(x) shiny::tabPanel(x$name, x$plot))),
@@ -1493,15 +1630,32 @@ server <- function(input, output, session) {
   ### This is for Figure 3.11 (QC/QA): one feature in the blanks compared to the other sample groups,
   ### with the threshold of the blank filter. The data before blank filtering (all features).
 
-  blank_cmp_se_r <- shiny::reactive({
+  # The samples, features and methods of 3.11. Prepared by process.R (the values of a method are
+  # in a file of their own, read when that method is shown); for data processed by older versions
+  # from the normalized data
+  blank_cmp_r <- shiny::reactive({
+    prep <- app_data_r()[["blank"]]
+    if (!is.null(prep)) {
+      shiny::req(any(prep$col_df$.ctrl_cat == "Blank"))
+      return(prep)
+    }
     se <- to_report_r()[["normalized"]]
     shiny::req(se, any(util$ctrl_smpl_cat(se) == "Blank"))
-    se
+    list(col_df = SumExp::col_df(se), row_df = SumExp::row_df(se), methods = names(se), se = se)
+  })
+  # Values (features x samples) of the method chosen in 3.11
+  blank_values_r <- shiny::reactive({
+    b <- blank_cmp_r()
+    m <- shiny::req(input$blank_values)
+    shiny::req(m %in% b$methods)
+    if (!is.null(b$se)) return(b$se[[m]])
+    f <- rds_file(paste0("blank_", m))
+    shiny::validate(shiny::need(file.exists(f), MSG_NOT_PROCESSED))
+    readRDS(f)
   })
   # Feature type and label of each feature: names, or "Unk_<m/z>_<RT>" for non-targeted features
   blank_features_r <- shiny::reactive({
-    se <- blank_cmp_se_r()   # Evaluated before the S4 method (a `req()` inside it would be an error)
-    rd <- SumExp::row_df(se)
+    rd <- blank_cmp_r()$row_df
     std <- rd$.std_type
     type <- dplyr::case_when(
       std %in% "vIS" ~ "is",                 # Volumetric IS with the internal standards
@@ -1509,9 +1663,25 @@ server <- function(input, output, session) {
       util$is_targeted_feature(std) ~ "targeted",
       TRUE ~ "nontargeted"
     )
+    # Internal standards (also the vIS) are not blank-filtered: not offered here (see 3.1, 3.5)
     tibble::tibble(feature_id = rownames(rd), type = type,
                    label = ifelse(type == "nontargeted", sprintf("Unk_%.4f_%.2f", rd$mz, rd$.rt),
-                                  rd$feature_name))
+                                  rd$feature_name))[type != "is", ]
+  })
+  # Number of features of the chosen kind removed by the blank filter (for the chosen values)
+  output$blank_removed_count <- shiny::renderUI({
+    f <- tryCatch(blank_features_r(), error = function(e) NULL)
+    shiny::req(f, input$blank_values)
+    p <- to_report_r()[["params"]]
+    if (!isTRUE(p$blank_filter)) return(shiny::div(class = "q-note-line", "Blank filter not used in this processing."))
+    kind <- input$blank_type
+    in_kind <- if (kind == "all") rep(TRUE, nrow(f)) else f$type == kind
+    n_rem <- sum(f$feature_id[in_kind] %in% blank_removed_r())
+    what <- switch(kind, targeted = "targeted compounds", nontargeted = "non-targeted features", "features")
+    labs <- c(raw = "raw", closest_norm = "Closest RT", loess_norm = "LOESS", mvis_norm = "Multivariate (PCA)")
+    shiny::div(class = "q-note-line",
+               sprintf("%d of %d %s removed by the blank filter (%s values).", n_rem, sum(in_kind), what,
+                       labs[[input$blank_values]] %||% input$blank_values))
   })
   # Features removed by the blank filter for the chosen values (matrix)
   blank_removed_r <- shiny::reactive({
@@ -1523,8 +1693,7 @@ server <- function(input, output, session) {
   # Values to choose from: raw and the normalization methods in the data
   shiny::observe({
     labs <- c(raw = "Raw", closest_norm = "Closest RT", loess_norm = "LOESS", mvis_norm = "Multivariate (PCA)")
-    se <- blank_cmp_se_r()
-    avail <- labs[names(labs) %in% names(se)]
+    avail <- labs[names(labs) %in% blank_cmp_r()$methods]
     cur <- shiny::isolate(input$blank_values)
     shiny::updateSelectInput(session, "blank_values", choices = stats::setNames(names(avail), avail),
                              selected = if (!is.null(cur) && cur %in% names(avail)) cur else "raw")
@@ -1548,12 +1717,13 @@ server <- function(input, output, session) {
                                 options = list(placeholder = "Type to search…"))
   })
   output$ggplot3_3 <- plotly::renderPlotly({
-    se <- blank_cmp_se_r()
+    b <- blank_cmp_r()
     shiny::validate(shiny::need(isTruthy(input$blank_feature), "No features of this kind in the data."))
     fid <- input$blank_feature
     m <- shiny::req(input$blank_values)
-    shiny::req(fid %in% rownames(se), m %in% names(se))
-    cd <- SumExp::col_df(se)
+    vals <- blank_values_r()
+    shiny::req(fid %in% rownames(vals))
+    cd <- b$col_df
     keep <- isTRUE(input$blank_show_calibrants) | cd$.ctrl_cat != "CalCurve"
     smp <- tibble::as_tibble(cd[keep, ]) |> dplyr::mutate(group = show$sample_group(cd[keep, ]))
     p <- to_report_r()[["params"]]
@@ -1569,14 +1739,28 @@ server <- function(input, output, session) {
     labs <- c(raw = "Raw peak area", closest_norm = "Closest RT normalized",
               loess_norm = "LOESS normalized", mvis_norm = "Multivariate (PCA) normalized")
     show$plotly_blank_comparison(
-      y = unname(se[[m]][fid, keep]), smp = smp, name = f$label[match(fid, f$feature_id)],
+      y = unname(vals[fid, keep]), smp = smp, name = f$label[match(fid, f$feature_id)],
       factor = p$blank_filter_factor %||% 5, view = input$blank_view, subtitle = subtitle,
-      y_title = labs[[m]]
-    )
+      y_title = labs[[m]],
+      # The Linear / Log choice of the user is kept for the next feature, method or view
+      log = isTRUE(shiny::isolate(input$blank_log))
+    ) |>
+      htmlwidgets::onRender("function (el) {
+        el.on('plotly_buttonclicked', function (d) {
+          Shiny.setInputValue('blank_log', d.button.label === 'Log');
+        });
+      }")
   })
 
   ################################################################################################################
   ### This is for figure 3.8
+
+  # RSD% of the targeted compounds per QC group and method (3.8, 3.9): prepared by process.R,
+  # computed here for data processed by older versions
+  qc_rsd_r <- shiny::reactive({
+    prep <- app_data_r()[["qc rsd"]]
+    if (!is.null(prep)) prep else show$qc_rsd_by_method(to_report_r()[["normalized"]])
+  })
 
 
   # One line per targeted chemical and QC class (panels): its RSD% among the QC replicates under
@@ -1587,11 +1771,9 @@ server <- function(input, output, session) {
     shiny::validate(shiny::need(show$has_enough_qc(norm_se), show$not_enough_qc_msg))
     # The comparison uses the targeted compounds
     shiny::validate(shiny::need(any(util$is_targeted_feature(norm_se)), "No targeted (Quant) compounds in this dataset: this comparison uses the targeted compounds."))
-    labs <- SumExp::name_labs(norm_se)
-    names(labs) <- gsub(" .*", "", names(labs)) # First word only
-    df_to_show <- show$extract_quant_qc(norm_se) |>
-      show$calc_rsd_qstd(labs) |>
-      show$mark_lowest_rsd_norm(labs) |>
+    prep <- qc_rsd_r()
+    labs <- prep$labs
+    df_to_show <- prep$df |>
       dplyr::left_join(feature_id_name_tbl(), by = "feature_id")
 
     # Hover text: the chemical with its RSD% under every method
@@ -1630,10 +1812,9 @@ server <- function(input, output, session) {
     shiny::validate(shiny::need(show$has_enough_qc(norm_se), show$not_enough_qc_msg))
     # The comparison uses the targeted compounds
     shiny::validate(shiny::need(any(util$is_targeted_feature(norm_se)), "No targeted (Quant) compounds in this dataset: this comparison uses the targeted compounds."))
-    labs <- SumExp::name_labs(norm_se)
-    names(labs) <- gsub(" .*", "", names(labs)) # First word only
-    df_to_show <- show$extract_quant_qc(norm_se) |>
-      show$calc_rsd_qstd(labs)
+    prep <- qc_rsd_r()
+    labs <- prep$labs
+    df_to_show <- prep$df
 
     df_to_show <- df_to_show |>
       dplyr::left_join(feature_id_name_tbl(), by = "feature_id") |> # Add feature names
@@ -1647,14 +1828,17 @@ server <- function(input, output, session) {
     # Scrolls within a box; filters on the QC group and the feature (search) columns only
     DT::datatable(
       df_to_show,
+      selection = "none",   # Clicking a row has no effect
       rownames = FALSE,
       filter = "top",
+      extensions = "Scroller",   # Only the rows in view are fetched and drawn (many rows)
       options = list(
         scrollX = TRUE,
         scrollY = "400px",
         scrollCollapse = TRUE,
+        deferRender = TRUE,
+        scroller = TRUE,
         lengthChange = FALSE,
-        paging = FALSE, # remove Previous/Next
         info = FALSE, # remove "Showing X to Y of Z entries"
         dom = "t",
         headerCallback = JS(
@@ -1702,7 +1886,8 @@ server <- function(input, output, session) {
 
   # Explanation of the filters; red when the QC RSD% filter was skipped
   output$removed_note <- shiny::renderUI({
-    tr <- to_report_r()
+    # Nothing before processing: the table under it already says why (one message is enough)
+    tr <- shiny::req(tryCatch(to_report_r(), error = function(e) NULL))
     rf <- tr[["qc rsd filter"]]
     blank_txt <- if (isTRUE(tr[["blank_filter"]])) {
       paste0("Blank filter: a feature is removed unless its maximum or average signal in the ",
@@ -1753,14 +1938,17 @@ server <- function(input, output, session) {
     show_df <- show_df[order(show_df$Type != "Targeted", show_df$Feature), ]
     DT::datatable(
       show_df,
+      selection = "none",   # Clicking a row has no effect
       rownames = FALSE,
       caption = paste0(nrow(show_df), " removed features (",
                        sum(show_df$Type == "Targeted"), " targeted, ",
                        sum(show_df$Type == "Non-targeted"), " non-targeted",
                        if (any(show_df$Type == "Volumetric IS")) ", the volumetric IS", ")"),
-      # At most 300 px high; shorter with few removed features
-      options = list(scrollX = TRUE, scrollY = "300px", scrollCollapse = TRUE, paging = FALSE,
-                     info = FALSE, dom = "t")
+      # At most 300 px high; shorter with few removed features. Only the rows in view are fetched
+      # and drawn (Scroller): with many features, thousands of rows would block the browser
+      extensions = "Scroller",
+      options = list(scrollX = TRUE, scrollY = "300px", scrollCollapse = TRUE, deferRender = TRUE,
+                     scroller = TRUE, info = FALSE, dom = "t")
     )
   })
 
@@ -1928,11 +2116,13 @@ server <- function(input, output, session) {
       colnames(v) <- c("Calibration curve samples", "Number of Samples")
       DT::datatable(
         v,
+        selection = "none",   # Clicking a row has no effect
         options = list(
           scrollX = TRUE,
           lengthChange = FALSE,
           searching = FALSE,
           paging = FALSE, # remove Previous/Next
+          scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
           info = FALSE, # remove "Showing X to Y of Z entries"
           dom = "t",
           headerCallback = JS(
@@ -1964,7 +2154,6 @@ server <- function(input, output, session) {
   ### This is for table 4.2
   output$tb_4_2 <- DT::renderDataTable({
     to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
-    min_cal_points <- to_report_r()[["params"]][["min_cal_points"]]
 
     if (is_target_mode()) {
       # --------------------------------------------------------
@@ -1979,16 +2168,13 @@ server <- function(input, output, session) {
           max_c_conc,
           lod,
           lloq,
+          dplyr::any_of("uloq"),   # Not in data processed by older versions
           has_proper_range,
           src_calcurve
         ) |>
         tibble::as_tibble(rownames = "feature_id") |>
         dplyr::mutate(
           batch = batch,
-          # Why the curve is not valid, kept or replaced by the global one (data processed by
-          # older versions have no reasons)
-          reason = show$calib_issue_text(rd),
-          has_reason = !is.null(rd$range_issue),
           is_kept = rd$kept_calcurve %in% TRUE
         )
       # Detected (signal at or above the LOD signal) / quantified (exported: a value at or above
@@ -2005,10 +2191,14 @@ server <- function(input, output, session) {
         !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
         TRUE ~ ""
       )
+      # The notes as icons by category (why the curve is not valid, kept or replaced by the global
+      # one, its linear range, the detection in the samples); the full note on hover
+      limit_df$Notes <- show$calib_notes_html(util$calib_notes(rd, batch_view = TRUE, detection = limit_df$detection))
       # Select the same chemical as before the batch / normalization method changed
       prev_id <- shiny::isolate(calib_feature_id())   # NULL until a chemical has been selected
-      preselect <- if (is.null(prev_id)) NA_integer_ else match(prev_id, limit_df$feature_id)
-      preselect <- if (is.na(preselect)) NULL else preselect
+      # The first chemical when none was selected before (the figures show it at once)
+      preselect <- if (is.null(prev_id)) 1L else match(prev_id, limit_df$feature_id)
+      preselect <- if (is.na(preselect)) 1L else preselect
 
       # --------------------------------------------------------
       show_df <- limit_df |>
@@ -2028,24 +2218,13 @@ server <- function(input, output, session) {
           is_global = src_calcurve == "Global",
           # Calibration curve used for quantification: "Batch", "Global" or "None"
           calibration = dplyr::coalesce(src_calcurve, "None"),
-          Note = dplyr::case_when(
-            has_reason ~ reason,
-            max_c == 0 ~ "All zero",
-            is.na(max_c) ~ paste0("<", min_cal_points ," valid pts."),
-            !has_proper_range ~ "Excluded",
-            TRUE ~ ""
-          ),
-          # With the detection in the study samples
-          Note = dplyr::case_when(
-            Note == "" ~ detection,
-            detection == "" ~ Note,
-            TRUE ~ paste0(Note, "; ", detection)
-          ),
           max_c = dplyr::case_when(
             max_c == -9 ~ "No valid max",
             max_c == 0 | is.na(max_c) ~ "",
             TRUE ~ as.character(max_c)
-          )
+          ),
+          # Empty for a quadratic curve without log calibration (no ULOQ)
+          uloq = if ("uloq" %in% names(limit_df)) ifelse(is.na(uloq) | !has_proper_range, "", as.character(signif(uloq, 4))) else ""
         ) |>
         dplyr::left_join(feature_id_name_tbl(), by = "feature_id") |>
         dplyr::mutate(is_removed = FALSE) |>
@@ -2056,7 +2235,8 @@ server <- function(input, output, session) {
           "LOD" = lod,
           "Minimum conc. (LLOQ)" = min_c,
           "Maximum conc." = max_c,
-          Note,
+          "ULOQ" = uloq,
+          Notes,
           is_global,
           is_bad,
           is_removed,
@@ -2074,10 +2254,12 @@ server <- function(input, output, session) {
             "Batch" = shiny::isolate(input$calib_batch),
             "Chemical Name" = rem$feature_name,
             "Calibration" = "None",
-            "LOD" = "", "Minimum conc. (LLOQ)" = "", "Maximum conc." = "",
-            Note = ifelse(rem$reason == "QC RSD%",
-                          paste0("Removed: QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
-                          "Removed: blank filter"),
+            "LOD" = "", "Minimum conc. (LLOQ)" = "", "Maximum conc." = "", "ULOQ" = "",
+            Notes = show$calib_notes_html(tibble::tibble(removed = ifelse(
+              rem$reason == "QC RSD%",
+              paste0("Removed: QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
+              "Removed: blank filter"
+            ))),
             is_global = FALSE, is_bad = FALSE, is_removed = TRUE, is_kept = FALSE
           ))
         }
@@ -2087,25 +2269,25 @@ server <- function(input, output, session) {
       # Positions of the helper columns in the DataTable (0-based, no row name column)
       i_flag <- match(c("is_global", "is_bad", "is_removed", "is_kept"), names(show_df)) - 1L
       i_name <- match("Chemical Name", names(show_df)) - 1L
-      page_len <- 20L
 
       # --------------------------------------------------------
-      # 20 chemicals per page, searchable by the chemical name only. The figures use the row index
-      # of the selection in the full table (not affected by paging or searching).
+      # All chemicals in a scrolling box (the selected one is scrolled into view, see the header
+      # script), searchable by the chemical name only. The figures use the row index of the
+      # selection in the full table (not affected by searching).
       DT::datatable(
         show_df,
         rownames = FALSE,
+        escape = setdiff(names(show_df), "Notes"),   # The note icons are HTML
+        caption = htmltools::HTML(show$calib_notes_legend_html()),
         selection = list(mode = "single", selected = preselect),
         options = list(
           scrollX = TRUE,
-          paging = TRUE,
-          pageLength = page_len,
-          lengthChange = FALSE,
-          # Open the page with the selected chemical
-          displayStart = if (is.null(preselect)) 0L else ((preselect - 1L) %/% page_len) * page_len,
+          paging = FALSE,
+          scrollY = "420px",
+          scrollCollapse = TRUE,
           searching = TRUE,
           info = TRUE,
-          dom = "ftip",
+          dom = "fti",
           language = list(search = "Search chemical:"),
 
           # Hide the helper columns; search in the chemical name only
@@ -2133,6 +2315,13 @@ server <- function(input, output, session) {
     }
   })
 
+
+  # Colour of the title of 4.4 / 4.5 by the state of the curve, as the rows of table 4.2: red not
+  # valid, orange kept although not valid, blue the global curve, grey valid
+  calib_title_fill <- function(rd) {
+    if (!isTRUE(rd$has_proper_range[1])) "lightcoral" else if (isTRUE(rd$kept_calcurve[1])) "#FFD9A0" else
+      if (isTRUE(rd$src_calcurve[1] == "Global")) "lightblue" else "lightgray"
+  }
 
   ################################################################################################################
   ### This is for Figure 4.4
@@ -2166,11 +2355,15 @@ server <- function(input, output, session) {
 
       calcurve_to_show_df <- calcurve_to_show_df |>
         dplyr::rename(.cc_pt = util$spiked_conc_pts_name) |>
+        # The ULOQ (none for a quadratic curve, or in data processed by older versions)
+        dplyr::mutate(.uloq = if ("uloq" %in% names(calcurve_to_show_df)) dplyr::coalesce(uloq, Inf) else Inf) |>
         dplyr::mutate(
           c_type = dplyr::case_when(
             # The LOD level is also the LLOQ (the start of the curve): its own colour, as it
             # would otherwise be one of the points within the limits
             .cc_pt == lod & .cc_pt == lloq & .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "LOD = LLOQ",
+            # In the curve but above the top of its linear range (curve not cut at the ULOQ)
+            .cc_pt >= min_c_conc & .cc_pt <= max_c_conc & .cc_pt > .uloq ~ "Above the ULOQ",
             .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "Within limits",
             .cc_pt == lod ~ "LOD",
             .cc_pt == 0 ~ "Cal0",
@@ -2185,106 +2378,19 @@ server <- function(input, output, session) {
       sel_row_df <- SumExp::row_df(calcurve_lst[[1]])[calib_selected_feature_r(), , drop = FALSE]
 
       ############################################
-      # Plot function
-      calcurve_plot <- function(dfm, y = input$norm_method) {
-        dfm <- dfm |>
-          dplyr::mutate(
-            Batch = factor(Batch),
-            txt = paste0(
-              "Batch: ", Batch,
-              "\ninj: ", injection_order,
-              ", conc: ", .cc_pt,
-              "\nName: ", sample_name,
-              "\nint: ", signif(.data[[y]], 6)
-            )
-          )
-
-        facet_fill <- if (!isTRUE(sel_row_df$has_proper_range)) "lightcoral" else
-          if (isTRUE(sel_row_df$kept_calcurve)) "#FFD9A0" else "lightgray"
-        # Why the curve of the selected batch is not valid, kept or replaced by the global one,
-        # under the name
-        reason <- show$calib_issue_text(sel_row_df)
-        if (nzchar(reason)) dfm$feature_name <- paste0(dfm$feature_name, "\n", reason)
-        # No quantifiable sample: the full range is shown (where they could have been quantified)
-        range_note <- show$calib_range_note(sel_row_df)
-        if (nzchar(range_note)) dfm$feature_name <- paste0(dfm$feature_name, "\n", range_note)
-
-        ggplot(dfm, aes(x = .cc_pt, y = .data[[y]])) +
-
-          # ✅ ONLY ONE LAYER
-          geom_point(
-            aes(
-              color = c_type,
-              shape = Batch,
-              text = txt,
-              group = interaction(c_type, Batch) # ✅ prevent merging
-            ),
-            size = 2
-          ) +
-          labs(
-            x = show$label_if_has(dfm$.cc_pt, "Calibrant Concentration"),
-            y = show$label_if_has(dfm[[y]], "Signal"),
-            color = "(Concentration category,",
-            shape = "Batch)"
-          ) +
-          scale_color_manual(values = c(   # Colour-blind safe (Okabe-Ito)
-            "Within limits" = show$okabe_ito[["green"]],
-            "LOD = LLOQ" = show$okabe_ito[["orange"]],
-            "Out-of-range" = "gray",
-            "Cal0" = show$okabe_ito[["vermillion"]],
-            "LOD" = show$okabe_ito[["blue"]]
-          )) +
-          scale_shape_manual(
-            values = rep_len(c(16, 17, 15, 18, 8, 3, 4, 7, 9, 10, 11, 12, 13, 14), nlevels(dfm$Batch))
-          ) +
-
-          # ✅ THIS IS THE KEY FIX
-          guides(
-            color = guide_legend(
-              order = 1,
-              override.aes = list(shape = 16) # ⬅ remove shape influence
-            ),
-            shape = guide_legend(
-              order = 2,
-              override.aes = list(color = "black") # ⬅ remove color influence
-            )
-          ) +
-          facet_wrap(~feature_name, scales = "free", ncol = 1) +
-          theme(
-            strip.background = element_rect(fill = facet_fill),
-            legend.position = "right"
-          )
-      }
-
-
-      ############################################
-      # ✅ Build ONE plot only
-      p_main <- calcurve_plot(dfm)
-
-      if (log_scale) {
-        p_main <- p_main + scale_x_log10() + scale_y_log10(labels = show$label_e)
-      } else {
-        p_main <- p_main + scale_y_continuous(labels = show$label_e)   # Scientific, as elsewhere
-      }
-
-      ############################################
-      # ✅ Convert to plotly (with legend)
-      plotly::ggplotly(p_main, tooltip = "text") |>
-        plotly::layout(
-          legend = list(
-            orientation = "v",
-            x = 1.02,
-            y = 1,
-            xanchor = "left",
-            tracegroupgap = 10 # ✅ separate color & shape visually
-          ),
-          margin = list(
-            t = 50,
-            b = 100,
-            l = 50,
-            r = 150
-          )
-        )
+      # Drawn with plotly directly (converting a ggplot took seconds per chemical, in the app's
+      # process shared by all users). The title is the name only; its colour tells the state of
+      # the curve, as the rows of 4.2 (which give the reason).
+      y <- input$norm_method
+      show$plotly_calcurve_points(
+        dfm, y = y, title = dfm$feature_name[1], title_fill = calib_title_fill(sel_row_df),
+        log_scale = isTRUE(log_scale),
+        x_title = show$label_if_has(dfm$.cc_pt, "Calibrant Concentration"),
+        y_title = show$label_if_has(dfm[[y]], "Signal"),
+        # The limits of the curve chosen in 4.2 (the batch's own, or the global one it uses)
+        lod = sel_row_df$lod[1], lloq = sel_row_df$lloq[1],
+        uloq = if (isTRUE(sel_row_df$has_proper_range)) sel_row_df$uloq[1] else NA
+      )
     }
   })
 
@@ -2311,15 +2417,13 @@ server <- function(input, output, session) {
       # Why the curve is not valid, kept or replaced by the global one ("" if used as is), and
       # whether the full range is shown as no sample is quantifiable
       reason <- show$calib_issue_text(SumExp::row_df(se_selected))
-      range_note <- show$calib_range_note(SumExp::row_df(se_selected))
-      reason <- paste(c(reason, range_note)[nzchar(c(reason, range_note))], collapse = " · ")
       if (!isTRUE(SumExp::row_df(se_selected)$has_proper_range)) {
 
 
         ############################################
         # ✅ Output
 
-        plotly::plot_ly() |>
+        plotly::plotly_empty(type = "scatter", mode = "markers") |>
           plotly::layout(
             xaxis = list(visible = FALSE),
             yaxis = list(visible = FALSE),
@@ -2337,30 +2441,12 @@ server <- function(input, output, session) {
             )
           )
       } else {
-        p <- show$ggplot_calcurve_samples_facet(
-          se_selected,
-          calib_se,
-          MAT_ID_IN_CALIB,
-          colors_of_classes(),
-          ncol = 1,
-          log_scale = log_scale
+        # Drawn with plotly directly (as 4.4). The title is the name only, coloured by the state
+        # of the curve (as in 4.4 and 4.2)
+        show$plotly_calcurve_samples(
+          se_selected, calib_se, MAT_ID_IN_CALIB, colors_of_classes(), log_scale = isTRUE(log_scale),
+          title_fill = calib_title_fill(SumExp::row_df(se_selected))
         )
-        ############################################
-        # ✅ Convert to plotly
-        p_ly <- plotly::ggplotly(p, tooltip = "text") |>
-          plotly::layout(
-            margin = list(t = if (nzchar(reason)) 80 else 50, b = 100, l = 50, r = 50)
-          )
-        if (nzchar(reason)) {
-          # Added to the annotations of ggplotly (facet labels)
-          p_ly <- plotly::plotly_build(p_ly)
-          p_ly$x$layout$annotations <- c(p_ly$x$layout$annotations, list(list(
-            text = htmltools::htmlEscape(reason), x = 0, y = 1.06, xref = "paper", yref = "paper",
-            xanchor = "left", yanchor = "bottom", showarrow = FALSE,
-            font = list(size = 13, color = if (isTRUE(SumExp::row_df(se_selected)$kept_calcurve)) "#B26A00" else "#2F5BEA")
-          )))
-        }
-        p_ly
       }
     }
   })
@@ -2378,8 +2464,8 @@ server <- function(input, output, session) {
       # Prepare data of the selected batch and chemical (by feature ID, not by name)
       feature_id <- calib_selected_feature_r()
       concn_se <- calib_batch_proc_r()$concn   # Evaluated before the S4 method (see 4.3)
-      show_df <- SumExp::as_tibble(concn_se)
-      df1 <- show_df[show_df$.row_id == feature_id, ]
+      shiny::req(feature_id %in% rownames(concn_se))
+      df1 <- SumExp::as_tibble(concn_se[feature_id, ])   # The selected chemical only (fast)
 
       # ------------------------------------------------------------
       # No concentrations: a message instead of an empty plot
@@ -2387,7 +2473,7 @@ server <- function(input, output, session) {
       flag <- if ("conc_flag" %in% names(df1)) df1$conc_flag else NULL
       if (is.null(df1) || nrow(df1) == 0 || all(is.na(df1$conc))) {
         n_flag <- sum(!is.na(flag))
-        plotly::plot_ly() |>
+        plotly::plotly_empty(type = "scatter", mode = "markers") |>
           plotly::layout(
             xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
             annotations = list(list(text = if (n_flag > 0) {
@@ -2403,7 +2489,7 @@ server <- function(input, output, session) {
         # Box per class; points of the values replaced by the LOD/LLOQ rules coloured as in
         # the exported tables. Hover for the sample; Linear/Log buttons
         hover <- paste0("<b>", df1$sample_name, "</b><br>", df1$Class, " · batch ", df1$batch_id,
-                        " · inj. ", df1$injection_order, "<br>conc. ", signif(df1$conc, 4),
+                        " · inj. ", df1$injection_order, "<br>conc. ", show$num_txt(df1$conc),
                         " (", show$imputed_kind(df1$conc, df1$lloq), ")")
         show$plotly_conc_by_class(
           conc = df1$conc, lloq = df1$lloq, cats = as.character(df1$Class),
@@ -2435,7 +2521,7 @@ server <- function(input, output, session) {
                      unit = labelled::get_label_attribute(se[["conc"]]) %||% "Concentration")
     }))
     if (nrow(d) == 0 || all(is.na(d$conc) & is.na(d$flag))) {
-      return(plotly::plot_ly() |>
+      return(plotly::plotly_empty(type = "scatter", mode = "markers") |>
         plotly::layout(
           xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
           annotations = list(list(text = if (nrow(d) == 0) "No QC samples" else "No concentrations in the QC samples",
@@ -2479,11 +2565,13 @@ server <- function(input, output, session) {
 
       DT::datatable(
         df_nchem,
+        selection = "none",   # Clicking a row has no effect
         options = list(
           scrollX = TRUE,
           lengthChange = FALSE,
           searching = FALSE,
           paging = FALSE, # remove Previous/Next
+          scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
           info = FALSE, # remove "Showing X to Y of Z entries"
           dom = "t",
           headerCallback = JS(

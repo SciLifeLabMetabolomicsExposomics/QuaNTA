@@ -16,33 +16,11 @@
 .text_param_ids <- c("project_title", "user", "university", "concentration_unit")
 .textarea_param_ids <- "free_text"
 
-# Processing options that live in the other modules' inputs. `module` must match the IDs
-# used in app.R (`runReadMsdialUI("read_msdial")` and `runProcessUI("proc")`).
-.processing_inputs <- tibble::tribble(
-  ~id,                   ~module,       ~type,
-  "per_batch",           "read_msdial", "checkbox",
-  "optimize_cal_points", "proc",        "checkbox",
-  "set_minimum_number",  "proc",        "checkbox",
-  "min_cal_points",      "proc",        "numeric",
-  "average_cal_reps",    "proc",        "checkbox",
-  "keep_all_calcurves",  "proc",        "checkbox",
-  "r2_filter",           "proc",        "checkbox",
-  "min_r2",              "proc",        "numeric",
-  "linear_only",         "proc",        "checkbox",
-  "vis_prenorm",        "proc",        "checkbox",
-  "rm_outlier",         "proc",        "checkbox",
-  "log_calibration",     "proc",        "checkbox",
-  "blank_filter",        "proc",        "checkbox",
-  "blank_filter_factor", "proc",        "numeric",
-  "weight",              "proc",        "radio",
-  "llox_method",         "proc",        "radio",
-  "use_rsd20",           "proc",        "checkbox",
-  "impute_llox",         "proc",        "checkbox",
-  "rsd_filter",         "proc",        "checkbox",
-  "rsd_filter_scope",    "proc",        "radio",
-  "rsd_max_targeted",    "proc",        "numeric",
-  "rsd_max_nontargeted", "proc",        "numeric"
-)
+# Processing options that live in the other modules' inputs, with their defaults, allowed values
+# and ranges: shared with the scripts (projlib/settings.R). `module` must match the IDs used in
+# app.R (`runReadMsdialUI("read_msdial")` and `runProcessUI("proc")`).
+box::use(settings = projlib/settings)
+.processing_inputs <- settings$processing_options
 
 #' Current processing options as a named list (for the parameter download)
 #'
@@ -58,25 +36,63 @@ collect_processing_params <- function(input) {
 
 #' Push loaded processing options into the inputs of the other modules
 #'
+#' A value that is not valid for its option (e.g. a misspelled choice, "maybe" for a tick box, or
+#' text for a number) is replaced by the option's default; numbers outside their range are kept
+#' here and corrected when "Process data" is clicked (see [processing_value_corrections()]).
+#'
 #' @param session The root `session` of `server()`
 #' @param p A named list, typically the `processing:` section of an uploaded parameter file
+#' @returns A character vector: one note per value that was replaced by the default (shown when
+#'   "Process data" is clicked), invisibly
 #' @export
 apply_processing_params <- function(session, p) {
+  notes <- character()
+  shown <- function(v) paste(format(v), collapse = ", ")
   for (i in seq_len(nrow(.processing_inputs))) {
     id <- .processing_inputs$id[i]
-    if (is.null(p[[id]])) next
+    v <- p[[id]]
+    if (is.null(v)) next
     full_id <- paste0(.processing_inputs$module[i], "-", id)
+    def <- .processing_inputs$default[[i]][[1]]
+    type <- .processing_inputs$type[i]
+    ok <- length(v) == 1 && switch(
+      type,
+      checkbox = !is.na(suppressWarnings(as.logical(v))),
+      numeric  = is.finite(suppressWarnings(as.numeric(v))),
+      radio    = as.character(v) %in% .processing_inputs$choices[[i]][[1]]
+    )
+    if (!ok) {
+      notes <- c(notes, sprintf("\"%s\": the value \"%s\" in the parameters file is not valid; set to the default (%s).",
+                                id, shown(v), shown(def)))
+      v <- def
+    }
     switch(
-      .processing_inputs$type[i],
-      checkbox = shiny::updateCheckboxInput(session, full_id, value = isTRUE(as.logical(p[[id]]))),
-      numeric  = shiny::updateNumericInput(session, full_id, value = as.numeric(p[[id]])),
-      radio    = shiny::updateRadioButtons(session, full_id, selected = as.character(p[[id]]))
+      type,
+      checkbox = shiny::updateCheckboxInput(session, full_id, value = isTRUE(as.logical(v))),
+      numeric  = shiny::updateNumericInput(session, full_id, value = as.numeric(v)),
+      radio    = shiny::updateRadioButtons(session, full_id, selected = as.character(v))
     )
   }
-  invisible(NULL)
+  invisible(notes)
 }
 
-#' Read an uploaded parameter file
+#' Numbers of the processing options outside their allowed range (or missing), with the value
+#' they are set to: the closest allowed value (whole numbers rounded), or the default when missing
+#'
+#' @param input The `input` of the processing module (`runProcessServer()`)
+#' @returns A tibble of `id`, `from` (as text) and `to` (one row per value to correct)
+#' @export
+processing_value_corrections <- function(input) {
+  idx <- which(.processing_inputs$module == "proc" & .processing_inputs$type == "numeric")
+  rows <- lapply(idx, function(i) {
+    v <- suppressWarnings(as.numeric(input[[.processing_inputs$id[i]]]))
+    to <- settings$clamp_value(i, v)
+    if (length(v) == 1 && is.finite(v) && isTRUE(all.equal(v, to))) return(NULL)
+    tibble::tibble(id = .processing_inputs$id[i], from = if (length(v) == 1 && !is.na(v)) format(v) else "empty",
+                   to = to, range = settings$range_text(i))
+  })
+  dplyr::bind_rows(rows)
+}#' Read an uploaded parameter file
 #'
 #' @param path Path to a `.yml` / `.yaml` file
 #' @returns A named list
@@ -85,7 +101,7 @@ read_params_file <- function(path) {
   if (!tolower(tools::file_ext(path)) %in% c("yml", "yaml")) {
     stop("The parameter file must have a .yml or .yaml extension.", call. = FALSE)
   }
-  p <- yaml::read_yaml(path)
+  p <- settings$read_parameters_file(path)   # Also with a UTF-8 byte order mark (e.g. Notepad)
   if (!is.list(p) || is.null(names(p))) stop("The parameter file is empty or malformed.", call. = FALSE)
   p
 }

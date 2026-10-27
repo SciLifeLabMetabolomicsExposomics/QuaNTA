@@ -56,8 +56,9 @@ help_popup_content <- function(on_serve = FALSE) {
             "10.1111/j.2517-6161.1995.tb02031.x"),
         ref("Report layout: MeTaQuaC, Kuhring et al. (2020), Anal Chem 92:10241–10245.",
             "10.1021/acs.analchem.0c00136"),
-        shiny::tags$li("QuaNTA rules (no literature reference): values below the LOD are replaced by",
-                       "LLOQ/4, below the LLOQ by LLOQ/2 (or, optionally, reported as n.d. / n.q.);",
+        shiny::tags$li("QuaNTA rules (no literature reference): values with a signal below the LOD signal",
+                       "are replaced by LLOQ/4, below the mean signal of the LLOQ level by LLOQ/2 (or,",
+                       "optionally, reported as n.d. / n.q.), above it but below the LLOQ set to the LLOQ;",
                        "outlier samples have more than 20% of the internal",
                        "standards beyond 3 SD (log scale).")
       )

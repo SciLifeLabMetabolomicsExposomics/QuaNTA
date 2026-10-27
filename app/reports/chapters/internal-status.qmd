@@ -1,7 +1,7 @@
 ## 1.2 Status profiles
 
 Each targeted compound in each study sample gets one status, from the concentration before filtering
-(`conc0`) and the compound's limits: **Valid**, **> ULOQ** (above the calibration range), **< LLOQ**,
+(`conc0`) and the compound's limits: **Valid**, **> ULOQ, within curve** (above the ULOQ, the top of the linear range, but within a curve that was not cut at it), **> ULOQ, extrapolated** (above the top of the curve; quadratic curves without log calibration have no ULOQ), **< LLOQ**,
 **< LOD**, **Not detected**, **No valid calibration**, or **Removed** before calibration.
 
 ::: {.panel-tabset}

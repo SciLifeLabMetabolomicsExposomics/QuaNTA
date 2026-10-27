@@ -101,7 +101,14 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
       var orig = Plotly[fn];
       Plotly[fn] = function (gd, data, layout) {
         var lay = (data && !Array.isArray(data) && data.layout) ? data.layout : layout;
-        if (lay && typeof lay === "object") lay.plot_bgcolor = "#F4F5F7";
+        if (lay && typeof lay === "object") {
+          lay.plot_bgcolor = "#F4F5F7";
+          // Large numbers on the axes in scientific notation (1E+4), not as 10k (as in the app)
+          Object.keys(lay).forEach(function (k) {
+            var ax = lay[k];
+            if (/^[xy]axis[0-9]*$/.test(k) && ax && typeof ax === "object" && !ax.exponentformat) ax.exponentformat = "E";
+          });
+        }
         return orig.apply(this, arguments);
       };
     });
@@ -110,7 +117,25 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   setInterval(function () {
     if (!window.Plotly) return;
     document.querySelectorAll(".js-plotly-plot").forEach(function (el) {
-      if (el._fullLayout && el._fullLayout.plot_bgcolor !== "#F4F5F7") Plotly.relayout(el, { plot_bgcolor: "#F4F5F7" });
+      if (!el._fullLayout) return;
+      var upd = {};
+      if (el._fullLayout.plot_bgcolor !== "#F4F5F7") upd.plot_bgcolor = "#F4F5F7";
+      // Scientific axis labels also for these plots (unless a plot sets its own format)
+      Object.keys(el._fullLayout).forEach(function (k) {
+        if (!/^[xy]axis[0-9]*$/.test(k)) return;
+        var own = el.layout && el.layout[k] && el.layout[k].exponentformat;
+        var fa = el._fullLayout[k];
+        if (!own && fa.exponentformat !== "E") upd[k + ".exponentformat"] = "E";
+        // Plotly writes exponents from 10000 on: from 1000 on as e.g. 2.5e+3 (as in the app)
+        if (fa.type !== "linear" || !fa.range) return;
+        el.__qTf = el.__qTf || {};
+        var own_tf = el.layout && el.layout[k] && el.layout[k].tickformat && !el.__qTf[k];
+        var m = Math.max(Math.abs(+fa.range[0]), Math.abs(+fa.range[1]));
+        var want = m >= 1000 && m < 10000;
+        if (!own_tf && want && !el.__qTf[k]) { upd[k + ".tickformat"] = ".2~e"; el.__qTf[k] = true; }
+        if (!want && el.__qTf[k]) { upd[k + ".tickformat"] = ""; el.__qTf[k] = false; }
+      });
+      if (Object.keys(upd).length) Plotly.relayout(el, upd);
     });
   }, 1000);
   // Plots in tabs that were hidden at load time get their full width when the tab is opened
@@ -198,8 +223,9 @@ note <- function(txt) knitr::asis_output(paste0('<p class="note-line">', txt, '<
 conc_long <- purrr::map_dfr(lst, function(x) {
   d <- SumExp::as_tibble(x$concn) |>
     select(.row_id, feature_name, sample_name, Class, .ctrl_cat, injection_order, batch_id,
-           conc, conc0, lod, lloq, max_c_conc, has_proper_range, src_calcurve, any_of("conc_flag"))
+           conc, conc0, lod, lloq, max_c_conc, any_of("uloq"), has_proper_range, src_calcurve, any_of("conc_flag"))
   if (!"conc_flag" %in% names(d)) d$conc_flag <- NA_character_   # Processed by older versions
+  if (!"uloq" %in% names(d)) d$uloq <- d$max_c_conc   # Older versions: the top level of every curve
   mutate(d, conc_flag = as.character(conc_flag))
 })
 # Values below the LOD / LLOQ: replaced (LLOQ/4, LLOQ/2), or without a value and reported as
@@ -209,13 +235,13 @@ if (!HAS_CALIB) {   # Same columns, no rows
   conc_long <- tibble(.row_id = character(), feature_name = character(), sample_name = character(),
                       Class = character(), .ctrl_cat = character(), injection_order = integer(),
                       batch_id = character(), conc = numeric(), conc0 = numeric(), lod = numeric(),
-                      lloq = numeric(), max_c_conc = numeric(), has_proper_range = logical(),
+                      lloq = numeric(), max_c_conc = numeric(), uloq = numeric(), has_proper_range = logical(),
                       src_calcurve = character(), conc_flag = character())
 }
-status_levels <- c("Valid", "> ULOQ", "< LLOQ", "< LOD", "Not detected", "No valid calibration",
+status_levels <- c("Valid", "> ULOQ, within curve", "> ULOQ, extrapolated", "< LLOQ", "< LOD", "Not detected", "No valid calibration",
                    "Removed (blank filter)", "Removed (QC RSD%)")
 # Colour-blind safe (Okabe-Ito)
-status_colors <- c("Valid" = "#009E73", "> ULOQ" = "#56B4E9", "< LLOQ" = "#C9A400", "< LOD" = "#E69F00",
+status_colors <- c("Valid" = "#009E73", "> ULOQ, within curve" = "#CFCB8F", "> ULOQ, extrapolated" = "#999933", "< LLOQ" = "#C9A400", "< LOD" = "#E69F00",
                    "Not detected" = "#D9D9D9", "No valid calibration" = "#D55E00",
                    "Removed (blank filter)" = "#CC79A7", "Removed (QC RSD%)" = "#0072B2")
 conc_long <- conc_long |>
@@ -224,7 +250,10 @@ conc_long <- conc_long |>
     is.na(conc0) ~ "Not detected",
     conc0 < lod ~ "< LOD",
     conc0 < lloq ~ "< LLOQ",
-    conc0 > max_c_conc ~ "> ULOQ",
+    # No ULOQ (quadratic curve): no such status. Above the ULOQ but within the curve when the curve
+    # was not cut at the ULOQ (--enforce_linear_range), extrapolated above the top of the curve
+    !is.na(uloq) & conc0 > pmax(uloq, max_c_conc, na.rm = TRUE) ~ "> ULOQ, extrapolated",
+    !is.na(uloq) & conc0 > uloq ~ "> ULOQ, within curve",
     TRUE ~ "Valid"
   ))
 # Targeted compounds removed before calibration: one status per sample too
@@ -256,14 +285,17 @@ kpi <- function(value, label, warn = FALSE, href = NULL) {
                  if (warn) " warn" else "", value, label)
   if (is.null(href)) box else sprintf('<a class="kpi-link" href="%s" title="Go to the section">%s</a>', href, box)
 }
-# `search = FALSE`: no table-wide search box (the column filters remain); `scroll = TRUE`: all
-# rows in a scrolling box instead of pages
-dt <- function(df, ..., search = TRUE, scroll = FALSE) {
-  opts <- list(pageLength = 10, scrollX = TRUE, dom = if (search) "Bfrtip" else "Brtip",
-               buttons = c("copy", "csv"))
-  if (scroll) opts <- c(opts[names(opts) != "pageLength"],
-                        list(paging = FALSE, scrollY = "400px", scrollCollapse = TRUE))
-  DT::datatable(df, rownames = FALSE, filter = "top", extensions = "Buttons", options = opts, ...)
+# All rows in a scrolling box, no pages (as in the app); `search = FALSE`: no table-wide search
+# box (the column filters remain). Tables with many rows draw only the visible rows (Scroller),
+# so that the report stays fast. `scroll` is not used any more (kept for the callers).
+dt <- function(df, ..., search = TRUE, scroll = TRUE) {
+  big <- nrow(df) > 1000
+  opts <- list(scrollX = TRUE, scrollY = "400px", scrollCollapse = TRUE,
+               dom = if (search) "Bfrti" else "Brti", buttons = c("copy", "csv"))
+  opts <- if (big) c(opts, list(deferRender = TRUE, scroller = TRUE)) else c(opts, list(paging = FALSE))
+  # No row selection: clicking a row has no effect in the report
+  DT::datatable(df, rownames = FALSE, filter = "top", selection = "none",
+                extensions = c("Buttons", if (big) "Scroller"), options = opts, ...)
 }
 sig <- function(v) signif(v, 4)
 FAILED_BG <- "#F8D0D0"   # Background of table rows with a failed IS or calibration
@@ -294,15 +326,17 @@ to_json <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na 
 ```{r}
 #| results: asis
 cmp_stat <- study_long |> group_by(feature_name) |>
-  summarise(detected = mean(status %in% c("Valid", "> ULOQ", "< LLOQ")) >= 0.5,
-            quantified = any(status %in% c("Valid", "> ULOQ")))
+  summarise(detected = mean(status %in% c("Valid", "> ULOQ, within curve", "> ULOQ, extrapolated", "< LLOQ")) >= 0.5,
+            quantified = any(status %in% c("Valid", "> ULOQ, within curve", "> ULOQ, extrapolated")))
 cat('<div class="kpis">',
     kpi(sum(smp$category == "Study sample"), "Study samples"),
     if (has_qc) kpi(sum(smp$category == "QC"), "QC samples"),
     kpi(sum(smp$category == "Blank"), "Blanks"),
     kpi(sum(smp$category == "CalCurve"), "Calibration samples"),
     kpi(length(batch_ids), "Batches"),
-    kpi(sum(feat$type == "Targeted"), "Targeted compounds"),
+    # All targeted (Quant) compounds of the file; their calibration status is in table 4.2
+    if (HAS_CALIB) kpi(sum(feat$type == "Targeted"), "Targeted compounds &rarr;", href = "#calib-limits") else
+      kpi(sum(feat$type == "Targeted"), "Targeted compounds"),
     if (HAS_CALIB) kpi(sum(cmp_stat$detected), "Compounds > LOD in ≥ 50% of study samples"),
     if (HAS_CALIB) kpi(sum(cmp_stat$quantified), "Compounds quantified in ≥ 1 study sample"),
     kpi(sum(feat$type == "Non-targeted"), "Non-targeted features"),
@@ -359,12 +393,18 @@ tibble(Setting = c("Normalization (this report)", "Best normalization (lowest me
                    "Per-batch processing", "Outlier removal", "Blank filtering", "Blank filtering factor",
                    "QC RSD% filter", "Weighting", "LOD/LLOQ method", "RSD% ≤ 20% for LLOQ",
                    "Log-scale calibration", "Keep all calibration curves", "Linear models only",
+                   "Linear range (ULOQ): max. deviation of the top level; curves cut at the ULOQ",
                    "Minimum R² of the calibration curves", "Values below the LOD/LLOQ",
                    "Calibration replicates averaged per batch (global curve)", "Pre-normalization by the volumetric IS"),
        Value = c(val(method_label[MAT]), val(method_label[tr[["best normalization"]]]),
-                 val(length(batch_ids) > 1), val(p$rm_outlier), val(p$blank_filter),
+                 val(length(batch_ids) > 1),
+                 if (!isTRUE(p$rm_outlier)) "No" else if (identical(p$rm_outlier_scope, "no_calib"))
+                   "Yes (calibration samples always kept)" else "Yes (all injections)",
+                 val(p$blank_filter),
                  val(p$blank_filter_factor), rsd_txt, val(p$weight), val(p$llox_method),
                  val(p$use_rsd20), val(p$log_calibration), val(isTRUE(p$keep_all_calcurves)), val(isTRUE(p$linear_only)),
+                 paste0(if (isTRUE(p$log_calibration)) "SCALiR" else if (is.null(p$linear_range_tol)) "–" else paste0(p$linear_range_tol, "%"),
+                        "; ", if (isTRUE(p$enforce_linear_range)) "cut" else "not cut"),
                  if (isTRUE(p$r2_filter)) sprintf("%.3f", p$min_r2) else "None",
                  if (isFALSE(p$impute_llox)) "Reported as n.d. / n.q. (no value)" else "Replaced (LLOQ/4, LLOQ/2)",
                  val(isTRUE(p$average_cal_reps)),
@@ -910,10 +950,10 @@ if (is.null(removed) || nrow(filter(removed, mat_id == MAT)) == 0) {
 ## 3.11 Blanks compared to samples
 
 One targeted compound at a time in the (method) blanks, in red, next to the QCs, study samples and
-calibrants, `r method_label[MAT]` values before blank filtering. The dashed line is the threshold of the
+calibrants, `r method_label[MAT]` values before blank filtering and blank subtraction. The dashed line is the threshold of the
 blank filter: a feature is kept when its maximum or mean in the other samples (calibrants included) is
 above `r tr$blank_filter_factor %||% 5` × its mean in the blanks (on blanks and QC samples in
-metabolomics, see @broadhurst2018). Search, and switch between a bar per group (mean ± SD, samples as
+metabolomics, see @broadhurst2018); internal standards are not filtered. Search, and switch between a bar per group (mean ± SD, samples as
 points) and a bar per sample along the injection order. This report shows the targeted compounds only
 (all features would make the report very large); the app (3.11) shows all features, also the
 non-targeted ones and the internal standards.
@@ -1047,9 +1087,9 @@ if (isTRUE(as.logical(params$on_serve))) {
 **Software.** R [@rcore], Shiny [@shiny], Quarto [@quarto], ggplot2 [@ggplot2], plotly [@plotly], DT
 [@dt]; the app runs in a Rocker container [@rocker2017].
 
-**QuaNTA rules (no literature reference).** `r if (LLOX_IMPUTED) "Concentrations below the LOD are replaced by LLOQ/4, those between the LOD and the LLOQ by LLOQ/2," else "Concentrations below the LOD are reported as n.d. (not detected) and those between the LOD and the LLOQ as n.q. (not quantified), without a value (this processing did not replace them);"`
-and those of samples whose signal is at or above the mean signal of the LLOQ level, but whose
-concentration is below the LLOQ, by the LLOQ. Outlier samples: more than 20% of the internal standards
+**QuaNTA rules (no literature reference).** Each value is decided once, from its signal: `r if (LLOX_IMPUTED) "with a signal below the LOD signal it is replaced by LLOQ/4 (not detected), with a signal from the LOD signal to below the mean signal of the LLOQ level by LLOQ/2 (detected, not quantified)," else "with a signal below the LOD signal it is reported as n.d. (not detected), with a signal from the LOD signal to below the mean signal of the LLOQ level as n.q. (detected, not quantified), without a value (this processing did not replace them);"`
+whatever its calculated concentration; with a signal at or above the mean signal of the LLOQ level
+and a concentration below the LLOQ it is set to the LLOQ. Outlier samples: more than 20% of the internal standards
 deviate by more than 3 standard deviations from their mean (log scale).
 
 ## References {.unnumbered}
@@ -1066,8 +1106,16 @@ cat('<script>window.QSAMPLES = ', to_json(s_tab), '; window.QCOLORS = ', to_json
 ```{=html}
 <script>
 window.addEventListener('load', function () {
+  // Tables in scrolling boxes inside tabs: align the column headers when a tab is shown
+  document.addEventListener('shown.bs.tab', function () {
+    if (window.jQuery && jQuery.fn.dataTable) jQuery.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+  });
   var S = window.QSAMPLES, COL = window.QCOLORS;
-  var fmt = function (v) { return v === null || v === undefined ? '–' : (+v).toPrecision(4).replace(/\.?0+$/, ''); };
+  // From 1000 on in scientific notation (as in the app), e.g. 1.234E+3; otherwise 4 significant digits
+  var fmt = function (v) {
+    if (v === null || v === undefined) return '–';
+    return Math.abs(+v) >= 1000 ? (+v).toExponential(3).toUpperCase() : String(+(+v).toPrecision(4));
+  };
   // Scientific notation (peak areas in 3.5 and 3.7, as in the app), e.g. 1.234E+6
   var sci = function (v) { return v === null || v === undefined ? '–' : (+v).toExponential(3).toUpperCase(); };
   var who = function (s) { return '<b>' + S.n[s] + '</b><br>' + S.c[s] + ' · batch ' + S.b[s] + ' · inj. ' + S.i[s]; };
@@ -1194,7 +1242,7 @@ window.addEventListener('load', function () {
           traces.push({ type: 'bar', x: [i + 1], y: [mean(y)], name: g, legendgroup: g, width: 0.7,
             error_y: { type: 'data', array: [sd(y)], color: '#4d4d4d' },
             marker: { color: COL[g] || '#999', opacity: 0.55, line: { color: COL[g] || '#999', width: 1.5 } },
-            hovertemplate: '<b>' + g + '</b><br>mean %{y:.4g} (n = ' + k.length + ')<extra></extra>' });
+            hovertemplate: '<b>' + g + '</b><br>mean ' + fmt(mean(y)) + ' (n = ' + k.length + ')<extra></extra>' });
           traces.push({ type: 'scatter', mode: 'markers', name: g, legendgroup: g, showlegend: false,
             x: k.map(function (j) { return i + 1 + (((j * 7919) % 100) / 100 - 0.5) * 0.5; }), y: y,
             marker: { color: COL[g] || '#999', size: 6, opacity: 0.8, line: { color: '#fff', width: 0.5 } },
@@ -1355,7 +1403,7 @@ window.addEventListener('load', function () {
     if (v.nq) notes.push('<span class="kept">' + v.nq + '.</span>');
     if (v.model) notes.push('<span class="chip">Model: ' + v.model + '</span><span class="chip">R² ' + (v.r2 === null || v.r2 === undefined ? '–' : (+v.r2).toFixed(3)) + '</span>' +
       '<span class="chip">LOD ' + fmt(v.lod) + '</span><span class="chip">LLOQ ' + fmt(v.lloq) + '</span>' +
-      '<span class="chip">ULOQ ' + fmt(v.uloq) + ' ' + D.unit + '</span><span class="chip">Curve: ' + v.src + '</span>');
+      '<span class="chip">ULOQ ' + (v.uloq === null || v.uloq === undefined ? '–' : fmt(v.uloq) + ' ' + D.unit) + '</span><span class="chip">Highest level ' + fmt(v.top) + ' ' + D.unit + '</span><span class="chip">Curve: ' + v.src + '</span>');
     info.innerHTML = notes.join(' ');
     // A curve that is not valid (e.g. R² below the minimum) is dashed
     if (v.curve) traces.push({ x: v.curve.x, y: v.curve.y, mode: 'lines', hoverinfo: 'skip',
@@ -1382,17 +1430,27 @@ window.addEventListener('load', function () {
         traces.push({ x: k.map(function (j) { return v.smp.x[j]; }), y: k.map(function (j) { return v.smp.y[j]; }), mode: 'markers', type: 'scatter', name: g,
           marker: { color: COL[g] || '#999', size: 7, opacity: .85, line: { width: .5, color: '#fff' } },
           text: k.map(function (j) {
-            var x = v.smp.x[j], st = x < v.lod ? ' (< LOD)' : (x < v.lloq ? ' (< LLOQ)' : (x > v.uloq ? ' (> ULOQ)' : ''));
+            var hasU = v.uloq !== null && v.uloq !== undefined;
+            var x = v.smp.x[j], st = x < v.lod ? ' (< LOD)' : (x < v.lloq ? ' (< LLOQ)' :
+              (hasU && x > Math.max(v.uloq, v.top) ? ' (> ULOQ, extrapolated)' : (hasU && x > v.uloq ? ' (> ULOQ, within curve)' : '')));
             return who(v.smp.s[j]) + '<br>conc. ' + fmt(x) + ' ' + D.unit + st + ' · signal ' + fmt(v.smp.y[j]);
           }),
           hovertemplate: '%{text}<extra></extra>' });
       });
     }
-    var lx = function (x) { return isLog ? Math.log10(Math.max(x, 1e-12)) : x; };
+    // Shapes are placed by the concentration also on log axes (plotly.js 2.11: log10 values are
+    // misplaced and stretch the axis)
+    var lx = function (x) { return x; };
     if (v.lloq) {
-      var x0 = isLog ? lx(Math.min.apply(null, v.cal.x.filter(function (x) { return x > 0; }).concat([v.lod || v.lloq])) / 3) : 0;
+      var x0 = isLog ? Math.min.apply(null, v.cal.x.filter(function (x) { return x > 0; }).concat([v.lod || v.lloq])) / 3 : 0;
       shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: x0, x1: lx(v.lloq), y0: 0, y1: 1, fillcolor: 'rgba(80,80,80,.12)', line: { width: 0 } });
       if (v.lod) shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: x0, x1: lx(v.lod), y0: 0, y1: 1, fillcolor: 'rgba(80,80,80,.18)', line: { width: 0 } });
+    }
+    // Above the ULOQ (the top of the linear range): shaded in olive up to the highest value shown
+    if (v.uloq !== null && v.uloq !== undefined) {
+      var xmax = Math.max.apply(null, v.cal.x.concat(v.smp ? v.smp.x : [], v.curve ? v.curve.x : []).filter(function (x) { return x !== null; }));
+      if (xmax > v.uloq) shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: lx(v.uloq), x1: lx(xmax), y0: 0, y1: 1, fillcolor: 'rgba(153,153,51,.15)', line: { width: 0 } });
+      shapes.push({ type: 'line', xref: 'x', yref: 'paper', x0: lx(v.uloq), x1: lx(v.uloq), y0: 0, y1: 1, line: { color: '#999933', width: 1.5, dash: 'dash' } });
     }
     Plotly.react(root.querySelector('.plot'), traces, {
       title: { text: c.name + ' — ' + vn, x: 0.02 }, shapes: shapes, hovermode: 'closest', font: font,

@@ -25,6 +25,11 @@ opt_parser <- optparse::OptionParser(
   description = "Read MS-Dial output files and save the results."
 )
 params <- optparse::parse_args(opt_parser)
+# The `processing:` section of the parameters file (e.g. saved in the app) for the options not
+# given on the command line (projlib/settings.R)
+options(box.path = Sys.getenv("R_BOX_PATH", "app/"))
+box::use(settings = projlib/settings)
+params <- settings$options_with_parameters_file(params, "read_msdial")
 cat(
   "\nRead parameters:\n",
   "  - Per batch processing:", params$per_batch, "\n"
@@ -36,6 +41,7 @@ box::use(
   projlib/msdial,   # Handle MS-Dial files
   io = projlib/check_io_exist,       # Check input/output files
   util = projlib/msdial_utils,   
+  show = projlib/show,   # Counts of the value distribution (app 2.6)
 )
 
 # Get the input file name provided by the user
@@ -81,6 +87,8 @@ to_valid_id <- function(given_id, tbl = util$conv_tbl) {
 }
 # Required columns must be present exactly once with exact names (stops with a message otherwise)
 msdial$check_feature_columns(FILE$i, i_three_sections[["1st"]])
+# Columns similar to a required one but not used (e.g. "comment"): shown before processing
+column_notes <- msdial$similar_feature_columns(FILE$i, i_three_sections[["1st"]])
 features <- msdial$fetch_data_of_columns(FILE$i, i_three_sections[["1st"]])
 # Identify features to be removed (Comment == "R")
 i_to_keep <- which(is.na(features$Comment) | features$Comment != "R")
@@ -114,16 +122,17 @@ features <- features |>
     )
   )
 # Comment values that do not follow the naming conventions (shown before processing): they are
-# non-targeted features. `looks_like`: the convention it resembles (a whole word, case-sensitive;
+# non-targeted features. `looks_like`: the convention it resembles (a whole word, in any case but R;
 # "vIS" before "IS"), e.g. "IS - bad" looks like IS but is not used as one; `NA` if none
 exact <- comment_given %in% c("Quant", "IS", "vIS") | grepl("^(IS|Quant)\\\\", comment_given)
 odd <- !is.na(comment_given) & nzchar(comment_given) & !exact
 comment_notes <- tibble::tibble(
   comment = comment_given[odd],
+  # Quant / IS / vIS also in other cases (e.g. "quant", "Is"), as likely typos; R only as given
   looks_like = dplyr::case_when(
-    grepl("\\bvIS\\b", comment) ~ "vIS",
-    grepl("\\bQuant\\b", comment) ~ "Quant",
-    grepl("\\bIS\\b", comment) ~ "IS",
+    grepl("\\bvIS\\b", comment, ignore.case = TRUE) ~ "vIS",
+    grepl("\\bQuant\\b", comment, ignore.case = TRUE) ~ "Quant",
+    grepl("\\bIS\\b", comment, ignore.case = TRUE) ~ "IS",
     grepl("\\bR\\b", comment) ~ "R",
     .default = NA_character_
   )
@@ -318,7 +327,10 @@ sumexp <- SumExp::SumExp(
     concentration_unit = user_inputs$concentration_unit,
     has_single_cal_pt = if (is_non_target_mode) FALSE else has_single_cal_pt,
     comment_notes = comment_notes,   # Comment values that do not follow the naming conventions
+    column_notes = column_notes,     # Columns similar to a required column (not used)
     missing_values = missing_values,   # Empty or non-numeric values read as 0, per feature
+    # Histogram counts of all raw values (app 2.6), counted once here instead of in the app
+    value_bins = show$value_distribution_bins(raw_mat),
   )
 )
 

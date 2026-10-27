@@ -317,3 +317,61 @@ avg_plus_std_times <- function(v, times, na.rm = TRUE) { # nolint
 .rsd_perc <- function(x, na.rm = FALSE) { # nolint
   100 * stats::sd(x, na.rm = na.rm) / mean(x, na.rm = na.rm)
 }
+
+##  CALIBRATION NOTES  -------------------------------------
+
+#' The categories of the notes on the calibration curves, in the order they are shown
+#' @export
+calib_note_categories <- c(
+  notvalid = "No valid curve", kept = "Kept although not valid", global = "Global curve used",
+  uloq = "Linear range (ULOQ)", detection = "Detection in samples", removed = "Removed before calibration"
+)
+
+#' Notes on the calibration curves by category, one row per chemical
+#'
+#' The tables show them as icons (`show$calib_notes_html()`), the exports as text
+#' ([calib_notes_text()]).
+#'
+#' @param row_df The `row_df` of calibrated data (`has_proper_range`, and from processing with
+#'   recent versions `src_calcurve`, `range_issue`, `kept_calcurve`, `linear_range_note` and
+#'   `no_quant_samples`)
+#' @param batch_view Whether the rows are those of a batch (`src_calcurve` "Global" then means that
+#'   the batch's own curve was replaced by the global one)
+#' @param detection Notes on the detection in the study samples (`""` or `NA`: none), one per row
+#' @returns A tibble with a column per category of [calib_note_categories] but `removed` (`NA`:
+#'   nothing to note)
+#' @export
+calib_notes <- function(row_df, batch_view = TRUE, detection = NULL) {
+  n <- nrow(row_df)
+  chr <- function(nm) if (is.null(row_df[[nm]])) rep(NA_character_, n) else as.character(row_df[[nm]])
+  issue <- chr("range_issue")
+  src <- chr("src_calcurve")
+  valid <- row_df$has_proper_range %in% TRUE
+  is_kept <- valid & row_df$kept_calcurve %in% TRUE   # (`kept` would be the column of the result)
+  reason <- dplyr::coalesce(issue, "no valid calibration range")
+  full_range <- if (is.null(row_df$no_quant_samples)) rep(FALSE, n) else row_df$no_quant_samples %in% TRUE
+  det <- if (is.null(detection)) rep(NA_character_, n) else dplyr::na_if(as.character(detection), "")
+  det <- dplyr::case_when(
+    full_range & !is.na(det) ~ paste0(det, "; no sample or QC at or above the LLOQ: the full calibration range is shown"),
+    full_range ~ "No sample or QC at or above the LLOQ: the full calibration range is shown",
+    TRUE ~ det
+  )
+  tibble::tibble(
+    notvalid = ifelse(valid, NA_character_, paste0("Not valid: ", reason)),
+    kept = ifelse(is_kept, paste0("Kept although not valid: ", reason), NA_character_),
+    global = dplyr::case_when(
+      !batch_view | !valid | is_kept | !src %in% "Global" ~ NA_character_,
+      !is.na(issue) ~ paste0("Batch curve not valid (", issue, "): the global curve is used"),
+      TRUE ~ "The global curve is used"
+    ),
+    uloq = ifelse(valid, chr("linear_range_note"), NA_character_),
+    detection = ifelse(valid, det, NA_character_)
+  )
+}
+
+#' The notes of [calib_notes()] as one text per chemical (`""`: none)
+#' @export
+calib_notes_text <- function(notes) {
+  if (nrow(notes) == 0) return(character())
+  apply(as.matrix(notes), 1, \(x) paste(x[!is.na(x) & x != ""], collapse = "; "))
+}

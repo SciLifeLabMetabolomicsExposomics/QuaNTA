@@ -68,9 +68,15 @@ The concentrations of the `Blank` samples are computed from their normalized dat
 subtraction (row `Blank subtracted`: `Not subtracted`), with the calibration of their batch and the
 same LOD/LLOQ rules, so that they show the level of each chemical in the blanks.
 
-Values replaced by the LOD/LLOQ rules are coloured (in all sheets): red for LLOQ/4 (below the LOD),
-yellow for LLOQ/2 (between the LOD and the LLOQ) and blue for the LLOQ. The last sheet, `Legend`,
-explains the colours.
+Values replaced by the LOD/LLOQ rules are coloured (in all sheets): red for LLOQ/4 (signal below the
+LOD signal), yellow for LLOQ/2 (signal from the LOD signal to below the mean signal of the LLOQ level)
+and blue for the LLOQ (signal at or above it, concentration below the LLOQ); light olive for values above
+the ULOQ but within a curve that was not cut at it, olive for values above the highest calibration level
+of the curve (extrapolated). The last sheet, `Legend`, explains the colours.
+
+The chemical columns of each batch sheet include `Notes`: the notes on each calibration curve in full
+(e.g. a curve kept although not valid, a batch using the global curve, the levels above the ULOQ); the
+app and the reports show them as icons.
 
 When the processing option **Replace values below the LOD/LLOQ** is unticked (`--impute_llox=FALSE`),
 these values are not replaced: their cells hold the text `n.d.` (not detected, below the LOD; red) or

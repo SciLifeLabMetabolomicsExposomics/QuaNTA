@@ -12,16 +12,67 @@
 #' @export
 genReportUI <- function(uiId) {
   ns <- shiny::NS(uiId)
+  # One group per report (button, progress bar, message): the card spaces the groups only
   shiny::tagList(
     # External report (PDF): downloaded directly once generated, not shown in the app
-    shiny::actionButton(inputId = ns("gen_external"), label = "Generate external report"),
-    shiny::textOutput(ns("gen_external_out")),
-    # Hidden link that the server "clicks" (message `quantaClickDownload`, defined in app.R) to
-    # start the download when the PDF is ready
-    shiny::downloadLink(ns("download_external"), label = "", style = "display: none;"),
-    shiny::br(),
-    shiny::actionButton(inputId = ns("gen_internal"), label = "Generate internal report"),
-    shiny::textOutput(ns("gen_internal_out"))
+    shiny::div(
+      class = "q-gen-group",
+      shiny::actionButton(inputId = ns("gen_external"), label = "Summary report (pdf)", class = "q-gen-btn"),
+      shiny::uiOutput(ns("progress_external")),   # Progress bar while rendering
+      shiny::textOutput(ns("gen_external_out")),
+      # Hidden link that the server "clicks" (message `quantaClickDownload`, defined in app.R) to
+      # start the download when the PDF is ready
+      shiny::downloadLink(ns("download_external"), label = "", style = "display: none;")
+    ),
+    shiny::div(
+      class = "q-gen-group",
+      shiny::actionButton(inputId = ns("gen_internal"), label = "QC/QA report (html)", class = "q-gen-btn"),
+      shiny::uiOutput(ns("progress_internal")),
+      shiny::textOutput(ns("gen_internal_out"))
+    )
+  )
+}
+
+#' Progress of a report rendering, from the output of Quarto so far
+#'
+#' knitr writes a line "k/N [chunk label]" for each of the N parts (text and code chunks) of the
+#' report, then "output file: ...", after which pandoc (and for a PDF, LaTeX) runs.
+#'
+#' @param log The output lines of the rendering process so far
+#' @param pdf `TRUE` for the PDF report (LaTeX after pandoc)
+#' @returns A list with `value` (0 to 1) and `text`
+#' @export
+report_progress <- function(log, pdf = FALSE) {
+  log <- trimws(unlist(strsplit(gsub("\033\\[[0-9;]*m", "", log), "\r", fixed = TRUE)))
+  if (any(grepl("^output file:", log))) {
+    if (pdf && any(grepl("latex", log, ignore.case = TRUE))) {
+      return(list(value = 0.95, text = "Typesetting the PDF (LaTeX) ..."))
+    }
+    return(list(value = 0.92, text = if (pdf) "Converting to PDF (pandoc) ..." else "Building the HTML page (pandoc) ..."))
+  }
+  steps <- regmatches(log, regexec("^(\\d+)/(\\d+)\\s*(\\[(.*)\\])?", log))
+  steps <- Filter(length, steps)
+  if (length(steps) == 0) return(list(value = 0.02, text = "Starting Quarto ..."))
+  last <- steps[[length(steps)]]
+  k <- as.numeric(last[2]); n <- as.numeric(last[3])
+  label <- if (nzchar(last[5]) && !grepl("^unnamed-chunk", last[5])) paste0(" (", last[5], ")") else ""
+  list(value = 0.03 + 0.87 * k / n,
+       text = sprintf("Running the report code: part %d of %d%s ...", as.integer(k), as.integer(n), label))
+}
+
+# A Bootstrap progress bar with a line of text under it
+progress_bar_ui <- function(p) {
+  if (is.null(p)) return(NULL)
+  pct <- round(100 * min(max(p$value, 0), 1))
+  shiny::div(
+    style = "margin: 8px 0 6px; max-width: 460px;",
+    shiny::div(
+      class = "progress", style = "height: 22px;",
+      shiny::div(class = "progress-bar progress-bar-striped progress-bar-animated", role = "progressbar",
+                 style = sprintf("width: %d%%;", pct), `aria-valuenow` = pct, `aria-valuemin` = 0,
+                 `aria-valuemax` = 100, sprintf("%d%%", pct))
+    ),
+    shiny::div(class = "small text-muted", style = "margin-top: 3px;", p$text)
   )
 }
 
@@ -43,6 +94,10 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
     msg <- shiny::reactiveVal("")
     report_ready <- shiny::reactiveVal(NULL)
     rendering <- shiny::reactiveVal(FALSE)   # One render at a time per session
+    # Progress of the rendering (bar under its button), `NULL` when not rendering
+    progress <- list(internal = shiny::reactiveVal(NULL), external = shiny::reactiveVal(NULL))
+    output$progress_internal <- shiny::renderUI(progress_bar_ui(progress$internal()))
+    output$progress_external <- shiny::renderUI(progress_bar_ui(progress$external()))
 
     # Report file name with the time of generation, e.g.
     # "Dummy_Test-loess_norm-internal_20261010_143205.html" (`type`: "internal.html" / "external.pdf")
@@ -69,6 +124,8 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
       )
       if (is.null(params_file)) return(invisible())
       rendering(TRUE)
+      key <- if (output_format == "pdf") "external" else "internal"
+      progress[[key]](list(value = 0.02, text = "Starting Quarto ..."))
       job <- list(
         reports_dir = normalizePath("reports", winslash = "/", mustWork = TRUE),
         work_dir = file.path(ws$base, "render"),
@@ -92,8 +149,10 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
         job = job,
         env = c(QUANTA_PARAMS_FILE = params_file),
         progress_message = paste0("Rendering ", what, " (this can take a minute)"),
+        on_progress = function(log) progress[[key]](report_progress(log, pdf = output_format == "pdf")),
         on_done = function(ok, log) {
           rendering(FALSE)
+          progress[[key]](NULL)
           path <- file.path(ws$report, out_name)
           if (ok && file.exists(path)) on_done(path) else on_error(bg_error_message(log))
         }
@@ -159,6 +218,16 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
     # The link is hidden; without this Shiny would not give it a download URL
     shiny::outputOptions(output, "download_external", suspendWhenHidden = FALSE)
 
-    list(report_path = report_path, report_ready = report_ready)
+    # Forget the reports (their files are removed with all results, e.g. when a parameters file is
+    # loaded): no report shown or downloaded until a new one is generated
+    reset <- function() {
+      report_path("")
+      report_ready(NULL)
+      external_path(NULL)
+      msg("")
+      msg_external("")
+    }
+
+    list(report_path = report_path, report_ready = report_ready, reset = reset)
   })
 }

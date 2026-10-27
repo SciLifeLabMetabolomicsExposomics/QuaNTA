@@ -52,3 +52,10 @@ app/SMS-7579-23-exposome.Rproj
 QuaNTA.Rproj
 /mockups
 app/CLAUDE.md
+
+# Default output folder of run_quanta.R (command line)
+/quanta_output/
+
+# Tutorial: the rendered site and its processed example data (`tutorial/_freeze/` is committed)
+/tutorial/_site/
+/tutorial/_data/

@@ -36,6 +36,7 @@ MSG_NOT_PROCESSED <- "Not processed yet: click \"Process data\" on page 1 (Input
 # Parsed data (output of read-msdial.R)
 raw_se_r <- shiny::reactive({
   read_done()
+  results_reset()   # All results removed (e.g. a parameters file was loaded)
   session_loaded()   # Also re-read after loading saved session data
   input[["data_info-input_file_upload"]]   # A new upload deletes the data (also with the same name)
   has_input <- isTRUE(nzchar(data_info[["input_file"]]))   # `NULL` before an upload
@@ -50,12 +51,14 @@ colors_of_classes <- shiny::reactive({
 
 # Conversion tables between IDs (syntactically acceptable) and names (human-readable)
 sample_id_name_tbl <- shiny::reactive({
-  SumExp::col_df(raw_se_r()) |>
+  se <- raw_se_r()   # Not inside `col_df()`: S4 dispatch turns the validate() message into an error
+  SumExp::col_df(se) |>
     tibble::rownames_to_column("sample_id") |>
     dplyr::select(sample_id, sample_name)
 })
 feature_id_name_tbl <- shiny::reactive({
-  SumExp::row_df(raw_se_r()) |>
+  se <- raw_se_r()
+  SumExp::row_df(se) |>
     tibble::rownames_to_column("feature_id") |>
     dplyr::select(feature_id, feature_name)
 })
@@ -63,17 +66,24 @@ feature_id_name_tbl <- shiny::reactive({
 # Intermediate data of the quality-control steps (output of process.R), read once per run
 to_report_r <- shiny::reactive({
   proc_done()
+  results_reset()
   session_loaded()
   read_done()                              # Re-reading deletes the processed data (see app.R)
   input[["read_msdial-run_button"]]        # ... from the moment the read is started
   input[["data_info-input_file_upload"]]   # A new upload deletes it too
   shiny::validate(shiny::need(isTRUE(nzchar(data_info[["input_file"]])), MSG_NOT_READ))
-  path <- rds_file("to_report")
+  # The app's own copy (process.R): only what the app shows, and the data prepared for its figures
+  # (much smaller than the full results, which the reports read). Data processed by older versions
+  # have only the full results.
+  path <- rds_file("app")
+  if (!file.exists(path)) path <- rds_file("to_report")
   shiny::validate(shiny::need(file.exists(path), MSG_NOT_PROCESSED))
   to_report <- readRDS(path)
   shiny::validate(shiny::need(isTRUE(to_report[["Completed"]]), MSG_NOT_PROCESSED))
   to_report
 })
+# Data prepared by process.R for the figures and tables (`NULL` for data processed by older versions)
+app_data_r <- shiny::reactive(to_report_r()[["app data"]])
 # Slices of the cached list, no extra file reading
 pre_norm_se_r <- shiny::reactive(to_report_r()[["before normalization"]])
 internal_std_se_r <- shiny::reactive(to_report_r()[["internal std. before qc"]])
@@ -81,6 +91,7 @@ internal_std_se_r <- shiny::reactive(to_report_r()[["internal std. before qc"]])
 # Calibrated data (output of process.R, target mode only)
 proc_r <- shiny::reactive({
   proc_done()
+  results_reset()
   session_loaded()
   read_done()
   input[["read_msdial-run_button"]]

@@ -44,6 +44,8 @@ conc_long |> filter(feature_name %in% top, status == "Valid", .ctrl_cat %in% c("
   scale_y_log10() +
   scale_fill_manual(values = group_colors, guide = "none") +
   facet_wrap(~feature_name, scales = "free_y", ncol = 4) +
-  labs(x = NULL, y = paste0("Concentration [", unit, "] (log10)"))
+  labs(x = NULL, y = paste0("Concentration [", unit, "] (log10)")) +
+  # Group names at 45°, readable also when long or many
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
 ```
 

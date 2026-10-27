@@ -33,9 +33,10 @@ global_view <- function(fid) {
   okc <- !is.na(gcal$cal_signal[fid, ]) & !is.na(gcal$cal_conc)
   xs <- gcal$conc0[fid, ]; ys <- gcal$signal[fid, ]; oks <- !is.na(xs) & !is.na(ys)
   list(src = if (isTRUE(L$has_proper_range)) "Global" else "None",
+       notes = util$calib_notes(L, batch_view = FALSE),   # For table 4.2 (not in the viewer data)
        why = show$calib_issue_text(L, batch_view = FALSE), kept = isTRUE(L$kept_calcurve),
        nq = show$calib_range_note(L),
-       lod = sig(L$lod), lloq = sig(L$lloq), uloq = sig(L$max_c_conc),
+       lod = sig(L$lod), lloq = sig(L$lloq), uloq = sig(L$uloq %||% L$max_c_conc), top = sig(L$max_c_conc),
        model = model_label(L$model), r2 = if (is.na(L$r2)) NULL else round(L$r2, 3),
        # Also a curve that is not valid (e.g. R² below the minimum), when it was fitted
        curve = curve_from_coef(L$coef[[1]], L$lloq, L$max_c_conc),
@@ -58,9 +59,10 @@ batch_view <- function(x, fid) {
   }
   has_m <- is.list(m) && !is.null(m$best_model_name)
   list(src = if (is.na(rd$src_calcurve)) "None" else rd$src_calcurve,
+       notes = util$calib_notes(rd),   # For table 4.2 (not in the viewer data)
        why = show$calib_issue_text(rd), kept = isTRUE(rd$kept_calcurve),
        nq = show$calib_range_note(rd),
-       lod = sig(rd$lod), lloq = sig(rd$lloq), uloq = sig(rd$max_c_conc),
+       lod = sig(rd$lod), lloq = sig(rd$lloq), uloq = sig(rd$uloq %||% rd$max_c_conc), top = sig(rd$max_c_conc),
        model = if (has_m) model_label(m$best_model_name) else NULL,
        r2 = if (has_m) round(m$R2s[[m$best_model_name]], 3) else NULL,
        # Also a curve that is not valid (e.g. R² below the minimum), when it was fitted
@@ -113,17 +115,20 @@ show$calib_samples_per_batch(raw, unit) |>
   kableExtra::kable_styling(full_width = FALSE, position = "left")
 ```
 
-## 4.2 Calibration curve limits
+## 4.2 Calibration curve limits {#calib-limits}
 
 The LOD and LLOQ are the lowest calibration levels whose mean signal exceeds 3 and 10 times the blank
 (Cal0) signal, the usual signal-to-noise criteria [@ichq2r2]; with the RSD% option, the replicates of
 the LLOQ level must also have an RSD% of at most 20% [@ichm10]. The curves are linear or quadratic, with
 the weighting 1, 1/x or 1/x² [@almeida2002].
+`r uloq_txt <- if (in_log) "The ULOQ is the top of the linear range of the log–log curve found by SCALiR (slope 1; the points farthest from the line are left out until the mean squared residual is at most 0.01, with at least 3 points) [@ponce2024], but at least the minimum number of levels." else if (is.null(tr$params$linear_range_tol)) "The ULOQ is the highest calibration level of a linear curve; a quadratic curve has no ULOQ (empty)." else paste0("The ULOQ is the top of the linear range of a linear curve: while the back-calculated mean signal of the top level deviates more than ", tr$params$linear_range_tol, "% from its nominal concentration, that level is left out and the curve refitted, keeping at least ", tr$params$min_cal_points, " levels. A quadratic curve has no ULOQ (empty)."); paste(uloq_txt, if (is.null(tr$params$linear_range_tol)) "Concentrations above the ULOQ are extrapolated." else if (isTRUE(tr$params$enforce_linear_range)) "The curves were cut at the ULOQ and refitted (the levels above it are named in the notes); higher concentrations are extrapolated." else "The curves were not cut at the ULOQ: concentrations between the ULOQ and the top of the curve are above the linear range (\"> ULOQ, within curve\"), higher ones are extrapolated. The levels above the ULOQ are named in the notes.")`
 
 One row per compound and curve. *IS* is the internal standard assigned to the compound (closest in
-retention time), used by the Closest RT normalization. *Reason* tells why a curve is not valid (red
-rows), why a batch uses the global curve, or why a curve was kept although it is not valid (orange
-rows; option "Keep all calibration curves"`r if (isTRUE(tr$params$keep_all_calcurves)) ", selected for this report" else ", not selected for this report"`).
+retention time), used by the Closest RT normalization. *Notes* shows an icon per kind of note (hover
+it for the full note): why a curve is not valid (red rows), why a curve was kept although it is not
+valid (orange rows; option "Keep all calibration curves"`r if (isTRUE(tr$params$keep_all_calcurves)) ", selected for this report" else ", not selected for this report"`),
+why a batch uses the global curve, the levels above the ULOQ, and when no sample reaches the LLOQ.
+The exported tables have the notes as text.
 
 ```{r}
 is_of <- SumExp::row_df(lst[[1]]$concn) |> tibble::as_tibble(rownames = "feature_id") |>
@@ -135,9 +140,9 @@ lim_tbl <- purrr::map_dfr(cal_data, function(cd) {
     tibble(Compound = cd$name, Curve = nm, `Curve used` = v$src,
            Status = if (v$src == "None") "Not valid" else if (isTRUE(v$kept)) "Kept (not valid)" else
              if (nm != "Global" && v$src == "Global") "Global curve used" else "Valid",
-           Reason = sub("^(Not valid|Kept although not valid): ", "", v$why %||% ""),
            LOD = v$lod %||% NA, LLOQ = v$lloq %||% NA, ULOQ = v$uloq %||% NA,
-           Model = v$model %||% NA, `R²` = v$r2 %||% NA)
+           Model = v$model %||% NA, `R²` = v$r2 %||% NA,
+           Notes = show$calib_notes_html(v$notes))
   })
 }) |>
   left_join(transmute(tcomps, Compound = feature_name, feature_id), by = "Compound") |>
@@ -145,7 +150,8 @@ lim_tbl <- purrr::map_dfr(cal_data, function(cd) {
   mutate(Curve = factor(Curve, levels = view_names), `Curve used` = factor(`Curve used`),
          Status = factor(Status))
 # Red: no valid calibration curve for the compound (in that curve); orange: kept although not valid
-dt(lim_tbl) |>
+dt(lim_tbl, escape = setdiff(names(lim_tbl), "Notes"),   # The note icons are HTML
+   caption = htmltools::HTML(show$calib_notes_legend_html(setdiff(names(util$calib_note_categories), "removed")))) |>
   DT::formatRound("R²", digits = 3) |>   # Always 3 decimals (also 0.950)
   DT::formatStyle("Status", target = "row",
                   backgroundColor = DT::styleEqual(c("Not valid", "Kept (not valid)"), c(FAILED_BG, KEPT_BG)))
@@ -229,7 +235,11 @@ cat('<div class="viewer" id="cv">',
     '<div class="info"></div><div class="plot" style="height:560px;"></div></div>',
     '<script>window.CALVIEW = ',
     to_json(list(views = I(view_names),   # I(): an array also for a single batch
-                 comps = cal_data, unit = unit,
+                 # Without the notes by category (only for table 4.2)
+                 comps = lapply(cal_data, function(cd) {
+                   cd$v <- lapply(cd$v, function(v) { if (!is.null(v)) v$notes <- NULL; v })
+                   cd
+                 }), unit = unit,
                  y_lab = "Normalized, blank-subtracted signal")),
     ';</script>', sep = "")
 ```
@@ -237,7 +247,7 @@ cat('<div class="viewer" id="cv">',
 ## 4.6 Concentration
 
 The concentrations of each compound in all samples of all batches, per class: a box per class and
-the samples as points. `r if (LLOX_IMPUTED) "Points of values replaced by the LOD/LLOQ rules are coloured as in the exported tables (red: below the LOD, LLOQ/4; yellow: below the LLOQ, LLOQ/2; blue: set to the LLOQ)." else paste0("Values below the LOD (n.d.) and the LLOQ (n.q.) have no value and are not shown (", sum(conc_long$conc_flag %in% 'n.d.' & is.na(conc_long$conc)), " n.d. and ", sum(conc_long$conc_flag %in% 'n.q.' & is.na(conc_long$conc)), " n.q. values of samples and QCs); blue points were set to the LLOQ.")`
+the samples as points. `r if (LLOX_IMPUTED) "Points of values replaced by the LOD/LLOQ rules are coloured as in the exported tables (red: not detected, LLOQ/4; yellow: detected but not quantified, LLOQ/2; blue: set to the LLOQ)." else paste0("Values below the LOD (n.d.) and the LLOQ (n.q.) have no value and are not shown (", sum(conc_long$conc_flag %in% 'n.d.' & is.na(conc_long$conc)), " n.d. and ", sum(conc_long$conc_flag %in% 'n.q.' & is.na(conc_long$conc)), " n.q. values of samples and QCs); blue points were set to the LLOQ.")`
 Hover over a point for the sample; switch between linear and log axis.
 
 ```{r}

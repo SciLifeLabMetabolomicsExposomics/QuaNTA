@@ -1,0 +1,101 @@
+---
+title: "Calibration curves (4.4 and 4.5)"
+---
+
+```{r}
+#| label: setup
+source("_prepare.R")
+box::use(show = projlib/show, util = projlib/msdial_utils)
+tr <- tut$to_report
+# The normalization with the lowest QC RSD% (the app's default choice) and its first batch
+mat_id <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
+batch <- tut$proc[[mat_id]][[1]]
+rd <- SumExp::row_df(batch$concn)
+# A compound with a valid curve and samples above the LLOQ, preferably one whose linear range
+# ends below its highest calibration level (to show the ULOQ)
+ok <- rd$has_proper_range %in% TRUE & rd$to_export %in% TRUE
+pick <- which(ok & rd$uloq < rd$max_c_conc)[1]
+if (is.na(pick)) pick <- which(ok)[1]
+fid <- rownames(rd)[pick]
+cmp <- rd[fid, ]
+in_log <- isTRUE(tr$params$log_calibration)
+```
+
+For every targeted compound (`Quant` in the MS-DIAL comment), QuaNTA fits a calibration curve to
+the calibration samples (`Cal…` classes) and uses it to turn the signal of every sample into a
+concentration. Section 4 of the app shows the curves one compound at a time: choose the compound in
+table **4.2**, and figures **4.4** and **4.5** follow.
+
+The examples below show **`r cmp$feature_name`** in batch `r names(tut$proc[[mat_id]])[1]`.
+
+## 4.4 The calibration points
+
+```{r}
+#| label: fig-points
+d <- SumExp::as_tibble(batch$calcurve[fid, ]) |>
+  dplyr::rename(.cc_pt = c_conc) |>
+  dplyr::mutate(
+    Batch = as.character(batch_id), .uloq = dplyr::coalesce(uloq, Inf),
+    # The place of each point, as in the app
+    c_type = dplyr::case_when(
+      .cc_pt == lod & .cc_pt == lloq & .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "LOD = LLOQ",
+      .cc_pt >= min_c_conc & .cc_pt <= max_c_conc & .cc_pt > .uloq ~ "Above the ULOQ",
+      .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "Within limits",
+      .cc_pt == lod ~ "LOD",
+      .cc_pt == 0 ~ "Cal0",
+      TRUE ~ "Out-of-range"
+    )
+  )
+show$plotly_calcurve_points(d, mat_id, title = cmp$feature_name, log_scale = in_log,
+                            x_title = "Calibrant concentration", y_title = "Signal (normalized, blank-subtracted)",
+                            lod = cmp$lod, lloq = cmp$lloq, uloq = cmp$uloq)
+```
+
+Each point is one injection of a calibration sample: its spiked (nominal) concentration on the
+x axis and its measured signal on the y axis. Points of the same concentration are replicates; with
+several batches, the symbol tells the batch.
+
+**How to read it**
+
+- **Colours** tell the role of each level:
+  - *Cal0* (red): the zero calibrant. Its signal gives the thresholds of the LOD (3×) and the LLOQ
+    (10×, or the mean plus 3 / 10 standard deviations).
+  - *LOD* (blue): the lowest level whose mean signal is above the LOD threshold.
+  - *Within limits* (green): the levels the curve is fitted on, from the LLOQ upwards.
+  - *Above the ULOQ* (olive): levels in the curve but above its linear range.
+  - *Out-of-range* (grey): levels not used for the curve.
+- **Shading**: dark grey below the LOD, light grey below the LLOQ, and olive above the ULOQ (dashed
+  line), the top of the linear range.
+- **Replicates should lie close together.** A level with widely spread replicates is a sign of a
+  pipetting or injection problem; with the RSD% option, the LLOQ level must have an RSD% of at most 20%.
+
+## 4.5 The samples on the curve
+
+```{r}
+#| label: fig-samples
+show$plotly_calcurve_samples(batch$concn[fid, ], batch$calcurve, util$mat_id_in_calibration(mat_id),
+                             tut$class_colors, log_scale = in_log)
+```
+
+The line is the fitted calibration curve (`r sub("_div_", "/", cmp$calcurve_model[[1]]$best_model_name)`
+for this compound). The black points are the calibration samples, the coloured ones the QCs and the
+study samples by class, placed at the concentration the curve gives them.
+
+**How to read it**
+
+- **Samples in the white area** are within the calibration range and quantified.
+- **Samples in the grey areas** are below the LLOQ (light) or the LOD (dark). Depending on the
+  setting *Replace values below the LOD/LLOQ*, their concentrations are replaced (LLOQ/2 or LLOQ/4)
+  or reported as *n.q.* / *n.d.*.
+- **Samples in the olive area** are above the ULOQ: within the curve but above its linear range, or
+  extrapolated above its highest level. Treat these values with care, or dilute and re-measure.
+- **A curve far from its calibration points**, or points bending away at the top, suggests that the
+  linear range is shorter than the calibration range; see the notes in table 4.2 and the option
+  *Enforce linear range*.
+
+::: {.callout-tip}
+## In the app
+Use the arrow keys ↑ / ↓ in table 4.2 to step through the compounds; both figures follow at once.
+With the processing option *Log scale for calibration curve fitting*, both figures have log axes,
+which show the low concentrations better.
+:::

@@ -15,8 +15,11 @@ processing:
   r2_filter: no
   min_r2: 0.99
   linear_only: no
+  enforce_linear_range: no
+  linear_range_tol: 15
   vis_prenorm: no
   rm_outlier: yes
+  rm_outlier_scope: all
   log_calibration: no
   blank_filter: yes
   blank_filter_factor: 5

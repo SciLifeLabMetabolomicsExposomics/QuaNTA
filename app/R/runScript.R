@@ -108,7 +108,7 @@ runScriptUI <- function(uiId, label, download=FALSE) {
           proc(NULL)
           done_at(Sys.time())
         }
-        if (length(lines) > 0) output_txt(paste0(output_txt(), paste(stamp(lines), collapse = "\n"), "\n"))
+        if (length(lines) > 0) output_txt(add_log_lines(output_txt(), stamp(lines), lines))
       })
     })
 
@@ -122,6 +122,27 @@ runScriptUI <- function(uiId, label, download=FALSE) {
 
     done_at
   })
+}
+
+#' Add lines to a log text. A progress bar line ("[####------]  40%", e.g. of process.R) replaces
+#' the progress bar line just before it, so that the bar advances in place.
+#'
+#' @param txt The log so far (lines ending with "\n")
+#' @param stamped The new lines as shown (e.g. with the time)
+#' @param lines The new lines as printed (to recognise the progress bars)
+#' @export
+add_log_lines <- function(txt, stamped, lines) {
+  is_bar <- function(x) grepl("^\\s*\\[[#-]+\\]\\s+[0-9]+%\\s*$", x)
+  last_is_bar <- grepl("\\[[#-]+\\]\\s+[0-9]+%\\s*\n$", txt)
+  for (i in seq_along(lines)) {
+    if (is_bar(lines[i]) && last_is_bar) {
+      txt <- sub("[^\n]*\n$", paste0(stamped[i], "\n"), txt)   # Replace the previous bar
+    } else {
+      txt <- paste0(txt, stamped[i], "\n")
+    }
+    last_is_bar <- is_bar(lines[i])
+  }
+  txt
 }
 
 #' Time elapsed since `start`, e.g. "2 min 35 s"

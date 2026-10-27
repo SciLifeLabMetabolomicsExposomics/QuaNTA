@@ -1049,6 +1049,147 @@ replace_outside_concentration_range_with_na.SumExp <- function(x, mat_id) {
   x
 }
 
+#' Upper limit of quantification (ULOQ): the top of the linear range of a calibration curve
+#'
+#' The ULOQ is located the same way whether the curve is cut at it (`--enforce_linear_range`) or
+#' not; only `cut` decides whether the returned model and signal are the cut ones.
+#'
+#' - Linear models ([trim_to_linear_range()]): back-calculation of the calibration levels.
+#' - Log calibration, any model ([linear_range_of_log_curve()]): the SCALiR algorithm.
+#' - Quadratic models (without log calibration): no ULOQ.
+#'
+#' Values between the ULOQ and the top of the curve are above the linear range; values above the
+#' top of the curve are extrapolated.
+#' @name uloq
+NULL
+
+#' Trim a linear calibration curve to its linear range
+#'
+#' The mean signal of each calibration level of the curve is back-calculated with the linear
+#' model. While the top level deviates from its nominal concentration by more than `max_dev` and
+#' more than `min_n` levels are left, the top level is left out and the linear model refitted
+#' (with the same weighting method, linear models only). The highest level left is the ULOQ.
+#'
+#' @param conc Spiked concentration of each calibration sample
+#' @param signal Signal of the calibration samples of one chemical (`NA`: not in the curve)
+#' @param model The fitted linear model of [fit_and_test_calcurve_model()]
+#' @param max_dev The maximum relative deviation of the top level (e.g. 0.15 for 15%)
+#' @param min_n The minimum number of calibration levels
+#' @param weight_method As in [fit_and_test_calcurve_model()]
+#' @param cut Whether the curve is cut at the ULOQ (`--enforce_linear_range`); only changes the note
+#' @returns A list of `uloq`, `model` (refitted on the levels up to the ULOQ), `signal` (with the
+#'   levels above the ULOQ `NA`), `dropped` (the levels above the ULOQ) and `note` (`NA` when the
+#'   curve is linear over its whole range)
+#' @seealso [uloq]
+#' @export
+trim_to_linear_range <- function(conc, signal, model, max_dev, min_n, weight_method, cut = TRUE) {
+  dropped <- numeric()
+  dev <- numeric()
+  repeat {
+    levels <- sort(unique(conc[!is.na(signal)]))
+    top <- levels[length(levels)]
+    top_mean <- mean(signal[!is.na(signal) & conc == top])
+    top_dev <- abs(model$best_model(top_mean) - top) / top
+    if (!is.finite(top_dev) || top_dev <= max_dev || length(levels) <= min_n) break
+    dropped <- c(dropped, top)
+    dev <- c(dev, top_dev)
+    signal[conc == top] <- NA
+    model <- fit_and_test_calcurve_model(conc, signal, weight_method = weight_method, linear_only = TRUE)
+  }
+  pct <- function(x) sprintf("%.1f%%", 100 * x)
+  num <- function(x) as.character(signif(x, 4))
+  note <- c(
+    if (length(dropped) > 0) {
+      sprintf("Linear range up to %s: level(s) %s %s (back-calculated deviation %s)", num(top),
+              paste(num(dropped), collapse = ", "), if (cut) "dropped" else "above it, not cut",
+              paste(pct(dev), collapse = ", "))
+    },
+    if (is.finite(top_dev) && top_dev > max_dev) {
+      sprintf("%s level %s still deviates %s (minimum of %d levels reached)",
+              if (length(dropped) > 0) "its top" else "Linear range: the top", num(top), pct(top_dev), length(levels))
+    }
+  )
+  list(uloq = top, model = model, signal = signal, dropped = dropped,
+       note = if (length(note) == 0) NA_character_ else paste(note, collapse = "; "))
+}
+
+#' The top of the linear range by the SCALiR algorithm
+#'
+#' Ponce et al. 2024, Anal. Chem. 96, 6566: ln(signal) = ln(conc) + b (slope 1); while the mean
+#' squared residual is above `max_resid` and more than `min_n` points are left, the point farthest
+#' from the line is removed. The top is the highest concentration left.
+#'
+#' @param conc Spiked concentration of each calibration sample
+#' @param signal Signal of the calibration samples of one chemical, in the original scale (`NA`:
+#'   not in the curve)
+#' @returns The top of the linear range, `NA` with fewer than `min_n` positive points
+#' @export
+scalir_top <- function(conc, signal, max_resid = 0.01, min_n = 3) {
+  ok <- !is.na(signal) & conc > 0 & signal > 0
+  if (sum(ok) < min_n) return(NA_real_)
+  cx <- conc[ok]
+  x <- log(cx)
+  y <- log(signal[ok])
+  repeat {
+    res <- y - (x + mean(y - x))   # Residuals of the line with slope 1
+    if (mean(res^2) <= max_resid || length(x) <= min_n) break
+    j <- which.max(abs(res))
+    x <- x[-j]; y <- y[-j]; cx <- cx[-j]
+  }
+  max(cx)
+}
+
+#' The linear range of a calibration curve fitted in log scale (`--log_calibration`)
+#'
+#' The ULOQ is the top of the linear range by SCALiR ([scalir_top()]) among the points of the
+#' curve, but at least the `min_n`-th level. When the curve is cut at it, the points removed by
+#' SCALiR below the ULOQ are in the curve again, so SCALiR is run again on the points up to the
+#' ULOQ, until the ULOQ does not change. The model is refitted on the points up to the ULOQ.
+#'
+#' @param conc Spiked concentration of each calibration sample
+#' @param signal Signal of the calibration samples of one chemical, in the original scale
+#' @param signal_fit The signal the curve is fitted on (log scale; `NA`: not in the curve)
+#' @param model The fitted model of [fit_and_test_calcurve_model()]
+#' @param min_n The minimum number of calibration levels
+#' @param refit A function of `signal_fit` that refits the model
+#' @param cut Whether the curve is cut at the ULOQ (`--enforce_linear_range`); only changes the note
+#' @returns A list as [trim_to_linear_range()]
+#' @seealso [uloq]
+#' @export
+linear_range_of_log_curve <- function(conc, signal, signal_fit, model, min_n, refit, cut = TRUE) {
+  dropped <- numeric()
+  floor_note <- NULL
+  levels <- sort(unique(conc[!is.na(signal_fit)]))
+  repeat {
+    top <- levels[length(levels)]
+    u <- scalir_top(conc, ifelse(is.na(signal_fit), NA, signal))
+    if (is.na(u)) break
+    u_min <- levels[min(min_n, length(levels))]
+    if (u < u_min) floor_note <- sprintf("SCALiR range ends at %s, the minimum of %d levels is kept", signif(u, 4), min_n)
+    u <- max(u, u_min)
+    if (u >= top) break
+    out <- !is.na(signal_fit) & conc > u
+    dropped <- c(dropped, sort(unique(conc[out]), decreasing = TRUE))
+    signal_fit[out] <- NA
+    levels <- levels[levels <= u]
+    model <- refit(signal_fit)
+  }
+  num <- function(x) as.character(signif(x, 4))
+  if (is.na(u) && length(dropped) == 0) {
+    return(list(uloq = NA_real_, model = model, signal = signal_fit, dropped = numeric(),
+                note = "Linear range (SCALiR): fewer than 3 points with a signal"))
+  }
+  note <- c(
+    if (length(dropped) > 0) {
+      sprintf("Linear range (SCALiR) up to %s: level(s) %s %s", num(top), paste(num(dropped), collapse = ", "),
+              if (cut) "dropped" else "above it, not cut")
+    },
+    floor_note
+  )
+  list(uloq = top, model = model, signal = signal_fit, dropped = dropped,
+       note = if (length(note) == 0) NA_character_ else paste(note, collapse = "; "))
+}
+
 ##  CALIBRATION CURVE FITTING  -----------------------------
 
 #' Fit and test calibration curve models
@@ -1199,103 +1340,51 @@ compute_concentration <- function(sumexp, mat_id, log_scale = FALSE) {
   labelled::copy_labels(c_mat, out)
 }
 
-#' Replace the values below the LLOQ and LOD
+#' Apply the LOD / LLOQ rules to the calibrated concentrations
 #'
-#' @param sumexp A [`SumExp::SumExp`] object
-#' @param conc_mat_id The name of a matrix in `sumexp` with the concentration values
+#' Each value is decided once, from its calculated concentration and its signal (no value is
+#' replaced again after a first replacement):
 #'
-#' @returns A [`SumExp::SumExp`] object with the concentration values below the LLOQ replaced with
-#'   half of the LLOQ and the concentration values below the LOD replaced with 1/4 of the LLOQ. The
-#'   concentration values are replaced in the `conc_mat_id` matrix.
+#' | Signal                                          | Concentration | Result      |
+#' |-------------------------------------------------|---------------|-------------|
+#' | below the LOD signal                            | any           | LLOQ / 4    |
+#' | from the LOD signal to below the average signal | any           | LLOQ / 2    |
+#' |   of the LLOQ level                             |               |             |
+#' | at or above the average signal of the LLOQ level | below the LLOQ | the LLOQ   |
+#' | at or above the average signal of the LLOQ level | at or above the LLOQ | unchanged (calibrated) |
 #'
+#' Chemicals without an LLOQ or the signals of the limits (e.g. curves kept although not valid)
+#' are not changed by the rules that need them.
+#'
+#' @param sumexp A [`SumExp::SumExp`] object with the concentrations, the signal they were
+#'   calculated from (see `util$src_mat_id_for_conc()`, in the scale of the limits) and the
+#'   `lloq`, `lod_signal` and `avg_signal_at_lloq` of each chemical (`row_df`)
+#' @param conc_mat_id The name of the matrix with the calculated concentrations; it is replaced by
+#'   the result
+#' @returns `sumexp` with the concentrations after the rules
 #' @md
 #' @export
-replace_below_lod_lloq <- function(sumexp, conc_mat_id) {
+apply_llox_rules <- function(sumexp, conc_mat_id) {
   stopifnot(conc_mat_id %in% names(sumexp))
-  c_mat <- sumexp[[conc_mat_id]]
-  lod <- SumExp::row_df(sumexp)[, "lod"]
-  lloq <- SumExp::row_df(sumexp)[, "lloq"]
-
-  # Replace the values below LLOQ with half of the LLOQ
-  out <- .replace_where(c_mat, c_mat < lloq, lloq / 2)
-  # Replace the values below LOD with 1/4 of the LLOQ
-  out <- .replace_where(out, c_mat < lod, lloq / 4)
-  sumexp[[conc_mat_id]] <- out
+  conc <- sumexp[[conc_mat_id]]
+  signal <- sumexp[[util$src_mat_id_for_conc(sumexp)]]
+  rd <- SumExp::row_df(sumexp)
+  lloq <- rd[["lloq"]]
+  # Thresholds of each chemical (row) as matrices
+  as_mat <- function(v) matrix(v, nrow = nrow(conc), ncol = ncol(conc))
+  lod_sig <- as_mat(rd[["lod_signal"]])
+  lloq_sig <- as_mat(rd[["avg_signal_at_lloq"]])
+  # The groups, all from the values before any replacement
+  not_detected <- signal < lod_sig
+  detected <- signal >= lod_sig & signal < lloq_sig
+  below_lloq <- signal >= lloq_sig & conc < as_mat(lloq)
+  out <- conc
+  out <- .replace_where(out, not_detected, lloq / 4)
+  out <- .replace_where(out, detected, lloq / 2)
+  out <- .replace_where(out, below_lloq, lloq)
+  sumexp[[conc_mat_id]] <- labelled::copy_labels(conc, out)
   sumexp
 }
-
-#' Replace concentration values below LLOQ
-#'
-#' Replace concentration values of which the signal is below the average signal of the LLOQ with a
-#' half of the LLOQ concentration value.
-#'
-#' @param sumexp A [`SumExp::SumExp`] object
-#' @param conc_mat_id The name of a matrix in `sumexp` with the concentration values
-#'
-#' @returns A [`SumExp::SumExp`] object with the concentration values below LLOQ after the
-#'   replacement.
-#' @md
-#' @export
-replace_conc_whose_signal_below_lloq <- function(sumexp, conc_mat_id) {
-  c_mat <- sumexp[[conc_mat_id]]  # Concentration matrix
-  signal_mat <- sumexp[[util$src_mat_id_for_conc(sumexp)]]  # Signal matrix
-
-  lod <- SumExp::row_df(sumexp)[["lod"]]
-  lloq <- SumExp::row_df(sumexp)[["lloq"]]
-  avg_signal_at_lloq <- SumExp::row_df(sumexp)[["avg_signal_at_lloq"]]
-
-  # Replace the values below LLOQ with half of the LLOQ
-  sumexp[[conc_mat_id]] <- .replace_where(c_mat, signal_mat < avg_signal_at_lloq & c_mat >= lod, lloq / 2)
-  sumexp
-}
-
-#' Replace concentration values whose signal is above the average signal of the LLOQ
-#'
-#' Replace concentration values of which the signal is above the average signal of the LLOQ with
-#' the LLOQ concentration value.
-#'
-#' @param sumexp A [`SumExp::SumExp`] object
-#' @param conc_mat_id The name of a matrix in `sumexp` with the concentration values
-#'
-#' @returns A [`SumExp::SumExp`] object with the concentration values above LLOQ after the
-#'   replacement.
-#' @md
-#' @export
-replace_conc_whose_signal_above_lloq <- function(sumexp, conc_mat_id) {
-  c_mat <- sumexp[[conc_mat_id]]  # Concentration matrix
-  signal_mat <- sumexp[[util$src_mat_id_for_conc(sumexp)]]  # Signal matrix
-  
-  lloq <- SumExp::row_df(sumexp)[["lloq"]]
-  avg_signal_at_lloq <- SumExp::row_df(sumexp)[["avg_signal_at_lloq"]]
-
-  # Replace the values above LLOQ with LLOQ
-  sumexp[[conc_mat_id]] <- .replace_where(c_mat, signal_mat >= avg_signal_at_lloq & c_mat < lloq, lloq)
-  sumexp
-}
-
-#' Set concentration when the signal is below the LOD signal
-#'
-#' When the peak area (signal) is below the LOD signal, the calibrated concentration is set to 1/4 
-#' of the LLOQ.
-#'
-#' @param sumexp A [`SumExp::SumExp`] object
-#' @param conc_mat_id The name of a matrix in `sumexp` with the concentration values
-#'
-#' @returns A [`SumExp::SumExp`] object with concentration set to 1/4 of the LLOQ when the signal is
-#'   below the LOD signal.
-#' @md
-#' @export
-replace_conc_whose_signal_below_lod <- function(sumexp, conc_mat_id) {
-  c_mat <- sumexp[[conc_mat_id]]  # Concentration matrix
-  signal_mat <- sumexp[[util$src_mat_id_for_conc(sumexp)]]  # Signal matrix
-  
-  lloq <- SumExp::row_df(sumexp)[["lloq"]]
-  lod_signal <- SumExp::row_df(sumexp)[["lod_signal"]]
-
-  sumexp[[conc_mat_id]] <- .replace_where(c_mat, signal_mat < lod_signal, lloq / 4)
-  sumexp
-}
-
 #' Which concentrations the LOD/LLOQ rules replaced below the LOD or the LLOQ
 #'
 #' @param conc0 The concentrations before the rules

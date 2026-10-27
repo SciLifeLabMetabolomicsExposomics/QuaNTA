@@ -50,7 +50,7 @@ Handles **reading and writing** MS-DIAL raw and processed data:
 - **Calibration limits**: `find_calib_lim_pts_and_llox_from_llox_signal()` determines working ranges, LOD, and LLOQ
 - **Model fitting**: `fit_and_test_calcurve_model()` fits linear/quadratic models with various weighting methods
 - **Concentration calculation**: `compute_concentration()` transforms signals to concentrations using fitted models
-- **Post-calibration**: `replace_below_lod_lloq()` and `replace_conc_whose_signal_below_lloq()` handle values outside quantification limits
+- **Post-calibration**: `apply_llox_rules()` sets the values below the quantification limits (LLOQ/4, LLOQ/2 or the LLOQ, from the signal); `uloq_of_calcurves()` gives the ULOQ
 
 ### `show.R`
 

@@ -165,6 +165,25 @@ check_feature_columns <- function(msdial_file, indices) {
   invisible(header)
 }
 
+#' Feature columns similar to a required column but not used (not the exact name), e.g.
+#' "Comment2" or "comment" for "Comment", shown to the user before processing
+#'
+#' @inheritParams check_feature_columns
+#' @returns A tibble of `column` (the name in the file) and `looks_like` (the required column it
+#'   resembles: its name contains that name, ignoring upper/lower case)
+#' @export
+similar_feature_columns <- function(msdial_file, indices) {
+  header <- strsplit(readLines(msdial_file, n = 5L, warn = FALSE)[5L], "\t", fixed = TRUE)[[1L]]
+  header <- gsub('^"|"$', "", trimws(header[indices], whitespace = "[\r\n]"))
+  req <- unlist(required_feature_columns)
+  cand <- header[nzchar(header) & !header %in% req]
+  looks <- vapply(cand, function(h) {
+    hit <- req[vapply(req, function(r) grepl(tolower(r), tolower(h), fixed = TRUE), logical(1))]
+    if (length(hit) == 0) NA_character_ else hit[1]
+  }, character(1), USE.NAMES = FALSE)
+  tibble::tibble(column = cand, looks_like = looks)[!is.na(looks), ]
+}
+
 #' Fetch sample information from the first 5 lines
 #'
 #' @param msdial_file Path to the MS-DIAL output file
@@ -736,13 +755,17 @@ measured_conc <- function(sumexp) {
       "Equation" = eqn,
       "N of points" = n_conc,
     )
+  # ULOQ (empty for a quadratic curve without log calibration; none for older processed data)
+  if ("uloq" %in% names(tbl)) out <- dplyr::mutate(out, ULOQ = round(tbl$uloq, .max_decimals), .after = "LLOQ")
   if ("src_calcurve" %in% names(tbl)) {   # Calibration curve used: "Batch", "Global" or none
     out[["Calibration"]] <- dplyr::coalesce(tbl$src_calcurve, "None")
   }
+  # The notes on the calibration curve in full (icons in the app and the reports)
+  out[["Notes"]] <- util$calib_notes_text(util$calib_notes(tbl, batch_view = TRUE))
   if (is_closest_norm) {
     out <- dplyr::bind_cols(
       out,
-      dplyr::select(tbl, "Target IS" = closest_istd, "Target IS (Rt)" = closest_istd_rt) 
+      dplyr::select(tbl, "Target IS" = closest_istd, "Target IS (Rt)" = closest_istd_rt)
     )
   }
   out
@@ -795,11 +818,19 @@ measured_conc <- function(sumexp) {
 #' when they are not replaced but reported as "n.d." / "n.q." (`--impute_llox` FALSE)
 .imputed_styles <- tibble::tribble(
   ~code, ~fill,     ~flag,  ~meaning,                                            ~meaning_flag,
-  1/4,   "#FAAFAF", "n.d.", "Below the LOD: replaced by LLOQ/4",                 "n.d.: not detected (below the LOD), no value",
-  1/2,   "#FCEACF", "n.q.", "Between the LOD and the LLOQ: replaced by LLOQ/2",  "n.q.: not quantified (between the LOD and the LLOQ), no value",
+  1/4,   "#FAAFAF", "n.d.", "Not detected (signal below the LOD signal): replaced by LLOQ/4", "n.d.: not detected (signal below the LOD signal), no value",
+  1/2,   "#FCEACF", "n.q.", "Detected, not quantified (signal from the LOD signal to below the mean signal of the LLOQ level): replaced by LLOQ/2", "n.q.: not quantified (signal from the LOD signal to below the mean signal of the LLOQ level), no value",
   1,     "#D3EBF2", NA,     "Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ",
                             "Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ",
+  # Not replacements: a value above the ULOQ, within a curve not cut at the ULOQ (code
+  # `.above_linear`) or extrapolated beyond the curve (code `.extrapolated`)
+  -1,    "#E3E0B8", NA,     "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
+                            "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
+  Inf,   "#A8A05A", NA,     "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
+                            "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
 )
+.extrapolated <- Inf
+.above_linear <- -1
 
 #' Whether the values below the LOD / LLOQ were replaced (`TRUE`, also for data processed by older
 #' versions) or reported as "n.d." / "n.q."
@@ -813,8 +844,19 @@ measured_conc <- function(sumexp) {
   conc <- sumexp[["conc"]]
   lloq <- SumExp::row_df(sumexp)$lloq
   code <- matrix(0, nrow(conc), ncol(conc), dimnames = dimnames(conc))
-  for (f in .imputed_styles$code) {
+  for (f in setdiff(.imputed_styles$code, c(.extrapolated, .above_linear))) {
     code[!is.na(conc) & !is.na(lloq) & conc == lloq * f] <- f
+  }
+  # Values above the ULOQ (none without a ULOQ, e.g. a quadratic curve, or for older processed
+  # data): within the curve up to its highest level (when it was not cut at the ULOQ), above it
+  # extrapolated
+  uloq <- SumExp::row_df(sumexp)$uloq
+  if (!is.null(uloq)) {
+    uloq <- matrix(uloq, nrow(conc), ncol(conc))
+    top <- pmax(uloq, matrix(SumExp::row_df(sumexp)$max_c_conc, nrow(conc), ncol(conc)), na.rm = TRUE)
+    above <- !is.na(conc) & !is.na(uloq) & conc > uloq
+    code[above] <- .above_linear
+    code[above & conc > top] <- .extrapolated
   }
   flag <- .llox_flag_text(sumexp)
   for (ii in which(!is.na(.imputed_styles$flag))) {
@@ -868,12 +910,15 @@ measured_conc <- function(sumexp) {
   }
   notes <- c(
     if (imputed) {
-      "Concentrations of the blank-subtracted, normalized data; values replaced by the LOD/LLOQ rules are coloured."
+      "Concentrations of the blank-subtracted, normalized data; values replaced by the LOD/LLOQ rules and values above the ULOQ (within the curve or extrapolated) are coloured."
     } else {
       paste("Concentrations of the blank-subtracted, normalized data. Values below the LOD / LLOQ are not replaced:",
-            "they are reported as n.d. / n.q. (text, no value) and left out of the averages and medians.")
+            "they are reported as n.d. / n.q. (text, no value) and left out of the averages and medians. Values above the ULOQ (within the curve or extrapolated) are coloured.")
     },
     "Blank samples: concentrations of their normalized data WITHOUT blank subtraction (\"Blank subtracted\" row: Not subtracted).",
+    paste("ULOQ: the top of the linear range of a linear curve (back-calculated levels within the tolerance), or",
+          "with log calibration by SCALiR; empty for a quadratic curve (no ULOQ). With 'Enforce linear range',",
+          "the curves were cut at the ULOQ."),
     if (with_calibrants) {
       "All samples, including the calibration samples, by batch and injection order."
     } else {

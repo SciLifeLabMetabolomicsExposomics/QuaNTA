@@ -9,6 +9,11 @@ box::use(util = ./msdial_utils)
 #' @param x Numbers
 #' @export
 sci_txt <- function(x) ifelse(is.na(x), "NA", toupper(formatC(x, format = "e", digits = 3)))
+#' Numbers for hover texts: scientific from 1000 on (e.g. "1.234E+03"), otherwise 4 significant
+#' digits (e.g. "0.02345")
+#' @param x Numbers
+#' @export
+num_txt <- function(x) ifelse(is.na(x), "NA", ifelse(abs(x) >= 1000, sci_txt(x), as.character(signif(x, 4))))
 #  -----  COLOURS  -------------------------------------------------------------
 
 #' Colour-blind safe colours of Okabe & Ito (2008), named
@@ -26,9 +31,17 @@ okabe_ito <- c(orange = "#E69F00", skyblue = "#56B4E9", green = "#009E73", yello
 #' @export
 cb_colors <- function(n, exclude = character(0)) {
   if (n <= 0) return(character(0))
+  exclude <- toupper(exclude)
   oi <- setdiff(unname(okabe_ito[c("blue", "orange", "green", "vermillion", "skyblue", "purple", "black")]),
-                toupper(exclude))
+                exclude)
   tol <- c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#661100", "#CC6677", "#882255", "#AA4499")
+  # Vermillion taken (the blanks): no orange or reddish colours, which are hard to tell from it
+  if (toupper(okabe_ito[["vermillion"]]) %in% exclude) {
+    oi <- setdiff(oi, okabe_ito[["orange"]])
+    tol <- setdiff(tol, c("#661100", "#CC6677", "#882255"))
+  }
+  # Blue taken (the QCs): sky blue, which is close to it, last
+  if (toupper(okabe_ito[["blue"]]) %in% exclude) oi <- c(setdiff(oi, okabe_ito[["skyblue"]]), intersect(okabe_ito[["skyblue"]], oi))
   if (n <= length(oi)) oi[seq_len(n)] else if (n <= length(tol)) tol[seq_len(n)] else grDevices::hcl.colors(n, "viridis")
 }
 #  -----  UTILS  ---------------------------------------------------------------
@@ -121,12 +134,17 @@ get_colors_of_classes <- function(sumexp, color_cat) {
   color_given <- by_cat[names(by_cat) %in% names(color_cat)] |>
     purrr::imap(~ stats::setNames(rep(color_cat[[.y]], length(.x)), .x)) |> # Class = "color"
     purrr::flatten()
-  # Remaining classes
-  rest <- unlist(by_cat[! names(by_cat) %in% names(color_cat)])
-  n <- length(rest)
+  # Remaining classes. The calibration levels (one class each) get grey shades, so that the study
+  # classes keep the few distinct colour-blind safe colours (with the levels among them, there
+  # were too many classes for the palettes, and similar viridis purples were used instead)
+  cal <- if ("CalCurve" %in% names(by_cat)) unique(as.character(by_cat[["CalCurve"]])) else character(0)
+  rest <- setdiff(unlist(by_cat[! names(by_cat) %in% c(names(color_cat), "CalCurve")]), cal)
   # Colour-blind safe colours other than those of the fixed classes
-  ggcolor <- cb_colors(n, exclude = unname(unlist(color_cat)))
+  ggcolor <- cb_colors(length(rest), exclude = unname(unlist(color_cat)))
   names(ggcolor) <- rest
+  if (length(cal) > 0) {
+    ggcolor <- c(ggcolor, stats::setNames(grDevices::gray.colors(length(cal), start = 0.3, end = 0.75), cal))
+  }
   # A named character vector (`purrr::flatten()` gives a list, which ggplot2's manual scales
   # do not accept as colors)
   unlist(c(color_given, ggcolor))
@@ -285,6 +303,22 @@ label_e <- function(x) {
 #' @md
 #' @export
 geom_calibration_curve_line <- function(lim_df, log_scale = FALSE, color = "cadetblue", alpha = 0.7, ...) {
+  ccline_df <- calcurve_line_df(lim_df, log_scale)
+  ggplot2::geom_line(
+    ggplot2::aes(x = conc, y = .y_value), data = ccline_df,
+    color = color,
+    alpha = alpha,
+    ...
+  )
+}
+
+#' Points of the smooth calibration curve line of each chemical (see
+#' [geom_calibration_curve_line()]; also for [plotly_calcurve_samples()])
+#'
+#' @inheritParams geom_calibration_curve_line
+#' @returns A tibble of `conc`, `.y_value` and the other columns of `lim_df` (e.g. `feature_id`)
+#' @export
+calcurve_line_df <- function(lim_df, log_scale = FALSE) {
   # Artificial concentration values for smooth calibration curve line
   ccline_df <- purrr::pmap(lim_df, \(lloq, max_c_conc, calcurve_model, min_c_conc = NA, ...) {
     from <- if (is.finite(lloq)) lloq else min_c_conc
@@ -313,13 +347,175 @@ geom_calibration_curve_line <- function(lim_df, log_scale = FALSE, color = "cade
     ccline_df <- tibble::tibble(conc = numeric(), .y_value = numeric(), feature_id = character(),
                                 feature_name = character())
   }
-  ccline_df <- dplyr::arrange(ccline_df, feature_id, conc)      # To make sure
+  dplyr::arrange(ccline_df, feature_id, conc)      # To make sure
+}
 
-  ggplot2::geom_line(
-    ggplot2::aes(x = conc, y = .y_value), data = ccline_df,
-    color = color,
-    alpha = alpha,
-    ...
+#' Title of a single-chemical plotly plot as a coloured band over the plot (the colour tells the
+#' state of its calibration curve, as the facet strips of the ggplot versions)
+.title_band <- function(title, fill) {
+  list(
+    shapes = list(list(type = "rect", xref = "paper", yref = "paper", x0 = 0, x1 = 1, y0 = 1.01, y1 = 1.09,
+                       fillcolor = fill, line = list(width = 0))),
+    annotations = list(list(text = title, xref = "paper", yref = "paper", x = 0.5, y = 1.05,
+                            xanchor = "center", yanchor = "middle", showarrow = FALSE,
+                            font = list(size = 14)))
+  )
+}
+
+#' Plotly shapes of the regions below the LLOQ and below the LOD (grey, the latter darker)
+#'
+#' @param lod,lloq The LOD and the LLOQ (`NA` or `NULL`: none)
+#' @param xs The concentrations shown (on a log axis, the regions start a decade below the lowest)
+#' @param log_scale Whether the x axis is in log scale. The shapes are placed by the concentration
+#'   also then (plotly.js 2.11 of the app and the reports; log10 values are misplaced there and
+#'   stretch the axis)
+#' @returns A list of plotly shapes
+#' @export
+llox_shapes <- function(lod, lloq, xs, log_scale = FALSE) {
+  lim <- c(lod[1], lloq[1])
+  x_from <- if (log_scale) suppressWarnings(min(xs[xs > 0], lim, na.rm = TRUE)) / 10 else 0
+  shade <- function(x1) {
+    if (length(x1) == 0 || !is.finite(x1) || !is.finite(x_from)) return(NULL)
+    list(type = "rect", xref = "x", yref = "paper", x0 = x_from, x1 = x1, y0 = 0, y1 = 1, layer = "below",
+         fillcolor = "rgba(64,64,64,0.25)", line = list(width = 0))
+  }
+  Filter(Negate(is.null), list(shade(lloq[1]), shade(lod[1])))
+}
+
+#' Plotly shapes of the ULOQ: the region above it (olive) and a dashed line at it
+#'
+#' @param uloq The ULOQ (`NA` or `NULL`: none, e.g. a quadratic curve)
+#' @param xs The concentrations shown (the region ends at the highest)
+#' @param log_scale Not used: the shapes are placed by the concentration also on a log axis (see
+#'   [llox_shapes()])
+#' @returns A list of plotly shapes
+#' @export
+uloq_shapes <- function(uloq, xs, log_scale = FALSE) {
+  if (length(uloq) == 0 || !is.finite(uloq)) return(list())
+  x_max <- suppressWarnings(max(xs, na.rm = TRUE))
+  c(
+    if (is.finite(x_max) && x_max > uloq) {
+      list(list(type = "rect", xref = "x", yref = "paper", x0 = uloq, x1 = x_max, y0 = 0, y1 = 1,
+                layer = "below", fillcolor = "rgba(153,153,51,0.15)", line = list(width = 0)))
+    },
+    list(list(type = "line", xref = "x", yref = "paper", x0 = uloq, x1 = uloq, y0 = 0, y1 = 1,
+              line = list(color = "#999933", width = 1.5, dash = "dash")))
+  )
+}
+
+#' Interactive plot of the calibration points of one chemical (app 4.4), drawn with plotly
+#' directly (faster than converting a ggplot)
+#'
+#' @param d A data frame of the calibration points: `.cc_pt` (concentration), the column `y`,
+#'   `c_type` (place of the point, e.g. "Within limits"), `Batch`, `injection_order`, `sample_name`
+#' @param y The name of the signal column
+#' @param title The name of the chemical
+#' @param title_fill The colour of the title band
+#' @param log_scale Whether the curve is fitted in log scale (log axes)
+#' @param x_title,y_title The titles of the axes
+#' @param height Height of the plot in pixels
+#' @param lod,lloq,uloq The limits of the curve, shown as regions as in [plotly_calcurve_samples()]
+#'   (`NA`: none)
+#' @returns A plotly object
+#' @export
+plotly_calcurve_points <- function(d, y, title, title_fill = "lightgray", log_scale = FALSE,
+                                   x_title = "Calibrant Concentration", y_title = "Signal", height = 400,
+                                   lod = NA, lloq = NA, uloq = NA) {
+  type_cols <- c("Within limits" = okabe_ito[["green"]], "Above the ULOQ" = "#999933", "LOD = LLOQ" = okabe_ito[["orange"]],
+                 "Out-of-range" = "gray", "Cal0" = okabe_ito[["vermillion"]], "LOD" = okabe_ito[["blue"]])
+  batches <- stringr::str_sort(unique(as.character(d$Batch)), numeric = TRUE)
+  symbols <- c("circle", "triangle-up", "square", "diamond", "star", "cross", "x", "hexagon",
+               "triangle-down", "pentagon", "hourglass", "bowtie")
+  sym <- stats::setNames(rep_len(symbols, length(batches)), batches)
+  txt <- paste0("Batch: ", d$Batch, "<br>inj: ", d$injection_order, ", conc: ", d$.cc_pt,
+                "<br>Name: ", d$sample_name, "<br>int: ", num_txt(d[[y]]))
+  p <- plotly::plot_ly(height = height)
+  for (ty in intersect(names(type_cols), unique(d$c_type))) {
+    k <- d$c_type == ty
+    p <- plotly::add_markers(p, x = d$.cc_pt[k], y = d[[y]][k], name = ty, legendgroup = ty,
+                             marker = list(color = type_cols[[ty]], size = 8,
+                                           symbol = unname(sym[as.character(d$Batch[k])])),
+                             text = txt[k], hoverinfo = "text")
+  }
+  # The batches (shapes) in the legend, without points of their own
+  if (length(batches) > 1) {
+    for (b in batches) {
+      p <- plotly::add_markers(p, x = NA_real_, y = NA_real_, name = paste("Batch", b), legendgroup = "batch",
+                               marker = list(color = "black", size = 8, symbol = sym[[b]]), hoverinfo = "skip")
+    }
+  }
+  band <- .title_band(title, title_fill)
+  plotly::layout(
+    p, font = list(family = "Lato"), hovermode = "closest", annotations = band$annotations,
+    shapes = c(llox_shapes(lod, lloq, d$.cc_pt, log_scale), uloq_shapes(uloq, d$.cc_pt, log_scale), band$shapes),
+    xaxis = list(title = x_title, type = if (log_scale) "log" else "linear", exponentformat = "E"),
+    yaxis = list(title = y_title, type = if (log_scale) "log" else "linear", exponentformat = "E"),
+    legend = list(orientation = "v", x = 1.02, y = 1, xanchor = "left", tracegroupgap = 10),
+    margin = list(t = 60, b = 60, l = 70, r = 150)
+  )
+}
+
+#' Interactive plot of the samples of one chemical on its calibration curve (app 4.5), drawn with
+#' plotly directly: the curve, the calibration points, the samples by class and the regions below
+#' the LOD and the LLOQ (shaded)
+#'
+#' @inheritParams ggplot_calcurve_samples
+#' @param title_fill The colour of the title band
+#' @param height Height of the plot in pixels
+#' @returns A plotly object
+#' @export
+plotly_calcurve_samples <- function(x_se, cc_se, mat_id, colors_of_classes, log_scale = FALSE,
+                                    title_fill = "lightgray", height = 400) {
+  .chq_if_a_single_char(mat_id)
+  fid <- rownames(x_se)[1]
+  x_se <- x_se[fid, ]
+  cc_df <- SumExp::as_tibble(cc_se[fid, ]) |> tidyr::drop_na(tidyselect::all_of(unname(mat_id)))
+  rd <- SumExp::row_df(x_se)
+  lim_df <- rd |> dplyr::select(feature_name, lloq, lod, min_c_conc, max_c_conc, calcurve_model) |>
+    tibble::rownames_to_column("feature_id")
+  x_df <- SumExp::as_tibble(x_se)
+  # Values below the LOD / LLOQ without a value ("n.d." / "n.q."): at their calculated
+  # concentration (before the LOD/LLOQ rules), i.e. on the curve
+  x_df$.flag <- ""
+  if (all(c("conc_flag", "conc0") %in% names(x_df))) {
+    cens <- is.na(x_df$conc) & !is.na(x_df$conc_flag)
+    x_df$conc[cens] <- x_df$conc0[cens]
+    x_df$.flag[cens] <- paste0(" (", x_df$conc_flag[cens], ")")
+  }
+  x_df <- x_df[!is.na(x_df$conc), ]
+  hover <- function(df, conc) paste0("batch: ", df$batch_id, "<br>inj: ", df$injection_order, ", conc: ", conc,
+                                     "<br>name: ", df$sample_name, "<br>int: ", num_txt(df[[mat_id]]))
+  p <- plotly::plot_ly(height = height)
+  line <- calcurve_line_df(lim_df, log_scale)
+  if (nrow(line) > 0) {
+    p <- plotly::add_lines(p, x = line$conc, y = line$.y_value, name = "Calibration curve", hoverinfo = "skip",
+                           line = list(color = "rgba(95,158,160,0.8)", width = 2))
+  }
+  p <- plotly::add_markers(p, x = cc_df$c_conc, y = cc_df[[mat_id]], name = "Calibration points",
+                           marker = list(color = "black", size = 6), text = hover(cc_df, cc_df$c_conc),
+                           hoverinfo = "text")
+  classes <- unique(as.character(x_df$Class))
+  classes <- c(intersect(names(colors_of_classes), classes), setdiff(classes, names(colors_of_classes)))
+  for (cl in classes) {
+    k <- as.character(x_df$Class) == cl
+    p <- plotly::add_markers(p, x = x_df$conc[k], y = x_df[[mat_id]][k], name = cl,
+                             marker = list(color = if (cl %in% names(colors_of_classes)) colors_of_classes[[cl]] else "grey50",
+                                           size = 7, opacity = 0.85),
+                             text = hover(x_df[k, ], paste0(signif(x_df$conc[k], 4), x_df$.flag[k])), hoverinfo = "text")
+  }
+  # Regions below the LLOQ and below the LOD (darker), and above the ULOQ, as in the reports
+  xs <- c(x_df$conc, cc_df$c_conc)
+  band <- .title_band(rd$feature_name[1], title_fill)
+  shapes <- c(llox_shapes(rd$lod[1], rd$lloq[1], xs, log_scale),
+              uloq_shapes(rd$uloq[1], c(xs, line$conc), log_scale), band$shapes)
+  plotly::layout(
+    p, font = list(family = "Lato"), hovermode = "closest", shapes = shapes, annotations = band$annotations,
+    xaxis = list(title = label_if_has(x_df$conc, "Concentration"), type = if (log_scale) "log" else "linear",
+                 exponentformat = "E"),
+    yaxis = list(title = label_if_has(x_se[[mat_id]], mat_id), type = if (log_scale) "log" else "linear",
+                 exponentformat = "E"),
+    legend = list(orientation = "v", x = 1.02, y = 1, xanchor = "left"),
+    margin = list(t = 60, b = 60, l = 70, r = 150)
   )
 }
 
@@ -737,7 +933,7 @@ plotly_vis_bars <- function(y, smp, name, colour_by = c("group", "batch"), switc
                             height = 420) {
   colour_by <- match.arg(colour_by)
   txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", smp$batch_id,
-                " · inj. ", smp$injection_order, "<br>peak area ", signif(y, 4))
+                " · inj. ", smp$injection_order, "<br>peak area ", sci_txt(y))   # Scientific, as 3.5
   # Colours and groups of both colourings (as in the plots of the internal standards)
   batch <- paste("Batch", smp$batch_id)
   sets <- list(
@@ -770,7 +966,7 @@ plotly_vis_bars <- function(y, smp, name, colour_by = c("group", "batch"), switc
   plotly::layout(p, title = list(text = name, x = 0.02), barmode = "stack",
                  bargap = 0, hovermode = "closest", font = list(family = "Lato"),
                  xaxis = list(title = "Injection order"),
-                 yaxis = list(title = paste("Peak area,", name), exponentformat = "E"),
+                 yaxis = list(title = paste("Peak area,", name), exponentformat = "E", hoverformat = ".3e"),
                  legend = list(orientation = "v", x = 1.02, y = 1), updatemenus = menus,
                  margin = list(t = if (switchable) 70 else 50))
 }
@@ -778,8 +974,8 @@ plotly_vis_bars <- function(y, smp, name, colour_by = c("group", "batch"), switc
 #' Colours of the concentrations replaced by the LOD/LLOQ rules (as the cells of the exported
 #' tables: red, yellow and blue), and of the measured ones
 #' @export
-imputed_colors <- c("Measured" = "grey25", "< LOD: LLOQ/4" = okabe_ito[["vermillion"]],
-                    "< LLOQ: LLOQ/2" = okabe_ito[["orange"]], "Set to LLOQ" = okabe_ito[["skyblue"]])
+imputed_colors <- c("Measured" = "grey25", "Not detected: LLOQ/4" = okabe_ito[["vermillion"]],
+                    "Detected: LLOQ/2" = okabe_ito[["orange"]], "Set to LLOQ" = okabe_ito[["skyblue"]])
 
 #' Whether each concentration is measured or replaced by an LOD/LLOQ rule
 #'
@@ -790,8 +986,8 @@ imputed_colors <- c("Measured" = "grey25", "< LOD: LLOQ/4" = okabe_ito[["vermill
 imputed_kind <- function(conc, lloq) {
   kind <- dplyr::case_when(
     is.na(conc) ~ NA_character_,
-    !is.na(lloq) & conc == lloq / 4 ~ "< LOD: LLOQ/4",
-    !is.na(lloq) & conc == lloq / 2 ~ "< LLOQ: LLOQ/2",
+    !is.na(lloq) & conc == lloq / 4 ~ "Not detected: LLOQ/4",
+    !is.na(lloq) & conc == lloq / 2 ~ "Detected: LLOQ/2",
     !is.na(lloq) & conc == lloq ~ "Set to LLOQ",
     TRUE ~ "Measured"
   )
@@ -816,7 +1012,7 @@ imputed_kind <- function(conc, lloq) {
 #' @returns A plotly object
 #' @export
 plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "samples"),
-                                    subtitle = "", y_title = "Peak area", height = 480) {
+                                    subtitle = "", y_title = "Peak area", height = 480, log = FALSE) {
   view <- match.arg(view)
   col <- sample_group_colors(smp$group)
   # Blanks first, then QCs, the study classes and calibrants
@@ -825,7 +1021,7 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
             intersect("Calibrant", smp$group))
   threshold <- factor * mean(y[smp$group == "Blank"], na.rm = TRUE)
   txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", smp$batch_id,
-                " · inj. ", smp$injection_order, "<br>", signif(y, 4))
+                " · inj. ", smp$injection_order, "<br>", num_txt(y))
   p <- plotly::plot_ly(height = height)
   if (view == "groups") {
     for (i in seq_along(levs)) {
@@ -834,7 +1030,7 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
                             error_y = list(type = "data", array = stats::sd(y[k]), color = "grey30"),
                             marker = list(color = grDevices::adjustcolor(col[[levs[i]]], 0.55),
                                           line = list(color = col[[levs[i]]], width = 1.5)),
-                            hovertemplate = paste0("<b>", levs[i], "</b><br>mean %{y:.4g} (n = ", sum(k),
+                            hovertemplate = paste0("<b>", levs[i], "</b><br>mean ", num_txt(mean(y[k])), " (n = ", sum(k),
                                                    ")<extra></extra>"),
                             legendgroup = levs[i])
       p <- plotly::add_markers(p, x = i + stats::runif(sum(k), -0.25, 0.25), y = y[k], name = levs[i],
@@ -861,7 +1057,7 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
     p <- plotly::add_lines(p, x = xs, y = c(threshold, threshold),
                            name = paste0("Blank filter threshold (", factor, " × blank mean)"),
                            line = list(color = "#c23636", dash = "dash", width = 2),
-                           hovertemplate = paste0("threshold ", signif(threshold, 4), "<extra></extra>"))
+                           hovertemplate = paste0("threshold ", num_txt(threshold), "<extra></extra>"))
   }
   notes <- list(list(text = subtitle, x = 0, y = 1.02, xref = "paper", yref = "paper",
                      xanchor = "left", yanchor = "bottom", showarrow = FALSE, font = list(size = 13)))
@@ -872,11 +1068,13 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
   plotly::layout(
     p, title = list(text = name, x = 0.02), barmode = "overlay", bargap = if (view == "samples") 0,
     hovermode = "closest", font = list(family = "Lato"), xaxis = xaxis,
-    yaxis = list(title = y_title, exponentformat = "E"), annotations = notes,
-    legend = list(orientation = "v", x = 1.02, y = 1), margin = list(t = 80),
-    # Linear / log at the top centre: away from the title (left) and plotly's toolbar (right)
+    yaxis = list(title = y_title, exponentformat = "E", type = if (log) "log" else "linear"),
+    annotations = notes, legend = list(orientation = "v", x = 1.02, y = 1), margin = list(t = 80),
+    # Linear / log at the top centre: away from the title (left) and plotly's toolbar (right);
+    # `log`: starts in log scale (the choice of the user, kept by the app)
     updatemenus = list(list(type = "buttons", direction = "right", x = 0.55, y = 1.1,
-                            xanchor = "center", yanchor = "bottom", buttons = axis_buttons))
+                            xanchor = "center", yanchor = "bottom", buttons = axis_buttons,
+                            active = if (log) 1L else 0L))
   )
 }
 
@@ -969,16 +1167,115 @@ calib_issue_text <- function(row_df, batch_view = TRUE) {
   )
 }
 
-#' A note for calibration curves without any quantifiable sample, one per chemical
+#' Icons of the categories of the calibration notes (`util$calib_note_categories`): the inner
+#' markup of a 24 x 24 SVG
+.note_icon_svg <- c(
+  notvalid = '<polygon points="7,1.5 17,1.5 22.5,7 22.5,17 17,22.5 7,22.5 1.5,17 1.5,7" fill="#D55E00"/><path d="M8 8l8 8M16 8l-8 8" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>',
+  kept = '<path d="M12 2L23 21.5H1Z" fill="#E69F00" stroke="#E69F00" stroke-width="1" stroke-linejoin="round"/><path d="M12 8.5v6" stroke="#1a1a1a" stroke-width="2.6" stroke-linecap="round"/><circle cx="12" cy="18" r="1.5" fill="#1a1a1a"/>',
+  global = '<circle cx="12" cy="12" r="11" fill="#0072B2"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="12" cy="12" r="6.5"/><ellipse cx="12" cy="12" rx="2.8" ry="6.5"/><path d="M5.5 12h13"/></g>',
+  uloq = '<rect x="3.5" y="3.5" width="17" height="17" rx="2" transform="rotate(45 12 12)" fill="#999933"/><g stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 7.5h8"/><path d="M12 17v-6.5M9 13.3l3-3 3 3"/></g>',
+  detection = '<circle cx="12" cy="12" r="11" fill="#7A7A7A"/><g stroke="#fff" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M5 12c2-3.5 4.4-5 7-5s5 1.5 7 5c-2 3.5-4.4 5-7 5s-5-1.5-7-5z"/><circle cx="12" cy="12" r="2"/><path d="M6 18L18 6"/></g>',
+  removed = '<rect x="1.5" y="1.5" width="21" height="21" rx="4" fill="#CC79A7"/><path d="M6 6.5h12l-4.5 5.5v5l-3 1.5v-6.5z" fill="#fff"/>'
+)
+
+#' The calibration notes as icons, one HTML snippet per chemical
 #'
-#' @param row_df The `row_df` of calibrated data (`no_quant_samples`, from processing with this
-#'   version)
-#' @returns A character vector, `""` when there are quantifiable samples
+#' One icon per category that has a note (in the order of `util$calib_note_categories`); hovering
+#' an icon shows its note. The notes are also in the cell as hidden text, so that the table can be
+#' searched and sorted by them. Use in a `DT::datatable()` with this column not escaped.
+#'
+#' @param notes A tibble of `util$calib_notes()`, optionally with a `removed` column
+#' @param size The size of the icons in pixels
+#' @returns A character vector, `""` when there is nothing to note
+#' @export
+calib_notes_html <- function(notes, size = 18) {
+  cats <- intersect(names(util$calib_note_categories), names(notes))
+  icon <- function(cat, txt) {
+    sprintf('<span title="%s" style="display:inline-block;margin-right:3px;vertical-align:middle;line-height:0;cursor:help"><svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 24 24" role="img" aria-label="%s">%s</svg></span>',
+            htmltools::htmlEscape(txt, attribute = TRUE), size, size,
+            htmltools::htmlEscape(util$calib_note_categories[[cat]], attribute = TRUE), .note_icon_svg[[cat]])
+  }
+  vapply(seq_len(nrow(notes)), function(i) {
+    has <- cats[vapply(cats, \(cat) !is.na(notes[[cat]][i]) && nzchar(notes[[cat]][i]), logical(1))]
+    if (length(has) == 0) return("")
+    txt <- vapply(has, \(cat) notes[[cat]][i], "")
+    paste0(paste(mapply(icon, has, txt), collapse = ""),
+           '<span style="display:none">', htmltools::htmlEscape(paste(txt, collapse = "; ")), "</span>")
+  }, "")
+}
+
+#' A legend of the icons of [calib_notes_html()], as one line of HTML
+#' @param cats The categories to show (names of `util$calib_note_categories`)
+#' @export
+calib_notes_legend_html <- function(cats = names(util$calib_note_categories)) {
+  items <- vapply(cats, function(cat) {
+    sprintf('<span style="white-space:nowrap;margin-right:14px"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px;margin-right:4px" aria-hidden="true">%s</svg>%s</span>',
+            .note_icon_svg[[cat]], util$calib_note_categories[[cat]])
+  }, "")
+  paste0('<div class="q-note-legend" style="font-size:12.5px;color:#555;margin:4px 0 6px">Notes (hover an icon for the full note): ',
+         paste(items, collapse = " "), "</div>")
+}
+
+#' A note on the range of the calibration curves, one per chemical: no quantifiable sample, and
+#' the levels dropped by `--enforce_linear_range`
+#'
+#' @param row_df The `row_df` of calibrated data (`no_quant_samples` and `linear_range_note`, from
+#'   processing with this version)
+#' @returns A character vector, `""` when there is nothing to note
 #' @export
 calib_range_note <- function(row_df) {
+  valid <- row_df$has_proper_range %in% TRUE
   nq <- if (is.null(row_df$no_quant_samples)) rep(FALSE, nrow(row_df)) else row_df$no_quant_samples %in% TRUE
-  ifelse(nq & row_df$has_proper_range %in% TRUE,
-         "No sample or QC at or above the LLOQ: the full calibration range is shown", "")
+  nq_txt <- ifelse(nq & valid, "No sample or QC at or above the LLOQ: the full calibration range is shown", "")
+  lin <- if (is.null(row_df$linear_range_note)) rep(NA_character_, nrow(row_df)) else as.character(row_df$linear_range_note)
+  lin[!valid] <- NA_character_
+  dplyr::case_when(is.na(lin) ~ nq_txt, nq_txt == "" ~ lin, TRUE ~ paste0(nq_txt, ". ", lin))
+}
+
+#' RSD% of the targeted compounds among the QC replicates under each normalization method, with
+#' the method of the lowest RSD% (app 3.8 and 3.9; prepared by process.R)
+#'
+#' @param norm_se The normalized data (`to_report[["normalized"]]`), with the QC samples
+#' @returns A list of `df` (a tibble: `QC`, `feature_id`, one column per method, `sign`) and `labs`
+#'   (the method matrix IDs, named by the first word of their labels)
+#' @export
+qc_rsd_by_method <- function(norm_se) {
+  labs <- SumExp::name_labs(norm_se)
+  names(labs) <- gsub(" .*", "", names(labs))   # First word only
+  df <- extract_quant_qc(norm_se) |>
+    calc_rsd_qstd(labs) |>
+    mark_lowest_rsd_norm(labs)
+  list(df = df, labs = labs)
+}
+
+#' RSD% of the raw peak areas of each internal standard within each QC group and each sample class
+#' (app 3.4; prepared by process.R)
+#'
+#' @param is_se A [`SumExp::SumExp`] object of the internal standards (with the `raw` matrix)
+#' @returns A list of `rsd` (a matrix: groups in rows, internal standards (names) in columns; 2
+#'   decimals) and `n` (the number of samples of each group)
+#' @export
+is_rsd_by_group <- function(is_se) {
+  rsd_rows <- function(se) apply(se[["raw"]], 1, \(.x) round(rsd_perc(.x), 2))
+  qc_lst <- extract_qc_samples_to_list(is_se)
+  m_rsd1 <- if (length(qc_lst) > 0) {
+    m <- do.call(cbind, lapply(qc_lst, rsd_rows))   # A matrix even for a single value
+    stopifnot(identical(rownames(m), rownames(is_se)))
+    data.frame(m, check.names = FALSE)
+  } else {
+    data.frame(row.names = rownames(is_se))
+  }
+  rownames(m_rsd1) <- SumExp::row_df(is_se)$feature_name
+  se <- util$exclude_ctrl_smpl_cat(is_se, "QC")
+  m_rsd2 <- stats::setNames(nm = unique(SumExp::col_df(se)$Class)) |>
+    lapply(function(cls) rsd_rows(se[, SumExp::col_df(se)$Class == cls])) |>
+    do.call(cbind, args = _)
+  stopifnot(identical(rownames(m_rsd2), rownames(se)))
+  rownames(m_rsd2) <- SumExp::row_df(se)$feature_name
+  m_rsd2 <- data.frame(m_rsd2, check.names = FALSE)
+  n <- c(vapply(qc_lst, ncol, integer(1)),
+         vapply(colnames(m_rsd2), \(cls) sum(SumExp::col_df(se)$Class == cls), integer(1)))
+  list(rsd = t(cbind.data.frame(m_rsd1, m_rsd2)), n = n)
 }
 
 #' RSD% of the volumetric internal standards (vIS) within groups of samples
@@ -1156,13 +1453,12 @@ plotly_binned_hist <- function(x, binwidth, x_title, y_title = "Number of featur
                                color = "#6FAAF7", height = 400) {
   x <- x[is.finite(x)]
   if (length(x) == 0) {
-    return(plotly::plot_ly(height = height) |>
-             plotly::layout(xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
+    return(plotly::plotly_empty(type = "scatter", mode = "markers", height = height))   # No data: no plotly warning
   }
   br <- seq(floor(min(x) / binwidth) * binwidth, ceiling(max(x) / binwidth) * binwidth + binwidth, by = binwidth)
   h <- graphics::hist(x, breaks = br, plot = FALSE, right = FALSE)
   keep <- h$counts > 0
-  txt <- paste0(signif(h$breaks[-length(h$breaks)], 6), " – ", signif(h$breaks[-1], 6), "<br>",
+  txt <- paste0(num_txt(h$breaks[-length(h$breaks)]), " – ", num_txt(h$breaks[-1]), "<br>",
                 h$counts, " ", what)
   plotly::plot_ly(height = height) |>
     plotly::add_bars(x = h$mids[keep], y = h$counts[keep], width = binwidth, text = txt[keep],
@@ -1172,26 +1468,46 @@ plotly_binned_hist <- function(x, binwidth, x_title, y_title = "Number of featur
                    font = list(family = "Lato"), margin = list(t = 30))
 }
 
+#' Counts of the histograms of [plotly_value_distribution()]: all values (linear scale) and the
+#' positive values (bins of log10), counted once (e.g. when the file is read), not when drawn
+#'
+#' @inheritParams plotly_value_distribution
+#' @returns A list (class `quanta_value_bins`) of `n`, `n_pos`, `n_na`, and `lin` / `log` (each
+#'   `NULL` without values, or a list of `breaks`, `counts`, `mids`)
+#' @export
+value_distribution_bins <- function(values, bins = 50) {
+  v <- as.vector(values)
+  n_na <- sum(!is.finite(v))
+  v <- v[is.finite(v)]
+  pos <- v[v > 0]
+  count <- function(x, log) {
+    if (length(x) == 0) return(NULL)
+    lx <- if (log) log10(x) else x
+    br <- seq(min(lx), max(lx), length.out = bins + 1)
+    if (diff(range(br)) == 0) br <- c(br[1] - 0.5, br[1] + 0.5)
+    h <- graphics::hist(lx, breaks = br, plot = FALSE, include.lowest = TRUE)
+    list(breaks = h$breaks, counts = h$counts, mids = h$mids)
+  }
+  structure(list(n = length(v), n_pos = length(pos), n_na = n_na, lin = count(v, FALSE), log = count(pos, TRUE)),
+            class = "quanta_value_bins")
+}
+
 #' Interactive distribution of all values of a matrix: histograms in linear scale (left) and of
 #' the positive values in log scale (right), from pre-binned counts (also for large data)
 #'
-#' @param values The values (a matrix or vector; `NA` are left out)
+#' @param values The values (a matrix or vector; `NA` are left out), or their counts from
+#'   [value_distribution_bins()]
 #' @param bins The number of bins of each histogram
 #' @param x_title The title of the x-axes (the values)
 #' @param height Height of the plot in pixels
 #' @returns A plotly object
 #' @export
 plotly_value_distribution <- function(values, bins = 50, x_title = "Intensities", height = 420) {
-  v <- as.vector(values)
-  n_na <- sum(!is.finite(v))
-  v <- v[is.finite(v)]
-  pos <- v[v > 0]
-  bars <- function(x, log) {
-    if (length(x) == 0) return(plotly::plot_ly())
-    lx <- if (log) log10(x) else x
-    br <- seq(min(lx), max(lx), length.out = bins + 1)
-    if (diff(range(br)) == 0) br <- c(br[1] - 0.5, br[1] + 0.5)
-    h <- graphics::hist(lx, breaks = br, plot = FALSE, include.lowest = TRUE)
+  # Counted here, or before (`values` from [value_distribution_bins()], e.g. when the file was read)
+  d <- if (inherits(values, "quanta_value_bins")) values else value_distribution_bins(values, bins)
+  n_na <- d$n_na
+  bars <- function(h, log) {
+    if (is.null(h)) return(plotly::plotly_empty(type = "scatter", mode = "markers"))   # No warning when empty
     lab <- function(b) sci_txt(if (log) 10^b else b)
     txt <- paste0(lab(h$breaks[-length(h$breaks)]), " – ", lab(h$breaks[-1]), "<br>", h$counts, " intensities")
     p <- plotly::plot_ly() |>
@@ -1200,20 +1516,19 @@ plotly_value_distribution <- function(values, bins = 50, x_title = "Intensities"
                        marker = list(color = "#6FAAF7", line = list(color = "#3F7BD0", width = 0.5)))
     # Log panel: bins of log10(value), labelled with the values (e.g. 1E+4)
     ax <- if (log) {
-      k <- seq(floor(min(lx)), ceiling(max(lx)))
+      k <- seq(floor(min(h$breaks)), ceiling(max(h$breaks)))
       list(title = paste(x_title, "(log scale)"), tickvals = k, ticktext = label_e(10^k))
     } else {
       list(title = x_title, exponentformat = "E")
     }
     plotly::layout(p, xaxis = ax, yaxis = list(title = "N intensities"))
   }
-  note <- paste0(format(length(v), big.mark = ","), " intensities",
-                 if (length(pos) < length(v)) paste0(" · ", format(length(v) - length(pos), big.mark = ","),
-                                                     " ≤ 0 (not in log scale)"),
+  note <- paste0(format(d$n, big.mark = ","), " intensities",
+                 if (d$n_pos < d$n) paste0(" · ", format(d$n - d$n_pos, big.mark = ","), " ≤ 0 (not in log scale)"),
                  if (n_na > 0) paste0(" · ", format(n_na, big.mark = ","), " missing"))
   panel_title <- function(txt, x) list(text = paste0("<b>", txt, "</b>"), x = x, y = 1.02, xref = "paper",
                                        yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE)
-  p <- plotly::subplot(bars(v, FALSE), bars(pos, TRUE), nrows = 1, margin = 0.06, titleX = TRUE, titleY = TRUE)
+  p <- plotly::subplot(bars(d$lin, FALSE), bars(d$log, TRUE), nrows = 1, margin = 0.06, titleX = TRUE, titleY = TRUE)
   p$height <- height   # Of the widget (`height` in `layout()` is deprecated)
   p |>
     plotly::layout(
@@ -1248,7 +1563,7 @@ plotly_qc_conc <- function(d, name, y_title = "Concentration", height = 440) {
     if (!any(k)) next
     measured <- d$kind[k] %in% "Measured"
     txt <- paste0("<b>", d$sample_name[k], "</b><br>", g, " · batch ", d$batch_id[k], " · inj. ",
-                  d$injection_order[k], "<br>conc. ", signif(d$conc[k], 4), " (", d$kind[k], ")")
+                  d$injection_order[k], "<br>conc. ", num_txt(d$conc[k]), " (", d$kind[k], ")")
     p <- plotly::add_trace(p, type = "scatter", mode = "lines+markers", x = d$injection_order[k],
                            y = d$conc[k], name = g, text = txt, hoverinfo = "text",
                            line = list(color = col[[g]], width = 1),

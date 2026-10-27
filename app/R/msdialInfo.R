@@ -69,9 +69,13 @@ msdialInfoDownloadUI <- function(uiId, label = "Download parameters and processi
 #' @returns A `reactiveValues` object with the parameters (`project_title`, `user`, `university`,
 #'   `free_text`, `input_file`, `concentration_unit`, `intermediate_dir`, `table_dir`,
 #'   `report_dir`). `data_info$loaded_processing` is set when an uploaded parameter file contains
-#'   a `processing:` section.
+#'   a `processing:` section; `data_info$previous_dataset` is the name of the dataset saved in it
+#'   (`""` if none).
+#' @param on_params_loaded `NULL`, or a function called when a parameters file has been loaded
+#'   (e.g. to remove the earlier results, which no longer match the settings)
 #' @export
-msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(list())) {
+msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(list()),
+                             on_params_loaded = NULL) {
   shiny::moduleServer(serverId, function(input, output, session) {
     init <- lapply(rlang::set_names(.user_param_ids), function(x) "")
     init$intermediate_dir <- ws$intermediate
@@ -145,12 +149,22 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       data_info$input_file_name <- up$name
     }, priority = 100)   # Before the outputs re-read the (deleted) data files
     output$upload_hint <- shiny::renderUI(upload_hint(session))
+    # The dataset saved in a loaded parameters file; otherwise the uploaded file (also shown in the
+    # upload field)
     output$input_file_out <- shiny::renderText({
+      prev <- data_info$previous_dataset
+      if (isTRUE(nzchar(prev))) return(paste0("Previously processed dataset:\n", prev))
       nm <- data_info$input_file_name
       if (is.null(nm) || !nzchar(nm)) "No file uploaded" else nm
     })
 
-    # Load parameters file -> update the inputs
+    # Load parameters file -> update the inputs. Earlier results (read data, processing, tables,
+    # reports) no longer match the settings: they are removed, after a confirmation when there are
+    # any (the uploaded data file stays)
+    has_results <- function() {
+      length(c(list.files(ws$intermediate), list.files(ws$tables), list.files(ws$report))) > 0
+    }
+    pending_params <- shiny::reactiveVal(NULL)
     shiny::observeEvent(input$load_params, {
       p <- tryCatch(
         read_params_file(input$load_params$datapath),
@@ -160,6 +174,31 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
         }
       )
       shiny::req(p)
+      if (!has_results()) return(apply_params(p))
+      pending_params(p)
+      shiny::showModal(shiny::modalDialog(
+        title = "Load the parameters file?",
+        shiny::p("Loading a parameters file removes all earlier results of this session: the read data,",
+                 "the processing results, the exported tables and the reports, with their tables and figures.",
+                 "The uploaded data file stays; read and process it again with the new settings."),
+        easyClose = FALSE,
+        footer = shiny::tagList(
+          shiny::modalButton("Cancel"),
+          shiny::actionButton(session$ns("load_params_confirm"), "Load and remove the results", class = "btn-primary")
+        )
+      ))
+    })
+    shiny::observeEvent(input$load_params_confirm, {
+      shiny::removeModal()
+      p <- pending_params()
+      pending_params(NULL)
+      shiny::req(p)
+      apply_params(p)
+    })
+    apply_params <- function(p) {
+      if (!is.null(on_params_loaded)) on_params_loaded()
+      prev <- p[["dataset"]]
+      data_info$previous_dataset <- if (length(prev) == 1 && !is.na(prev) && nzchar(prev)) as.character(prev) else ""
       for (id in .text_param_ids) {
         if (!is.null(p[[id]])) shiny::updateTextInput(session, id, value = as.character(p[[id]]))
       }
@@ -171,11 +210,11 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
         data_info$loaded_processing <- c(p[["processing"]], list(.nonce = as.numeric(Sys.time())))
       }
       shiny::showNotification(
-        paste("Parameters loaded from", input$load_params$name,
-              "- the data file must still be uploaded."),
+        paste("Parameters loaded from", shiny::isolate(input$load_params$name),
+              "- read and process the data file (again)."),
         type = "message"
       )
-    })
+    }
 
     # Download the current parameters
     output$download_params <- shiny::downloadHandler(
@@ -183,6 +222,8 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       content = function(file) {
         info <- shiny::reactiveValuesToList(data_info)
         p <- info[c(.text_param_ids, .textarea_param_ids)]
+        # The name of the uploaded dataset, if any (shown when the file is loaded again)
+        if (isTRUE(nzchar(info$input_file)) && isTRUE(nzchar(info$input_file_name))) p$dataset <- info$input_file_name
         yaml::write_yaml(c(p, list(processing = processing_params())), file)
       }
     )

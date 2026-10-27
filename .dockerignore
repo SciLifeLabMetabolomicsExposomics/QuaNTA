@@ -21,3 +21,6 @@ app/reports/.quarto
 app/reports/*.html
 app/reports/*.pdf
 app/reports/*_files
+
+# The tutorial website (published with GitHub Pages, not part of the app)
+tutorial/

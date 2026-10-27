@@ -22,6 +22,14 @@ option_list <- rlang::list2(
     help = "Quality control: remove outlier samples [default: %default]"
   ),
   optparse::make_option(
+    c("--rm_outlier_scope"),
+    type = "character", default = "all",
+    help = paste(
+      "Samples that can be removed as outliers: `all` injections, or `no_calib` (all but the",
+      "calibration samples, which are always kept) [default: %default]"
+    )
+  ),
+  optparse::make_option(
     c("--keep_all_calcurves"),
     type = "logical", default = FALSE,
     help = paste(
@@ -44,6 +52,22 @@ option_list <- rlang::list2(
     c("--linear_only"),
     type = "logical", default = FALSE,
     help = "Fit linear calibration models only, no quadratic ones [default: %default]"
+  ),
+  optparse::make_option(
+    c("--enforce_linear_range"),
+    type = "logical", default = FALSE,
+    help = paste(
+      "Cut the calibration curves at their ULOQ, the top of their linear range, and refit them. The",
+      "ULOQ is located also without this option: for linear curves, the top levels whose",
+      "back-calculated mean deviates more than `--linear_range_tol` % from the nominal concentration",
+      "are left out (keeping at least `--min_cal_points` levels); with `--log_calibration`, by SCALiR",
+      "[default: %default]"
+    )
+  ),
+  optparse::make_option(
+    c("--linear_range_tol"),
+    type = "double", default = 15,
+    help = "Maximum deviation (%, 1-50) of the top level of a linear curve, for its ULOQ [default: %default]"
   ),
   optparse::make_option(
     c("--vis_prenorm"),
@@ -91,7 +115,7 @@ option_list <- rlang::list2(
     c("--impute_llox"),
     type = "logical", default = TRUE,
     help = paste(
-      "Replace concentrations below the LOD by LLOQ/4 and below the LLOQ by LLOQ/2. With FALSE,",
+      "Replace values with a signal below the LOD signal by LLOQ/4, below the average signal of the LLOQ level by LLOQ/2. With FALSE,",
       "they have no value and are reported as `n.d.` and `n.q.` [default: %default]"
     )
   ),
@@ -135,6 +159,11 @@ opt_parser <- optparse::OptionParser(
   description = "Process MS-Dial parsed data and save the results."
 )
 params <- optparse::parse_args(opt_parser)
+# The `processing:` section of the parameters file (e.g. saved in the app) for the options not
+# given on the command line; values checked as in the app (projlib/settings.R)
+options(box.path = Sys.getenv("R_BOX_PATH", "app/")) # Path to project local libraries
+box::use(settings = projlib / settings)
+params <- settings$options_with_parameters_file(params, "proc")
 # Averaged calibration points have no replicates within a batch: no RSD% at the LLOQ level and
 # no SD of the zero calibrant (the app disables those options then)
 if (isTRUE(params$average_cal_reps)) {
@@ -153,9 +182,13 @@ cat(
   "  - Minimum number of cal points: ", params$min_cal_points, "\n",
   "  - Keep all calibration curves: ", params$keep_all_calcurves, "\n",
   "  - Linear models only: ", params$linear_only, "\n",
+  "  - Linear range: max. ", params$linear_range_tol, "% deviation of the top level; curves cut at the ULOQ: ",
+  isTRUE(params$enforce_linear_range), "\n",
   "  - Minimum R2 of calibration curves: ",
   if (isTRUE(params$r2_filter)) params$min_r2 else "none", "\n",
-  "  - Outlier removal:", params$rm_outlier, "\n",
+  "  - Outlier removal:", params$rm_outlier,
+  if (isTRUE(params$rm_outlier)) paste0(" (", if (identical(params$rm_outlier_scope, "no_calib")) "calibration samples kept" else "all injections", ")"),
+  "\n",
   "  - Log scale for calibration:", params$log_calibration, "\n",
   "  - Weight method:", params$weight, "\n",
   "  - LOD/LLOQ method: ", params$llox_method, "\n",
@@ -190,6 +223,7 @@ box::use(
   projlib / msdial, # Handle MS-Dial files
   util = projlib / msdial_utils, # Utility functions for MS-Dial data
   projlib / proc, # Processing functions
+  projlib / show, # Data of the app's figures and tables (prepared at the end)
 )
 # Get the input file name provided by the user
 user_inputs <- msdial$get_user_input("input_file", "intermediate_dir")
@@ -200,7 +234,12 @@ FILE <- rlang::list2(
   proc = msdial$get_raw_data_file_name(user_inputs, suffix = "proc"),
   # Intermediate status of the data for reporting
   to_rep = msdial$get_raw_data_file_name(user_inputs, suffix = "to_report"),
+  # The app's copy (see `prepare_app_data()`), and the values of its figure 3.11 per method
+  app = msdial$get_raw_data_file_name(user_inputs, suffix = "app"),
 )
+blank_values_file <- function(mat_id) msdial$get_raw_data_file_name(user_inputs, suffix = paste0("blank_", mat_id))
+# Those of an earlier run go first: a run that stops would otherwise leave them next to new results
+unlink(c(FILE$app, Sys.glob(sub("\\.rds$", "*.rds", blank_values_file("")))))
 cat("\nProcessing steps are started.\n")
 # Read the parsed data by `read-msdial.R`. If not available, warn the user
 # This 'proc_sumexp' is the main data object that will undergo processing.
@@ -316,6 +355,15 @@ if (params$rm_outlier) { # Controlled by the command line option
   n_internal_std <- nrow(internal_std_se)
   # Outlier samples: number of outlying features > 20% of the total number of features
   is_outlier <- n_out > (0.2 * n_internal_std)
+  # `--rm_outlier_scope=no_calib`: the calibration samples are always kept (they still count for
+  # the mean and SD of the internal standards)
+  if (identical(params$rm_outlier_scope, "no_calib")) {
+    is_cal <- util$ctrl_smpl_cat(internal_std_se) == "CalCurve"
+    if (any(is_outlier & is_cal)) {
+      cat("Calibration samples kept although outlying (option): ", sum(is_outlier & is_cal), "\n", sep = "")
+    }
+    is_outlier[is_cal] <- FALSE
+  }
   to_report[["number of outlier internal std. per sample"]] <- n_out
   to_report[["is outlier sample"]] <- is_outlier
   
@@ -433,6 +481,9 @@ targeted <- util$is_targeted_feature(proc_sumexp)
 # The volumetric IS is not filtered (blank filter, QC RSD% filter): it is added to every sample,
 # also to the blanks, and is not a feature to measure
 is_vis <- util$std_type(proc_sumexp) %in% "vIS"
+# Nor are the internal standards by the blank filter: they are added to the blanks too, and they
+# were used for the normalization before
+is_std <- is_vis | util$is_internal_std(proc_sumexp)
 removed_tbl <- function(mat_id, is_removed, reason, qc_rsd = NA_real_) {
   tibble::tibble(
     mat_id = mat_id,
@@ -448,14 +499,14 @@ if (params$blank_filter) {
   for (mat_id in to_blk_subt) {
     cat("Performing blank filtering for matrix:", mat_id, "\n")
     na_before <- is_all_na_row(proc_sumexp[[mat_id]])
-    vis_values <- proc_sumexp[[mat_id]][is_vis, , drop = FALSE]
+    std_values <- proc_sumexp[[mat_id]][is_std, , drop = FALSE]
     proc_sumexp <- proc$filter_by_blank(
       proc_sumexp,
       mat_id = mat_id,
       factor = params$blank_filter_factor
     )
-    proc_sumexp[[mat_id]][is_vis, ] <- vis_values   # Kept (see `is_vis`)
-    SumExp::row_df(proc_sumexp)$blank_filtered[is_vis] <- TRUE
+    proc_sumexp[[mat_id]][is_std, ] <- std_values   # Kept (see `is_std`)
+    SumExp::row_df(proc_sumexp)$blank_filtered[is_std] <- TRUE
     removed_features[[length(removed_features) + 1]] <-
       removed_tbl(mat_id, !na_before & is_all_na_row(proc_sumexp[[mat_id]]), "Blank filter")
   }
@@ -577,6 +628,59 @@ to_report[["normalized - blank"]] <- per_batch_proc_se_lst
 
 #  -----  CALIBRATION USING CALCURVE  ------------------------------------------
 
+#' A progress bar in the log, e.g. "[######------------------------]  20%". The app's log shows only
+#' the latest one (each replaces the one before), so it advances in place.
+progress_bar <- function(i, n, width = 30) {
+  k <- round(width * i / n)
+  cat(sprintf("[%s%s] %3d%%\n", strrep("#", k), strrep("-", width - k), round(100 * i / n)))
+  flush(stdout())   # At once, not when the output buffer is full
+}
+
+#' The app's copy of the results (`FILE$app`): what the app shows, and the data of its figures and
+#' tables prepared here, so that the app does not compute them when it draws them (on a server, one
+#' R process draws for all users). The large matrices that only the reports use are left out; the
+#' values of figure 3.11 are one file per method, which the app reads when that method is shown.
+#'
+#' @param tr The completed `to_report`
+prepare_app_data <- function(tr) {
+  cat("Preparing plots and figures:\n")
+  norm <- tr[["normalized"]]
+  methods <- intersect(c("raw", "closest_norm", "loess_norm", "mvis_norm"), names(norm))
+  n_steps <- 4 + length(methods)
+  step <- 0
+  tick <- function() {
+    step <<- step + 1
+    progress_bar(step, n_steps)
+  }
+  progress_bar(0, n_steps)
+  is_std <- util$is_internal_std(norm) | util$std_type(norm) %in% "vIS"
+  targeted <- util$is_targeted_feature(norm)
+  # Only what the app uses: of the normalized data the internal standards (3.7) and the targeted
+  # compounds (3.8, 3.9); of the data before normalization the feature information (3.1, 3.2)
+  app <- tr[setdiff(names(tr), c("normalized - blank", "after blank filtering", "LOESS fit"))]
+  app[["normalized"]] <- norm[is_std | targeted, ]
+  app[["before normalization"]] <- tr[["before normalization"]][, 1]
+  tick()
+  prep <- list()
+  # 3.4: RSD% of each IS per QC group and sample class
+  prep[["is rsd"]] <- show$is_rsd_by_group(tr[["internal std. before qc"]])
+  tick()
+  # 3.8, 3.9: RSD% of the targeted compounds per QC group and method
+  if (show$has_enough_qc(norm) && any(targeted)) prep[["qc rsd"]] <- show$qc_rsd_by_method(norm)
+  tick()
+  # 3.11: the samples and features (all but the internal standards), and their values per method
+  prep[["blank"]] <- list(col_df = SumExp::col_df(norm), row_df = SumExp::row_df(norm)[!is_std, , drop = FALSE],
+                          methods = methods)
+  for (m in methods) {
+    saveRDS(norm[[m]][!is_std, , drop = FALSE], blank_values_file(m))
+    tick()
+  }
+  app[["app data"]] <- prep
+  saveRDS(app, FILE$app)
+  tick()
+  cat("The data of the app saved to:", FILE$app, "\n")
+}
+
 #' Mark the expected processing has been completed
 mark_completed_and_save_to_report <- function() {
   cat("Processing steps are completed.\n")
@@ -584,6 +688,7 @@ mark_completed_and_save_to_report <- function() {
   to_report[["Completed"]] <- TRUE
   saveRDS(to_report, file = FILE$to_rep)
   cat("The intermediate data saved to:", FILE$to_rep, "\n")
+  prepare_app_data(to_report)
 }
 # When the data is produced without any targets (no calibration points), skip calibration
 if (IS_NON_TARGET_MODE) {
@@ -594,7 +699,7 @@ if (IS_NON_TARGET_MODE) {
 
 if (params$log_calibration) cat("Log scale for calibration curve fitting is applied.\n")
 if (has_multiple_batches) {
-  cat("Processing calibration per batch.")
+  cat("Processing calibration per batch.\n")
 } else {
   cat("Processing calibration for a single batch.")
 }
@@ -613,12 +718,10 @@ quantify_conc <- function(se, mat_id, in_log) {
   # [[conc0]] is the unfiltered reference; [[conc]] gets the LOD/LLOQ replacements below
   se[["conc"]] <- se[["conc0"]]
   se <- util$save_src_mat_id_for_conc(se, mat_id)
-  # Replace concentrations below LOD/LLOQ; rows are kept intact to preserve data structure
-  se <- se |>
-    proc$replace_below_lod_lloq(conc_mat_id = "conc") |>
-    proc$replace_conc_whose_signal_below_lloq(conc_mat_id = "conc") |>
-    proc$replace_conc_whose_signal_above_lloq(conc_mat_id = "conc") |>
-    proc$replace_conc_whose_signal_below_lod(conc_mat_id = "conc")
+  # The LOD / LLOQ rules, each value decided once from its signal (and concentration): below the
+  # LOD signal LLOQ/4, below the average signal of the LLOQ level LLOQ/2, above it but below the
+  # LLOQ the LLOQ (see `proc$apply_llox_rules()`); rows are kept intact
+  se <- proc$apply_llox_rules(se, conc_mat_id = "conc")
   # Curves kept although not valid can lack an LLOQ (no replacements then): no negative values
   neg <- se[["conc"]] < 0 & SumExp::row_df(se)$kept_calcurve
   neg[is.na(neg)] <- FALSE
@@ -758,6 +861,55 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     names(out) <- rownames(cc_se)
     return(out)
   })
+  # Upper limit of quantification (ULOQ): the top of the linear range of each curve, located by
+  # back-calculating the levels of linear curves, or by SCALiR with log calibration; quadratic
+  # curves (without log calibration) have none. With --enforce_linear_range the curve is cut at
+  # the ULOQ and refitted: the ULOQ is then the top of the curve (`max_c_conc`) and the levels above
+  # it are out of range. Otherwise the curve keeps its range and the concentrations between the
+  # ULOQ and its top are above the linear range. Higher ones are extrapolated.
+  enforce <- isTRUE(params$enforce_linear_range)
+  c_concs <- util$spiked_conc_pts(calcurve_se)
+  cc_mat <- calcurve_se[[mat_id]]
+  max_c <- SumExp::row_df(concn_se)$max_c_conc
+  top0 <- max_c
+  uloq <- rep(NA_real_, length(calcurve_models))
+  linear_range_note <- rep(NA_character_, length(calcurve_models))
+  for (ii in seq_along(calcurve_models)) {
+    m <- calcurve_models[[ii]]
+    if (!is.list(m) || !is.finite(max_c[ii])) next
+    lr <- if (in_log) {
+      proc$linear_range_of_log_curve(
+        c_concs, calcurve_se[[mat_id_to_calib]][ii, ], cc_mat[ii, ], m, min_n = params$min_cal_points,
+        refit = \(s) proc$fit_and_test_calcurve_model(log(c_concs), s, weight_method = "1", penalty_quadratic = 0.01,
+                                                     linear_only = isTRUE(params$linear_only)),
+        cut = enforce
+      )
+    } else if (startsWith(m$best_model_name, "linear")) {
+      proc$trim_to_linear_range(
+        c_concs, cc_mat[ii, ], m, max_dev = params$linear_range_tol / 100,
+        min_n = params$min_cal_points, weight_method = params$weight, cut = enforce
+      )
+    }
+    if (is.null(lr)) next
+    uloq[ii] <- lr$uloq
+    linear_range_note[ii] <- lr$note
+    if (enforce && length(lr$dropped) > 0) {
+      calcurve_models[[ii]] <- lr$model
+      cc_mat[ii, ] <- lr$signal
+      max_c[ii] <- lr$uloq
+    }
+  }
+  if (enforce) {
+    calcurve_se[[mat_id]] <- cc_mat
+    SumExp::row_df(concn_se)$max_c_conc <- max_c
+    SumExp::row_df(calcurve_se)$max_c_conc <- max_c
+  }
+  cat("  ", sum(!is.na(uloq) & uloq < top0), "calibration curve(s) with a linear range below their highest level",
+      if (enforce) "(cut at the ULOQ).\n" else "(not cut).\n")
+  SumExp::row_df(concn_se)$uloq <- uloq
+  SumExp::row_df(calcurve_se)$uloq <- uloq
+  SumExp::row_df(concn_se)$linear_range_note <- linear_range_note
+  SumExp::row_df(calcurve_se)$linear_range_note <- linear_range_note
   SumExp::row_df(concn_se) <- SumExp::row_df(concn_se) |>
     dplyr::mutate(calcurve_model = calcurve_models)
   if (in_log) calcurve_se[[mat_id]] <- expm1(calcurve_se[[mat_id]]) # expm1(x) = exp(x) - 1
@@ -771,7 +923,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     }, numeric(1))
     low_r2 <- !is.na(r2) & r2 < params$min_r2 & has_proper_range & !kept_calcurve
     if (any(low_r2)) {
-      issue <- sprintf("RÂ² %.3f below the minimum %.3f", r2[low_r2], params$min_r2)
+      issue <- sprintf("R² %.3f below the minimum %.3f", r2[low_r2], params$min_r2)
       keep <- isTRUE(params$keep_all_calcurves)
       set_r2_issue <- function(se) {
         rd <- SumExp::row_df(se)
@@ -783,7 +935,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
       concn_se <- set_r2_issue(concn_se)
       calcurve_se <- set_r2_issue(calcurve_se)
       if (!keep) r2_failed <- low_r2
-      cat(sum(low_r2), "calibration curve(s) with RÂ² below", params$min_r2,
+      cat(sum(low_r2), "calibration curve(s) with R² below", params$min_r2,
           if (keep) "(kept)." else "(not valid).", "\n")
     }
   }
@@ -890,6 +1042,8 @@ compact_global_calibration <- function(cal, mat_id_to_calib) {
     kept_calcurve = rd$kept_calcurve,      # Kept despite `range_issue` (--keep_all_calcurves)
     no_quant_samples = rd$no_quant_samples,   # No sample or QC at or above the LLOQ: full range
     lod = rd$lod, lloq = rd$lloq, max_c_conc = rd$max_c_conc,
+    uloq = rd$uloq,   # NA: no ULOQ (quadratic curve without log calibration)
+    linear_range_note = rd$linear_range_note,   # Levels above the ULOQ (NA: none)
     model = vapply(model_info, `[[`, "", "model"),
     r2 = vapply(model_info, `[[`, 0, "r2"),
     coef = lapply(model_info, `[[`, "coef")   # Intercept, conc (, conc^2); log scale if fitted so

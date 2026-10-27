@@ -149,7 +149,7 @@ for (batch_id in names(concn_lst)) {
 ## Blank filtering
 
 Features were filtered based on blank samples [@broadhurst2018].
-A feature was kept if its maximum peak area in the samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area, OR if its average peak area in samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area.
+A feature was kept if its maximum peak area in the samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area, OR if its average peak area in samples was $> `r to_report$blank_filter_factor` \times$ the average blank peak area. The filter was applied after normalization and before blank subtraction; internal standards were not filtered.
 
 ```{r}
 # Features removed by the blank filter and the QC RSD% filter (for the method of this report)
@@ -286,8 +286,8 @@ lod_signal_txt <- switch(to_report$params$llox_method,
 
 The calibration curves are linear or quadratic, with the weighting 1, 1/x or 1/x² [@almeida2002].
 `r if (isTRUE(to_report$params$average_cal_reps)) "The calibration replicates were averaged within each batch, and every batch was quantified with the global curve fitted on these averages." else ""`
-After the computation of concentration, the following steps are applied to the data (QuaNTA rules,
-without a literature reference):
+After the computation of concentration, each value is set once, from its peak signal, by the
+following rules (QuaNTA rules, without a literature reference):
 
 ```{r}
 #| label: 'llox-rules-txt'
@@ -297,17 +297,16 @@ below_lloq_txt <- if (llox_imputed) "adjusted to the 1/2 of LLOQ" else "reported
 below_lod_txt <- if (llox_imputed) "adjusted to the 1/4 of LLOQ" else "reported as n.d. (not detected, no value)"
 ```
 
-  * Any calibrated concentration between the LOD and LLOQ is `r below_lloq_txt`.
-  * Any calibrated concentration below the LOD is `r below_lod_txt`.
-  * Any calibrated concentration below LLOQ while peak signal > the average signal of LLOQ is adjusted to LLOQ.
-  * Any calibrated concentration whose signal is below the average signal of LLOQ is `r below_lloq_txt`.
-  * Any calibrated concentration whose signal is below the LOD signal threshold (`r lod_signal_txt`) is `r below_lod_txt`.
+  * Signal below the LOD signal threshold (`r lod_signal_txt`): not detected, `r below_lod_txt`, whatever the calibrated concentration.
+  * Signal from the LOD signal threshold to below the average signal of the LLOQ level: detected but not quantified, `r below_lloq_txt`, whatever the calibrated concentration.
+  * Signal at or above the average signal of the LLOQ level, calibrated concentration below the LLOQ: adjusted to the LLOQ.
+  * Signal at or above the average signal of the LLOQ level, calibrated concentration at or above the LLOQ: the calibrated concentration.
   * Any chemical with values below LLOQ in all samples is removed from the quantification report.
 `r if (!llox_imputed) "  * n.d. and n.q. values are not shown in the plots and are left out of the median, average, minimum and maximum."`
 
 {{< pagebreak >}}
 
-# Invidual chemicals
+# Individual chemicals
 
 ```{r}
 #| label: 'individual-chemicals'
