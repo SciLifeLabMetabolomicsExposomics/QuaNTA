@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Concentrations (4.6 and 4.7) – QuaNTA tutorial</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-7b89279ff1a6dce999919e0e67d4d9ec.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d00a7c9cc2cf5d29686512c5a0e26890.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="site_libs/htmlwidgets-1.6.4/htmlwidgets.js"></script>
+<script src="site_libs/plotly-binding-4.11.0/plotly.js"></script>
+<script src="site_libs/typedarray-0.1/typedarray.min.js"></script>
+<script src="site_libs/jquery-3.5.1/jquery.min.js"></script>
+<link href="site_libs/crosstalk-1.2.2/css/crosstalk.min.css" rel="stylesheet">
+<script src="site_libs/crosstalk-1.2.2/js/crosstalk.min.js"></script>
+<link href="site_libs/plotly-htmlwidgets-css-2.11.1/plotly-htmlwidgets.css" rel="stylesheet">
+<script src="site_libs/plotly-main-2.11.1/plotly-latest.min.js"></script>
+
+
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="nav-sidebar docked quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./calibration-limits.html">4 Calibration and quantification</a></li><li class="breadcrumb-item"><a href="./concentrations.html">Concentrations (4.6 and 4.7)</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+      <a href="./index.html" class="sidebar-logo-link">
+      </a>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">QuaNTA tutorial</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">1 Input data and processing</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-and-upload.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Your data and its processing (page 1)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">2 Data overview</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Data overview (2.1–2.6)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">3 Quality control and normalization</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./internal-standards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Internal standards and outliers (3.1–3.7)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./normalization-and-blanks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Normalization, filters and blanks (3.8–3.11)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">4 Calibration and quantification</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./calibration-limits.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Calibration limits (4.1–4.3)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./calibration-curves.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Calibration curves (4.4 and 4.5)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./concentrations.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Concentrations (4.6 and 4.7)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">5 Report export</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./reports-and-exports.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reports and exported tables (page 5)</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#concentration-per-class" id="toc-concentration-per-class" class="nav-link active" data-scroll-target="#concentration-per-class">4.6 Concentration per class</a></li>
+  <li><a href="#qc-samples-in-acquisition-order" id="toc-qc-samples-in-acquisition-order" class="nav-link" data-scroll-target="#qc-samples-in-acquisition-order">4.7 QC samples in acquisition order</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/blob/main/tutorial/concentrations.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./calibration-limits.html">4 Calibration and quantification</a></li><li class="breadcrumb-item"><a href="./concentrations.html">Concentrations (4.6 and 4.7)</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Concentrations (4.6 and 4.7)</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>The last two figures of page 4 show the <strong>result</strong>: the concentrations of the chosen compound (here <strong>1,3-Di-o-tolylguanidine</strong>, batch 1) in all samples, and its stability in the QC samples over the whole run.</p>
+<section id="concentration-per-class" class="level2">
+<h2 class="anchored" data-anchor-id="concentration-per-class">4.6 Concentration per class</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div id="htmlwidget-9237fe7fb4fd65a46f27" style="width:100%;height:444px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-9237fe7fb4fd65a46f27">{"x":{"visdat":{"78647ad01fab":["function () ","plotlyVisDat"]},"cur_data":"78647ad01fab","attrs":{"78647ad01fab":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"box","x":[1,1],"y":[0.01,0.01],"name":"QC4","boxpoints":false,"fillcolor":"#0072B273","line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":"skip","showlegend":false,"inherit":true},"78647ad01fab.1":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"box","x":[2,2],"y":[0.01,0.01],"name":"QC1","boxpoints":false,"fillcolor":"#0072B273","line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":"skip","showlegend":false,"inherit":true},"78647ad01fab.2":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"box","x":[3,3],"y":[0.020004019022042008,0.02],"name":"QCall","boxpoints":false,"fillcolor":"#0072B273","line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":"skip","showlegend":false,"inherit":true},"78647ad01fab.3":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"box","x":[4,4],"y":[0.01,0.01],"name":"QC3","boxpoints":false,"fillcolor":"#0072B273","line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":"skip","showlegend":false,"inherit":true},"78647ad01fab.4":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"box","x":[5,5],"y":[0.01,0.01],"name":"QC2","boxpoints":false,"fillcolor":"#0072B273","line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":"skip","showlegend":false,"inherit":true},"78647ad01fab.5":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"box","x":[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],"y":[6.7628512391851441,3.695098370690983,8.9159349879419878,13.613574990241949,10.91918732943283,13.612681167492534,8.2074403818773636,4.5541320143578305,8.7199054400561771,5.9498225229888879,7.3465337009010492,7.361652902045023,6.5911656806253323,18.760806766511219,18.326643457053574,8.1539141857026642,3.8018973369018729,3.8367437961941318,5.7349626790992438,7.9989469964879527],"name":"Sick","boxpoints":false,"fillcolor":"#009E7373","line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":"skip","showlegend":false,"inherit":true},"78647ad01fab.6":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"box","x":[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],"y":[3.1011960038358062,6.1018486838285746,13.341977212056408,12.080027797657548,4.3249166120824905,7.0539138845175184,4.4268051631156862,7.660718375738985,8.9869610392732184,10.67531552477346,6.582711702172273,7.419181920530221,8.0577849230104146,4.7493776507056964,15.323457723452075,7.7161712035822241,9.5388663884767304,18.26193360522603,3.618975682839543],"name":"Healthy","boxpoints":false,"fillcolor":"#CC79A773","line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":"skip","showlegend":false,"inherit":true},"78647ad01fab.7":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[5.8507762070279572,6.0725087700597946,6.8602759253606198,5.8708062181062992,6.2134466564841571,5.8765171169675883,7.153708812994882,7.1716177489422259,5.9937304748315361,7.0370310522057116,6.9099064880516377,6.894831055561081,2.9643144904356449,7.0753373090084644,6.0566366830747578,6.8814688038267198,6.9691876918636266,7.1914001450873908,5.8524280894268301,6.0823629120644185,5.898404143899679,5.8366959124431013,6.04194066490978,6.9792401878908272,5.9720625285897402,5.8849131013918665,6.9126777121331546,7.0050130860228093,7.0627933144476263,5.9630558005627243,6.9746817631181326,6.2107934675272558,7.1626153210643677,6.1012424832116814,6.8067166803218422,5.998953128354624,6.890460636075586,7.1289055215101689,5.9437835645861927,5.9675367121119054],"y":[6.7628512391851441,3.695098370690983,3.1011960038358062,8.9159349879419878,13.613574990241949,10.91918732943283,6.1018486838285746,13.341977212056408,13.612681167492534,12.080027797657548,4.3249166120824905,7.0539138845175184,0.020004019022042008,4.4268051631156862,8.2074403818773636,7.660718375738985,8.9869610392732184,10.67531552477346,4.5541320143578305,8.7199054400561771,5.9498225229888879,7.3465337009010492,7.361652902045023,6.582711702172273,6.5911656806253323,18.760806766511219,7.419181920530221,8.0577849230104146,4.7493776507056964,18.326643457053574,15.323457723452075,8.1539141857026642,7.7161712035822241,3.8018973369018729,9.5388663884767304,3.8367437961941318,18.26193360522603,3.618975682839543,5.7349626790992438,7.9989469964879527],"type":"scatter","mode":"markers","name":"Measured","text":["<b>S001_B1_18<\/b><br>Sick · batch 1 · inj. 18<br>conc. 6.763 (Measured)","<b>S002_B1_19<\/b><br>Sick · batch 1 · inj. 19<br>conc. 3.695 (Measured)","<b>H002_B1_21<\/b><br>Healthy · batch 1 · inj. 21<br>conc. 3.101 (Measured)","<b>S003_B1_23<\/b><br>Sick · batch 1 · inj. 23<br>conc. 8.916 (Measured)","<b>S004_B1_24<\/b><br>Sick · batch 1 · inj. 24<br>conc. 13.61 (Measured)","<b>S005_B1_25<\/b><br>Sick · batch 1 · inj. 25<br>conc. 10.92 (Measured)","<b>H003_B1_26<\/b><br>Healthy · batch 1 · inj. 26<br>conc. 6.102 (Measured)","<b>H004_B1_27<\/b><br>Healthy · batch 1 · inj. 27<br>conc. 13.34 (Measured)","<b>S006_B1_29<\/b><br>Sick · batch 1 · inj. 29<br>conc. 13.61 (Measured)","<b>H005_B1_31<\/b><br>Healthy · batch 1 · inj. 31<br>conc. 12.08 (Measured)","<b>H006_B1_32<\/b><br>Healthy · batch 1 · inj. 32<br>conc. 4.325 (Measured)","<b>H007_B1_33<\/b><br>Healthy · batch 1 · inj. 33<br>conc. 7.054 (Measured)","<b>QCall_B1_34<\/b><br>QCall · batch 1 · inj. 34<br>conc. 0.02 (Measured)","<b>H008_B1_35<\/b><br>Healthy · batch 1 · inj. 35<br>conc. 4.427 (Measured)","<b>S007_B1_36<\/b><br>Sick · batch 1 · inj. 36<br>conc. 8.207 (Measured)","<b>H009_B1_37<\/b><br>Healthy · batch 1 · inj. 37<br>conc. 7.661 (Measured)","<b>H010_B1_38<\/b><br>Healthy · batch 1 · inj. 38<br>conc. 8.987 (Measured)","<b>H011_B1_39<\/b><br>Healthy · batch 1 · inj. 39<br>conc. 10.68 (Measured)","<b>S008_B1_41<\/b><br>Sick · batch 1 · inj. 41<br>conc. 4.554 (Measured)","<b>S009_B1_42<\/b><br>Sick · batch 1 · inj. 42<br>conc. 8.72 (Measured)","<b>S010_B1_58<\/b><br>Sick · batch 1 · inj. 58<br>conc. 5.95 (Measured)","<b>S011_B1_59<\/b><br>Sick · batch 1 · inj. 59<br>conc. 7.347 (Measured)","<b>S012_B1_61<\/b><br>Sick · batch 1 · inj. 61<br>conc. 7.362 (Measured)","<b>H012_B1_62<\/b><br>Healthy · batch 1 · inj. 62<br>conc. 6.583 (Measured)","<b>S013_B1_63<\/b><br>Sick · batch 1 · inj. 63<br>conc. 6.591 (Measured)","<b>S014_B1_64<\/b><br>Sick · batch 1 · inj. 64<br>conc. 18.76 (Measured)","<b>H013_B1_65<\/b><br>Healthy · batch 1 · inj. 65<br>conc. 7.419 (Measured)","<b>H014_B1_67<\/b><br>Healthy · batch 1 · inj. 67<br>conc. 8.058 (Measured)","<b>H015_B1_68<\/b><br>Healthy · batch 1 · inj. 68<br>conc. 4.749 (Measured)","<b>S015_B1_69<\/b><br>Sick · batch 1 · inj. 69<br>conc. 18.33 (Measured)","<b>H016_B1_71<\/b><br>Healthy · batch 1 · inj. 71<br>conc. 15.32 (Measured)","<b>S016_B1_73<\/b><br>Sick · batch 1 · inj. 73<br>conc. 8.154 (Measured)","<b>H017_B1_74<\/b><br>Healthy · batch 1 · inj. 74<br>conc. 7.716 (Measured)","<b>S017_B1_75<\/b><br>Sick · batch 1 · inj. 75<br>conc. 3.802 (Measured)","<b>H018_B1_76<\/b><br>Healthy · batch 1 · inj. 76<br>conc. 9.539 (Measured)","<b>S018_B1_77<\/b><br>Sick · batch 1 · inj. 77<br>conc. 3.837 (Measured)","<b>H019_B1_79<\/b><br>Healthy · batch 1 · inj. 79<br>conc. 18.26 (Measured)","<b>H020_B1_80<\/b><br>Healthy · batch 1 · inj. 80<br>conc. 3.619 (Measured)","<b>S019_B1_81<\/b><br>Sick · batch 1 · inj. 81<br>conc. 5.735 (Measured)","<b>S020_B1_82<\/b><br>Sick · batch 1 · inj. 82<br>conc. 7.999 (Measured)"],"hoverinfo":"text","marker":{"color":"grey25","size":7,"opacity":0.84999999999999998,"line":{"color":"white","width":0.5}},"inherit":true},"78647ad01fab.8":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":[0.95616460802964864,1.2169229536131025,2.1849733478669076,2.0174931473284961,4.0283730661217128,5.0472445593401787,3.8800545739475636,5.1367783330380918],"y":[0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01],"type":"scatter","mode":"markers","name":"Detected: LLOQ/2","text":["<b>QC4_QC_B1_17<\/b><br>QC4 · batch 1 · inj. 17<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B1_22<\/b><br>QC4 · batch 1 · inj. 22<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B1_28<\/b><br>QC1 · batch 1 · inj. 28<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B1_40<\/b><br>QC1 · batch 1 · inj. 40<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B1_60<\/b><br>QC3 · batch 1 · inj. 60<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B1_66<\/b><br>QC2 · batch 1 · inj. 66<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B1_72<\/b><br>QC3 · batch 1 · inj. 72<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B1_78<\/b><br>QC2 · batch 1 · inj. 78<br>conc. 0.01 (Detected: LLOQ/2)"],"hoverinfo":"text","marker":{"color":"#E69F00","size":7,"opacity":0.84999999999999998,"line":{"color":"white","width":0.5}},"inherit":true},"78647ad01fab.9":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"x":3.0742671417724341,"y":0.02,"type":"scatter","mode":"markers","name":"Set to LLOQ","text":"<b>QCall_B1_83<\/b><br>QCall · batch 1 · inj. 83<br>conc. 0.02 (Set to LLOQ)","hoverinfo":"text","marker":{"color":"#56B4E9","size":7,"opacity":0.84999999999999998,"line":{"color":"white","width":0.5}},"inherit":true}},"layout":{"height":460,"margin":{"b":40,"l":60,"t":70,"r":10},"title":{"text":"1,3-Di-o-tolylguanidine","x":0.02},"hovermode":"closest","font":{"family":"Lato"},"xaxis":{"domain":[0,1],"automargin":true,"title":"","tickvals":[1,2,3,4,5,6,7],"ticktext":["QC4","QC1","QCall","QC3","QC2","Sick","Healthy"],"tickangle":-45,"range":[0.40000000000000002,7.5999999999999996],"zeroline":false},"yaxis":{"domain":[0,1],"automargin":true,"title":"Concentration [ng/mL]","type":"linear","exponentformat":"E"},"legend":{"orientation":"v","x":1.02,"y":1,"title":{"text":"Value"}},"updatemenus":[{"type":"buttons","direction":"right","x":0.55000000000000004,"y":1.02,"xanchor":"center","yanchor":"bottom","active":0,"buttons":[{"label":"Linear","method":"relayout","args":[{"yaxis.type":"linear"}]},{"label":"Log","method":"relayout","args":[{"yaxis.type":"log"}]}]}],"showlegend":true},"source":"A","config":{"modeBarButtonsToAdd":["hoverclosest","hovercompare"],"showSendToCloud":false},"data":[{"fillcolor":"#0072B273","type":"box","x":[1,1],"y":[0.01,0.01],"name":"QC4","boxpoints":false,"line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":["skip","skip"],"showlegend":false,"marker":{"color":"rgba(31,119,180,1)","line":{"color":"rgba(31,119,180,1)"}},"xaxis":"x","yaxis":"y","frame":null},{"fillcolor":"#0072B273","type":"box","x":[2,2],"y":[0.01,0.01],"name":"QC1","boxpoints":false,"line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":["skip","skip"],"showlegend":false,"marker":{"color":"rgba(255,127,14,1)","line":{"color":"rgba(255,127,14,1)"}},"xaxis":"x","yaxis":"y","frame":null},{"fillcolor":"#0072B273","type":"box","x":[3,3],"y":[0.020004019022042008,0.02],"name":"QCall","boxpoints":false,"line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":["skip","skip"],"showlegend":false,"marker":{"color":"rgba(44,160,44,1)","line":{"color":"rgba(44,160,44,1)"}},"xaxis":"x","yaxis":"y","frame":null},{"fillcolor":"#0072B273","type":"box","x":[4,4],"y":[0.01,0.01],"name":"QC3","boxpoints":false,"line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":["skip","skip"],"showlegend":false,"marker":{"color":"rgba(214,39,40,1)","line":{"color":"rgba(214,39,40,1)"}},"xaxis":"x","yaxis":"y","frame":null},{"fillcolor":"#0072B273","type":"box","x":[5,5],"y":[0.01,0.01],"name":"QC2","boxpoints":false,"line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":["skip","skip"],"showlegend":false,"marker":{"color":"rgba(148,103,189,1)","line":{"color":"rgba(148,103,189,1)"}},"xaxis":"x","yaxis":"y","frame":null},{"fillcolor":"#009E7373","type":"box","x":[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],"y":[6.7628512391851441,3.695098370690983,8.9159349879419878,13.613574990241949,10.91918732943283,13.612681167492534,8.2074403818773636,4.5541320143578305,8.7199054400561771,5.9498225229888879,7.3465337009010492,7.361652902045023,6.5911656806253323,18.760806766511219,18.326643457053574,8.1539141857026642,3.8018973369018729,3.8367437961941318,5.7349626790992438,7.9989469964879527],"name":"Sick","boxpoints":false,"line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":["skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip"],"showlegend":false,"marker":{"color":"rgba(140,86,75,1)","line":{"color":"rgba(140,86,75,1)"}},"xaxis":"x","yaxis":"y","frame":null},{"fillcolor":"#CC79A773","type":"box","x":[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],"y":[3.1011960038358062,6.1018486838285746,13.341977212056408,12.080027797657548,4.3249166120824905,7.0539138845175184,4.4268051631156862,7.660718375738985,8.9869610392732184,10.67531552477346,6.582711702172273,7.419181920530221,8.0577849230104146,4.7493776507056964,15.323457723452075,7.7161712035822241,9.5388663884767304,18.26193360522603,3.618975682839543],"name":"Healthy","boxpoints":false,"line":{"color":"grey30","width":1},"width":0.59999999999999998,"hoverinfo":["skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip","skip"],"showlegend":false,"marker":{"color":"rgba(227,119,194,1)","line":{"color":"rgba(227,119,194,1)"}},"xaxis":"x","yaxis":"y","frame":null},{"x":[5.8507762070279572,6.0725087700597946,6.8602759253606198,5.8708062181062992,6.2134466564841571,5.8765171169675883,7.153708812994882,7.1716177489422259,5.9937304748315361,7.0370310522057116,6.9099064880516377,6.894831055561081,2.9643144904356449,7.0753373090084644,6.0566366830747578,6.8814688038267198,6.9691876918636266,7.1914001450873908,5.8524280894268301,6.0823629120644185,5.898404143899679,5.8366959124431013,6.04194066490978,6.9792401878908272,5.9720625285897402,5.8849131013918665,6.9126777121331546,7.0050130860228093,7.0627933144476263,5.9630558005627243,6.9746817631181326,6.2107934675272558,7.1626153210643677,6.1012424832116814,6.8067166803218422,5.998953128354624,6.890460636075586,7.1289055215101689,5.9437835645861927,5.9675367121119054],"y":[6.7628512391851441,3.695098370690983,3.1011960038358062,8.9159349879419878,13.613574990241949,10.91918732943283,6.1018486838285746,13.341977212056408,13.612681167492534,12.080027797657548,4.3249166120824905,7.0539138845175184,0.020004019022042008,4.4268051631156862,8.2074403818773636,7.660718375738985,8.9869610392732184,10.67531552477346,4.5541320143578305,8.7199054400561771,5.9498225229888879,7.3465337009010492,7.361652902045023,6.582711702172273,6.5911656806253323,18.760806766511219,7.419181920530221,8.0577849230104146,4.7493776507056964,18.326643457053574,15.323457723452075,8.1539141857026642,7.7161712035822241,3.8018973369018729,9.5388663884767304,3.8367437961941318,18.26193360522603,3.618975682839543,5.7349626790992438,7.9989469964879527],"type":"scatter","mode":"markers","name":"Measured","text":["<b>S001_B1_18<\/b><br>Sick · batch 1 · inj. 18<br>conc. 6.763 (Measured)","<b>S002_B1_19<\/b><br>Sick · batch 1 · inj. 19<br>conc. 3.695 (Measured)","<b>H002_B1_21<\/b><br>Healthy · batch 1 · inj. 21<br>conc. 3.101 (Measured)","<b>S003_B1_23<\/b><br>Sick · batch 1 · inj. 23<br>conc. 8.916 (Measured)","<b>S004_B1_24<\/b><br>Sick · batch 1 · inj. 24<br>conc. 13.61 (Measured)","<b>S005_B1_25<\/b><br>Sick · batch 1 · inj. 25<br>conc. 10.92 (Measured)","<b>H003_B1_26<\/b><br>Healthy · batch 1 · inj. 26<br>conc. 6.102 (Measured)","<b>H004_B1_27<\/b><br>Healthy · batch 1 · inj. 27<br>conc. 13.34 (Measured)","<b>S006_B1_29<\/b><br>Sick · batch 1 · inj. 29<br>conc. 13.61 (Measured)","<b>H005_B1_31<\/b><br>Healthy · batch 1 · inj. 31<br>conc. 12.08 (Measured)","<b>H006_B1_32<\/b><br>Healthy · batch 1 · inj. 32<br>conc. 4.325 (Measured)","<b>H007_B1_33<\/b><br>Healthy · batch 1 · inj. 33<br>conc. 7.054 (Measured)","<b>QCall_B1_34<\/b><br>QCall · batch 1 · inj. 34<br>conc. 0.02 (Measured)","<b>H008_B1_35<\/b><br>Healthy · batch 1 · inj. 35<br>conc. 4.427 (Measured)","<b>S007_B1_36<\/b><br>Sick · batch 1 · inj. 36<br>conc. 8.207 (Measured)","<b>H009_B1_37<\/b><br>Healthy · batch 1 · inj. 37<br>conc. 7.661 (Measured)","<b>H010_B1_38<\/b><br>Healthy · batch 1 · inj. 38<br>conc. 8.987 (Measured)","<b>H011_B1_39<\/b><br>Healthy · batch 1 · inj. 39<br>conc. 10.68 (Measured)","<b>S008_B1_41<\/b><br>Sick · batch 1 · inj. 41<br>conc. 4.554 (Measured)","<b>S009_B1_42<\/b><br>Sick · batch 1 · inj. 42<br>conc. 8.72 (Measured)","<b>S010_B1_58<\/b><br>Sick · batch 1 · inj. 58<br>conc. 5.95 (Measured)","<b>S011_B1_59<\/b><br>Sick · batch 1 · inj. 59<br>conc. 7.347 (Measured)","<b>S012_B1_61<\/b><br>Sick · batch 1 · inj. 61<br>conc. 7.362 (Measured)","<b>H012_B1_62<\/b><br>Healthy · batch 1 · inj. 62<br>conc. 6.583 (Measured)","<b>S013_B1_63<\/b><br>Sick · batch 1 · inj. 63<br>conc. 6.591 (Measured)","<b>S014_B1_64<\/b><br>Sick · batch 1 · inj. 64<br>conc. 18.76 (Measured)","<b>H013_B1_65<\/b><br>Healthy · batch 1 · inj. 65<br>conc. 7.419 (Measured)","<b>H014_B1_67<\/b><br>Healthy · batch 1 · inj. 67<br>conc. 8.058 (Measured)","<b>H015_B1_68<\/b><br>Healthy · batch 1 · inj. 68<br>conc. 4.749 (Measured)","<b>S015_B1_69<\/b><br>Sick · batch 1 · inj. 69<br>conc. 18.33 (Measured)","<b>H016_B1_71<\/b><br>Healthy · batch 1 · inj. 71<br>conc. 15.32 (Measured)","<b>S016_B1_73<\/b><br>Sick · batch 1 · inj. 73<br>conc. 8.154 (Measured)","<b>H017_B1_74<\/b><br>Healthy · batch 1 · inj. 74<br>conc. 7.716 (Measured)","<b>S017_B1_75<\/b><br>Sick · batch 1 · inj. 75<br>conc. 3.802 (Measured)","<b>H018_B1_76<\/b><br>Healthy · batch 1 · inj. 76<br>conc. 9.539 (Measured)","<b>S018_B1_77<\/b><br>Sick · batch 1 · inj. 77<br>conc. 3.837 (Measured)","<b>H019_B1_79<\/b><br>Healthy · batch 1 · inj. 79<br>conc. 18.26 (Measured)","<b>H020_B1_80<\/b><br>Healthy · batch 1 · inj. 80<br>conc. 3.619 (Measured)","<b>S019_B1_81<\/b><br>Sick · batch 1 · inj. 81<br>conc. 5.735 (Measured)","<b>S020_B1_82<\/b><br>Sick · batch 1 · inj. 82<br>conc. 7.999 (Measured)"],"hoverinfo":["text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text"],"marker":{"color":"grey25","size":7,"opacity":0.84999999999999998,"line":{"color":"white","width":0.5}},"error_y":{"color":"rgba(127,127,127,1)"},"error_x":{"color":"rgba(127,127,127,1)"},"line":{"color":"rgba(127,127,127,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[0.95616460802964864,1.2169229536131025,2.1849733478669076,2.0174931473284961,4.0283730661217128,5.0472445593401787,3.8800545739475636,5.1367783330380918],"y":[0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01],"type":"scatter","mode":"markers","name":"Detected: LLOQ/2","text":["<b>QC4_QC_B1_17<\/b><br>QC4 · batch 1 · inj. 17<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B1_22<\/b><br>QC4 · batch 1 · inj. 22<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B1_28<\/b><br>QC1 · batch 1 · inj. 28<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B1_40<\/b><br>QC1 · batch 1 · inj. 40<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B1_60<\/b><br>QC3 · batch 1 · inj. 60<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B1_66<\/b><br>QC2 · batch 1 · inj. 66<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B1_72<\/b><br>QC3 · batch 1 · inj. 72<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B1_78<\/b><br>QC2 · batch 1 · inj. 78<br>conc. 0.01 (Detected: LLOQ/2)"],"hoverinfo":["text","text","text","text","text","text","text","text"],"marker":{"color":"#E69F00","size":7,"opacity":0.84999999999999998,"line":{"color":"white","width":0.5}},"error_y":{"color":"rgba(188,189,34,1)"},"error_x":{"color":"rgba(188,189,34,1)"},"line":{"color":"rgba(188,189,34,1)"},"xaxis":"x","yaxis":"y","frame":null},{"x":[3.0742671417724341],"y":[0.02],"type":"scatter","mode":"markers","name":"Set to LLOQ","text":"<b>QCall_B1_83<\/b><br>QCall · batch 1 · inj. 83<br>conc. 0.02 (Set to LLOQ)","hoverinfo":"text","marker":{"color":"#56B4E9","size":7,"opacity":0.84999999999999998,"line":{"color":"white","width":0.5}},"error_y":{"color":"rgba(23,190,207,1)"},"error_x":{"color":"rgba(23,190,207,1)"},"line":{"color":"rgba(23,190,207,1)"},"xaxis":"x","yaxis":"y","frame":null}],"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.20000000000000001,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+</div>
+</div>
+<p>A box per class (QCs, study groups, blanks) with the samples as points. The colour of a point tells whether its value was <strong>measured</strong> or <strong>replaced</strong> by the LOD/LLOQ rules:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Point</th>
+<th>Signal of the sample</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>dark grey: <em>Measured</em></td>
+<td>at or above the mean signal of the LLOQ level</td>
+<td>the calculated concentration</td>
+</tr>
+<tr class="even">
+<td>red: <em>Not detected</em></td>
+<td>below the LOD signal</td>
+<td>LLOQ / 4</td>
+</tr>
+<tr class="odd">
+<td>orange: <em>Detected</em></td>
+<td>from the LOD signal to below the LLOQ level</td>
+<td>LLOQ / 2</td>
+</tr>
+<tr class="even">
+<td>blue: <em>Set to LLOQ</em></td>
+<td>at or above the LLOQ level, but calculated below the LLOQ</td>
+<td>the LLOQ</td>
+</tr>
+</tbody>
+</table>
+<p>With the processing option <em>Replace values below the LOD/LLOQ</em> unticked, the red and orange values have no number: they are reported as <em>n.d.</em> (not detected) and <em>n.q.</em> (not quantified), left out of the plots and statistics, and their number is given under the title. Use the <strong>Linear / Log</strong> buttons for the scale.</p>
+<p><strong>How to read it</strong></p>
+<ul>
+<li><strong>Differences between the study groups</strong> are what you are after; the QCs should be tight.</li>
+<li><strong>Many replaced values</strong> in a group mean the compound is mostly below the LLOQ there; its average is then driven by the replacement values, so look at the measured values only (the exported statistics and report 4.6.1 use measured values only).</li>
+</ul>
+</section>
+<section id="qc-samples-in-acquisition-order" class="level2">
+<h2 class="anchored" data-anchor-id="qc-samples-in-acquisition-order">4.7 QC samples in acquisition order</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div id="htmlwidget-3138257321a2b0ba7796" style="width:100%;height:425px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-3138257321a2b0ba7796">{"x":{"visdat":{"786477ec6028":["function () ","plotlyVisDat"]},"cur_data":"786477ec6028","attrs":{"786477ec6028":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"scatter","mode":"lines+markers","x":[28,40,121,178,216,240],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC1","text":["<b>QC1_QC_B1_28<\/b><br>QC1 · batch 1 · inj. 28<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B1_40<\/b><br>QC1 · batch 1 · inj. 40<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B2_121<\/b><br>QC1 · batch 2 · inj. 121<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B2_178<\/b><br>QC1 · batch 2 · inj. 178<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B3_216<\/b><br>QC1 · batch 3 · inj. 216<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC1_QC_B3_240<\/b><br>QC1 · batch 3 · inj. 240<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":"text","line":{"color":"#0072B2","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#0072B2","width":1.5}},"inherit":true},"786477ec6028.1":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"scatter","mode":"lines+markers","x":[66,78,171,183,266,283],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC2","text":["<b>QC2_QC_B1_66<\/b><br>QC2 · batch 1 · inj. 66<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B1_78<\/b><br>QC2 · batch 1 · inj. 78<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B2_171<\/b><br>QC2 · batch 2 · inj. 171<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B2_183<\/b><br>QC2 · batch 2 · inj. 183<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B3_266<\/b><br>QC2 · batch 3 · inj. 266<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC2_QC_B3_283<\/b><br>QC2 · batch 3 · inj. 283<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":"text","line":{"color":"#E69F00","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#E69F00","width":1.5}},"inherit":true},"786477ec6028.2":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"scatter","mode":"lines+markers","x":[60,72,133,166,233,271],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC3","text":["<b>QC3_QC_B1_60<\/b><br>QC3 · batch 1 · inj. 60<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B1_72<\/b><br>QC3 · batch 1 · inj. 72<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B2_133<\/b><br>QC3 · batch 2 · inj. 133<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B2_166<\/b><br>QC3 · batch 2 · inj. 166<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B3_233<\/b><br>QC3 · batch 3 · inj. 233<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC3_QC_B3_271<\/b><br>QC3 · batch 3 · inj. 271<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":"text","line":{"color":"#009E73","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#009E73","width":1.5}},"inherit":true},"786477ec6028.3":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"scatter","mode":"lines+markers","x":[17,22,128,159,228,278],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC4","text":["<b>QC4_QC_B1_17<\/b><br>QC4 · batch 1 · inj. 17<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B1_22<\/b><br>QC4 · batch 1 · inj. 22<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B2_128<\/b><br>QC4 · batch 2 · inj. 128<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B2_159<\/b><br>QC4 · batch 2 · inj. 159<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B3_228<\/b><br>QC4 · batch 3 · inj. 228<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC4_QC_B3_278<\/b><br>QC4 · batch 3 · inj. 278<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":"text","line":{"color":"#D55E00","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#D55E00","width":1.5}},"inherit":true},"786477ec6028.4":{"alpha_stroke":1,"sizes":[10,100],"spans":[1,20],"type":"scatter","mode":"lines+markers","x":[34,83,116,140,221,259],"y":[0.020004019022042008,0.02,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QCall","text":["<b>QCall_B1_34<\/b><br>QCall · batch 1 · inj. 34<br>conc. 0.02 (Measured)","<b>QCall_B1_83<\/b><br>QCall · batch 1 · inj. 83<br>conc. 0.02 (Set to LLOQ)","<b>QCall_B2_116<\/b><br>QCall · batch 2 · inj. 116<br>conc. 0.01 (Detected: LLOQ/2)","<b>QCall_B2_140<\/b><br>QCall · batch 2 · inj. 140<br>conc. 0.01 (Detected: LLOQ/2)","<b>QCall_B3_221<\/b><br>QCall · batch 3 · inj. 221<br>conc. 0.1 (Detected: LLOQ/2)","<b>QCall_B3_259<\/b><br>QCall · batch 3 · inj. 259<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":"text","line":{"color":"#56B4E9","width":1},"marker":{"color":["#56B4E9","white","white","white","white","white"],"size":8,"line":{"color":"#56B4E9","width":1.5}},"inherit":true}},"layout":{"height":440,"margin":{"b":40,"l":60,"t":70,"r":10},"title":{"text":"1,3-Di-o-tolylguanidine","x":0.02},"hovermode":"closest","font":{"family":"Lato"},"xaxis":{"domain":[0,1],"automargin":true,"title":"Injection order"},"yaxis":{"domain":[0,1],"automargin":true,"title":"Concentration [ng/mL]","exponentformat":"E"},"legend":{"orientation":"v","x":1.02,"y":1,"title":{"text":"QC group<br><sup>open points: replaced<br>by the LOD/LLOQ rules<\/sup>"}},"updatemenus":[{"type":"buttons","direction":"right","x":0.55000000000000004,"y":1.02,"xanchor":"center","yanchor":"bottom","buttons":[{"label":"Linear","method":"relayout","args":[{"yaxis.type":"linear"}]},{"label":"Log","method":"relayout","args":[{"yaxis.type":"log"}]}]}],"showlegend":true},"source":"A","config":{"modeBarButtonsToAdd":["hoverclosest","hovercompare"],"showSendToCloud":false},"data":[{"type":"scatter","mode":"lines+markers","x":[28,40,121,178,216,240],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC1","text":["<b>QC1_QC_B1_28<\/b><br>QC1 · batch 1 · inj. 28<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B1_40<\/b><br>QC1 · batch 1 · inj. 40<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B2_121<\/b><br>QC1 · batch 2 · inj. 121<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B2_178<\/b><br>QC1 · batch 2 · inj. 178<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC1_QC_B3_216<\/b><br>QC1 · batch 3 · inj. 216<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC1_QC_B3_240<\/b><br>QC1 · batch 3 · inj. 240<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":["text","text","text","text","text","text"],"line":{"color":"#0072B2","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#0072B2","width":1.5}},"error_y":{"color":"rgba(31,119,180,1)"},"error_x":{"color":"rgba(31,119,180,1)"},"xaxis":"x","yaxis":"y","frame":null},{"type":"scatter","mode":"lines+markers","x":[66,78,171,183,266,283],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC2","text":["<b>QC2_QC_B1_66<\/b><br>QC2 · batch 1 · inj. 66<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B1_78<\/b><br>QC2 · batch 1 · inj. 78<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B2_171<\/b><br>QC2 · batch 2 · inj. 171<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B2_183<\/b><br>QC2 · batch 2 · inj. 183<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC2_QC_B3_266<\/b><br>QC2 · batch 3 · inj. 266<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC2_QC_B3_283<\/b><br>QC2 · batch 3 · inj. 283<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":["text","text","text","text","text","text"],"line":{"color":"#E69F00","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#E69F00","width":1.5}},"error_y":{"color":"rgba(255,127,14,1)"},"error_x":{"color":"rgba(255,127,14,1)"},"xaxis":"x","yaxis":"y","frame":null},{"type":"scatter","mode":"lines+markers","x":[60,72,133,166,233,271],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC3","text":["<b>QC3_QC_B1_60<\/b><br>QC3 · batch 1 · inj. 60<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B1_72<\/b><br>QC3 · batch 1 · inj. 72<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B2_133<\/b><br>QC3 · batch 2 · inj. 133<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B2_166<\/b><br>QC3 · batch 2 · inj. 166<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC3_QC_B3_233<\/b><br>QC3 · batch 3 · inj. 233<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC3_QC_B3_271<\/b><br>QC3 · batch 3 · inj. 271<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":["text","text","text","text","text","text"],"line":{"color":"#009E73","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#009E73","width":1.5}},"error_y":{"color":"rgba(44,160,44,1)"},"error_x":{"color":"rgba(44,160,44,1)"},"xaxis":"x","yaxis":"y","frame":null},{"type":"scatter","mode":"lines+markers","x":[17,22,128,159,228,278],"y":[0.01,0.01,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QC4","text":["<b>QC4_QC_B1_17<\/b><br>QC4 · batch 1 · inj. 17<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B1_22<\/b><br>QC4 · batch 1 · inj. 22<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B2_128<\/b><br>QC4 · batch 2 · inj. 128<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B2_159<\/b><br>QC4 · batch 2 · inj. 159<br>conc. 0.01 (Detected: LLOQ/2)","<b>QC4_QC_B3_228<\/b><br>QC4 · batch 3 · inj. 228<br>conc. 0.1 (Detected: LLOQ/2)","<b>QC4_QC_B3_278<\/b><br>QC4 · batch 3 · inj. 278<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":["text","text","text","text","text","text"],"line":{"color":"#D55E00","width":1},"marker":{"color":["white","white","white","white","white","white"],"size":8,"line":{"color":"#D55E00","width":1.5}},"error_y":{"color":"rgba(214,39,40,1)"},"error_x":{"color":"rgba(214,39,40,1)"},"xaxis":"x","yaxis":"y","frame":null},{"type":"scatter","mode":"lines+markers","x":[34,83,116,140,221,259],"y":[0.020004019022042008,0.02,0.01,0.01,0.10000000000000001,0.10000000000000001],"name":"QCall","text":["<b>QCall_B1_34<\/b><br>QCall · batch 1 · inj. 34<br>conc. 0.02 (Measured)","<b>QCall_B1_83<\/b><br>QCall · batch 1 · inj. 83<br>conc. 0.02 (Set to LLOQ)","<b>QCall_B2_116<\/b><br>QCall · batch 2 · inj. 116<br>conc. 0.01 (Detected: LLOQ/2)","<b>QCall_B2_140<\/b><br>QCall · batch 2 · inj. 140<br>conc. 0.01 (Detected: LLOQ/2)","<b>QCall_B3_221<\/b><br>QCall · batch 3 · inj. 221<br>conc. 0.1 (Detected: LLOQ/2)","<b>QCall_B3_259<\/b><br>QCall · batch 3 · inj. 259<br>conc. 0.1 (Detected: LLOQ/2)"],"hoverinfo":["text","text","text","text","text","text"],"line":{"color":"#56B4E9","width":1},"marker":{"color":["#56B4E9","white","white","white","white","white"],"size":8,"line":{"color":"#56B4E9","width":1.5}},"error_y":{"color":"rgba(148,103,189,1)"},"error_x":{"color":"rgba(148,103,189,1)"},"xaxis":"x","yaxis":"y","frame":null}],"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.20000000000000001,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+</div>
+</div>
+<p>The compound in the QC samples of <strong>all batches</strong> along the injection order (each batch quantified with its own calibration), a line per QC group. Open points are values replaced by the LOD/LLOQ rules.</p>
+<p><strong>How to read it</strong></p>
+<ul>
+<li><strong>A flat line per QC group</strong> means the whole procedure (normalization, blank subtraction, calibration) gives the same concentration from the start to the end of the run.</li>
+<li><strong>A step between batches</strong> points to a batch effect in the calibration (e.g.&nbsp;a calibration curve of one batch that differs from the others); compare the batches’ curves in 4.4.</li>
+<li><strong>A drift within a batch</strong> that normalization did not remove points to a compound that its internal standard does not follow well (see 3.8).</li>
+</ul>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/Exposomics-SciLifeLab\.github\.io\/QuaNTA\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/blob/main/tutorial/concentrations.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
