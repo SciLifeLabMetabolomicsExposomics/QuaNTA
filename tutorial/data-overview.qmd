@@ -1,0 +1,124 @@
+---
+title: "Data overview (2.1–2.6)"
+---
+
+```{r}
+#| label: setup
+source("_prepare.R")
+box::use(show = projlib/show, util = projlib/msdial_utils)
+raw <- tut$raw
+tr <- tut$to_report
+cd <- SumExp::col_df(raw)
+rd <- SumExp::row_df(raw)
+```
+
+Page 2 of the app, **Data overview**, appears as soon as the file is read: what is in the data,
+before any processing. Use it to check that QuaNTA understood the file as you meant it — the
+sample categories, the calibration levels and the feature types — before you click *Process data*.
+
+## 2.1 Samples by category
+
+```{r}
+#| label: table-2-1
+catg <- util$ctrl_smpl_cat(raw)
+catg[catg == ""] <- "Sample"
+d <- tibble::tibble(Category = catg, Class = ifelse(catg == "CalCurve", "All levels", cd$Class)) |>
+  dplyr::count(Category, Class, name = "Number of samples") |>
+  dplyr::mutate(Percent = paste0(round(100 * `Number of samples` / sum(`Number of samples`), 1), "%"))
+tut_table(d)
+```
+
+Every sample by its category (from the `File type` row) and class. The calibration samples are
+counted together here; their levels are in 2.2.
+
+**How to read it**
+
+- **Check the categories**: blanks, calibration samples (`CalCurve`), QCs and study samples
+  (`Sample`). A QC counted as a study sample, or a blank missing, means a wrong `File type` in the
+  file.
+- **QC classes** are the QC materials; at least two replicates of a class are needed for the RSD%
+  in 3.8 and for choosing the best normalization.
+
+## 2.2 Calibration levels
+
+```{r}
+#| label: table-2-2
+tut_table(show$calib_samples_per_batch(raw))
+```
+
+The number of calibration samples per concentration level (read from the names, e.g. `Cal0-5` =
+0.5), per batch and in total.
+
+**How to read it**
+
+- **Every level should have replicates** in every batch. The LOD/LLOQ method *mean + SD* needs at
+  least two zero calibrants (`Cal0`), and the RSD% option at least two replicates of each level; a
+  batch without them uses the curve of all batches together.
+- **A level missing in one batch** shortens that batch's curve.
+
+## 2.3 Classes of analytes
+
+```{r}
+#| label: table-2-3
+v <- util$std_type(raw)
+v <- dplyr::case_when(is.na(v) | v == "" ~ "Not targeted", util$is_targeted_feature(v) ~ "Quant",
+                      util$is_internal_std(v) ~ "IS", TRUE ~ v)
+tut_table(tibble::tibble(`Standard type` = v) |> dplyr::count(`Standard type`, name = "Number of features") |>
+            dplyr::mutate(Percent = paste0(round(100 * `Number of features` / sum(`Number of features`), 1), "%")))
+```
+
+The features by their `Comment`: targeted compounds (`Quant`), internal standards (`IS`), the
+volumetric internal standard (`vIS`) and non-targeted features. (The app lists `Quant\…` and
+`IS\…` with their class names; they are counted together here.)
+
+## 2.4 Features by m/z and retention time
+
+```{r}
+#| label: figure-2-4
+blk <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
+calib_rows <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), tut$proc[[blk]]), function(x) {
+  tibble::as_tibble(SumExp::row_df(x$concn), rownames = "feature_id") |> dplyr::select(feature_id, to_export, has_proper_range)
+}))
+rem <- tr[["removed features"]]
+removed <- rem[rem$mat_id == tr[["best normalization"]] & rem$targeted, ]
+show$plotly_mz_rt_map(show$mz_rt_outcome(rd, calib_rows, removed), height = 520)
+```
+
+Every feature at its retention time and m/z. After processing, the targeted compounds are coloured
+by their **outcome**: *Quantified* (green), *Valid curve, not found in samples* (orange), *No valid
+calibration* (red), or *Removed* by the blank filter or the QC RSD% filter (crosses). The internal
+standards are black diamonds, the volumetric IS a blue one; the non-targeted features (grey) can be
+switched on in the legend.
+
+**How to read it**
+
+- **Clusters of compounds that were not quantified** in one region (e.g. early retention times) point to a
+  chromatographic or matrix problem there.
+- **Internal standards** should cover the retention-time range of the targeted compounds: the
+  *Closest RT* normalization uses the nearest one.
+
+## 2.5 Distribution of m/z
+
+```{r}
+#| label: figure-2-5
+show$plotly_binned_hist(rd$mz, binwidth = 0.5, x_title = "m/z")
+```
+
+The number of features per m/z, in bins of 0.5. Hover over a bar for its range; drag to zoom.
+
+## 2.6 Distribution of intensities
+
+```{r}
+#| label: figure-2-6
+show$plotly_value_distribution(SumExp::metadata(raw)$value_bins %||% raw[["raw"]])
+```
+
+All raw peak areas of all features and samples: in linear scale (left) and in log scale (right,
+positive values only). The note tells how many values are zero or missing.
+
+**How to read it**
+
+- **The log panel** shows the dynamic range of the data; most peak areas usually span several
+  orders of magnitude.
+- **Many zeros** are normal for non-targeted features (not found in every sample), but a large
+  share of zeros in the internal standards fails them (see 3.2).

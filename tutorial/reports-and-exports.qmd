@@ -1,0 +1,97 @@
+---
+title: "Reports and exported tables (page 5)"
+---
+
+```{r}
+#| label: setup
+source("_prepare.R")
+tr <- tut$to_report
+best <- tr[["best normalization"]]
+conc_file <- grep("\\.conc\\.xlsx$", tut$table_files, value = TRUE)[1]
+```
+
+Page 5 of the app, **Report export**, gives you the results to keep: two reports and the tables
+of the data. Everything on this page uses one **final normalization method**.
+
+## Final normalization method
+
+Choose the method first; the buttons stay greyed out until you do. **Best** is the method with the
+lowest median RSD% among the QC replicates (here `r tut$method_labels[[best]]`), and each option shows
+its median RSD%:
+
+```{r}
+#| label: table-final-norm
+rsd <- tr[["median RSD% per normalization"]]
+tut_table(tibble::tibble(Option = c(paste("Best:", tut$method_labels[[best]]), unname(tut$method_labels[names(rsd)])),
+                         `Median RSD%` = round(c(rsd[[best]], unname(rsd)), 1)), height = "240px")
+```
+
+Choose another method when, for example, 3.8 shows that it works clearly better for the compounds
+you are most interested in.
+
+## Reports
+
+| Button | Report | For |
+|---|---|---|
+| **QC/QA report (html)** | the internal report: all quality-control steps, tables and interactive figures, as on pages 2–4 of the app | checking and documenting the processing |
+| **Summary report (pdf)** | the external report: the project, the methods and the results in a few pages | sharing the results |
+
+A progress bar shows how far the report is; the HTML report is shown in the app when it is ready,
+and **Download HTML Report** saves it. The reports name the settings that were used, so they
+document the processing.
+
+## Exported tables
+
+**Export data into tables** writes four Excel files for the final method (and each of their sheets
+as a `.csv` file), ready to download:
+
+| File | Content |
+|---|---|
+| `….norm.xlsx` | normalized peak areas of all features (also non-targeted) |
+| `….norm_blk.xlsx` | the same after blank subtraction |
+| `….conc.xlsx` | concentrations of the targeted compounds: QCs, study samples and blanks |
+| `….conc_all.xlsx` | the same with all samples, including the calibration samples |
+
+This is the start of a batch sheet of the concentration table of the example
+(`r basename(conc_file)`), the feature columns first and then the samples:
+
+```{r}
+#| label: table-export
+sh <- openxlsx::getSheetNames(conc_file)
+x <- openxlsx::read.xlsx(conc_file, sheet = sh[2], colNames = FALSE, rows = 1:40)
+hdr <- which(apply(x, 1, \(r) any(r %in% "Alignment ID")))[1]
+cols <- c(which(x[hdr, ] %in% c("Chemical", "LOD", "LLOQ", "ULOQ", "Min Conc.", "Max Conc.", "Avg. Conc.",
+                                "Median Conc.", "R2", "Model", "Calibration", "Notes")),
+          which(!is.na(x[hdr, ]))[seq(ncol(x) - 3, ncol(x))])
+cols <- unique(cols[cols <= ncol(x)])
+body <- x[(hdr + 1):nrow(x), cols]
+names(body) <- make.unique(as.character(unlist(x[hdr, cols])))
+tut_table(utils::head(body[!is.na(body$Chemical), ], 25), height = "380px")
+```
+
+**How to read it**
+
+- **Sheets**: *Full* has one row per compound over all batches (average and median of the measured
+  values, the curve used per batch); then one sheet per batch with its limits, statistics, model
+  and **Notes**, the full text of the note icons of table 4.2.
+- **Statistics** (minimum, maximum, average, median) use the measured values of the study samples
+  only: values replaced by the LOD/LLOQ rules are left out.
+- **Coloured cells** in the sample columns are values that were replaced or are above the ULOQ;
+  the last sheet, *Legend*, explains the colours:
+
+```{r}
+#| label: table-legend
+leg <- openxlsx::read.xlsx(conc_file, sheet = "Legend", colNames = TRUE)
+fills <- c("#FAAFAF", "#FCEACF", "#D3EBF2", "#E3E0B8", "#A8A05A")   # The fills of the exported cells
+leg <- leg[!is.na(leg$Meaning) & nzchar(leg$Meaning), "Meaning", drop = FALSE][seq_along(fills), , drop = FALSE]
+leg$Colour <- ""
+DT::datatable(leg[, c("Colour", "Meaning")], rownames = FALSE, selection = "none",
+              options = list(dom = "t", paging = FALSE, ordering = FALSE)) |>
+  DT::formatStyle("Colour", backgroundColor = DT::styleRow(seq_along(fills), fills))
+```
+
+::: {.callout-tip}
+## Reuse the processing
+Save the settings with **Download settings (.yml)** on page 1. Loading the file later, in the app or
+with `run_quanta.R` on the command line, processes new data the same way.
+:::

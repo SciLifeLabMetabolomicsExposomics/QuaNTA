@@ -1,0 +1,90 @@
+---
+title: "Concentrations (4.6 and 4.7)"
+---
+
+```{r}
+#| label: setup
+source("_prepare.R")
+box::use(show = projlib/show, util = projlib/msdial_utils)
+tr <- tut$to_report
+mat_id <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
+lst <- tut$proc[[mat_id]]
+batch <- lst[[1]]
+rd <- SumExp::row_df(batch$concn)
+# A compound quantified in the samples, with some values below the LLOQ (to show the LOD/LLOQ rules)
+ok <- which(rd$has_proper_range %in% TRUE & rd$to_export %in% TRUE)
+below <- vapply(ok, function(i) sum(batch$concn[["conc"]][i, ] < rd$lloq[i], na.rm = TRUE), 0)
+fid <- rownames(rd)[ok[which.max(below > 0 & below < ncol(batch$concn) / 2)]]
+in_log <- isTRUE(tr$params$log_calibration)
+```
+
+The last two figures of page 4 show the **result**: the concentrations of the chosen compound
+(here **`r rd[fid, "feature_name"]`**, batch `r names(lst)[1]`) in all samples, and its stability
+in the QC samples over the whole run.
+
+## 4.6 Concentration per class
+
+```{r}
+#| label: figure-4-6
+df1 <- SumExp::as_tibble(batch$concn[fid, ])
+flag <- if ("conc_flag" %in% names(df1)) df1$conc_flag else NULL
+hover <- paste0("<b>", df1$sample_name, "</b><br>", df1$Class, " · batch ", df1$batch_id, " · inj. ",
+                df1$injection_order, "<br>conc. ", show$num_txt(df1$conc), " (", show$imputed_kind(df1$conc, df1$lloq), ")")
+show$plotly_conc_by_class(conc = df1$conc, lloq = df1$lloq, cats = as.character(df1$Class),
+                          cat_colors = tut$class_colors, hover = hover, name = df1$feature_name[1],
+                          y_title = paste0("Concentration [", SumExp::metadata(batch$concn)$concentration_unit, "]"),
+                          log = in_log, flag = flag)
+```
+
+A box per class (QCs, study groups, blanks) with the samples as points. The colour of a point tells
+whether its value was **measured** or **replaced** by the LOD/LLOQ rules:
+
+| Point | Signal of the sample | Value |
+|---|---|---|
+| dark grey: *Measured* | at or above the mean signal of the LLOQ level | the calculated concentration |
+| red: *Not detected* | below the LOD signal | LLOQ / 4 |
+| orange: *Detected* | from the LOD signal to below the LLOQ level | LLOQ / 2 |
+| blue: *Set to LLOQ* | at or above the LLOQ level, but calculated below the LLOQ | the LLOQ |
+
+With the processing option *Replace values below the LOD/LLOQ* unticked, the red and orange values
+have no number: they are reported as *n.d.* (not detected) and *n.q.* (not quantified), left out
+of the plots and statistics, and their number is given under the title. Use the **Linear / Log**
+buttons for the scale.
+
+**How to read it**
+
+- **Differences between the study groups** are what you are after; the QCs should be tight.
+- **Many replaced values** in a group mean the compound is mostly below the LLOQ there; its
+  average is then driven by the replacement values, so look at the measured values only (the
+  exported statistics and report 4.6.1 use measured values only).
+
+## 4.7 QC samples in acquisition order
+
+```{r}
+#| label: figure-4-7
+d <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), lst), function(x) {
+  se <- util$extract_ctrl_smpl_cat(x$concn, "QC")
+  if (!fid %in% rownames(se) || ncol(se) == 0) return(NULL)
+  se <- se[rownames(se) == fid, ]
+  cd <- SumExp::col_df(se)
+  tibble::tibble(sample_name = cd$sample_name, Class = as.character(cd$Class), batch_id = as.character(cd$batch_id),
+                 injection_order = cd$injection_order, conc = unname(se[["conc"]][1, ]), lloq = SumExp::row_df(se)$lloq,
+                 flag = if ("conc_flag" %in% names(se)) as.character(se[["conc_flag"]][1, ]) else NA_character_)
+}))
+d$kind <- show$imputed_kind(d$conc, d$lloq)
+show$plotly_qc_conc(d, name = rd[fid, "feature_name"],
+                    y_title = paste0("Concentration [", SumExp::metadata(batch$concn)$concentration_unit, "]"))
+```
+
+The compound in the QC samples of **all batches** along the injection order (each batch quantified
+with its own calibration), a line per QC group. Open points are values replaced by the LOD/LLOQ
+rules.
+
+**How to read it**
+
+- **A flat line per QC group** means the whole procedure (normalization, blank subtraction,
+  calibration) gives the same concentration from the start to the end of the run.
+- **A step between batches** points to a batch effect in the calibration (e.g. a calibration
+  curve of one batch that differs from the others); compare the batches' curves in 4.4.
+- **A drift within a batch** that normalization did not remove points to a compound that its
+  internal standard does not follow well (see 3.8).

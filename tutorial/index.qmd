@@ -3,9 +3,9 @@ title: "QuaNTA tutorial"
 ---
 
 QuaNTA (Quantitative & Nontargeted Analysis) turns an MS-DIAL alignment file into quality-checked,
-normalized and calibrated data, with reports and exported tables. This tutorial walks through the
-app's results one figure at a time: what each figure shows, how to read it, and what to do when
-something looks wrong.
+normalized and calibrated data, with reports and exported tables. This tutorial walks through how
+to structure your data, upload your data and how to interpret the app's results one figure at a time:
+what each figure shows, how to read it, and what to do when something looks wrong.
 
 All figures here are made by QuaNTA itself from the synthetic example dataset in
 [`example_data/`](https://github.com/Exposomics-SciLifeLab/QuaNTA/tree/main/example_data), processed
@@ -17,7 +17,7 @@ zoom (double-click to zoom out).
 
 1. Open QuaNTA on [SciLifeLab Serve](https://serve.scilifelab.se), or run it locally (see the
    [README](https://github.com/Exposomics-SciLifeLab/QuaNTA#readme)).
-2. Upload `QuaNTA_example_ESIpos.zip` from `example_data/` and click **Read data file**, then
+2. Upload `QuaNTA_example_ESIpos.zip` and `example_params.yml` from `example_data/` and click **Read data file**, then
    **Process data**.
 3. Follow the chapters in the menu; each names the section of the app it explains (e.g. *4.5*).
 

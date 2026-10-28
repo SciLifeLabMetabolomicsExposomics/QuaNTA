@@ -1,0 +1,137 @@
+---
+title: "Calibration limits (4.1–4.3)"
+---
+
+```{r}
+#| label: setup
+source("_prepare.R")
+box::use(show = projlib/show, util = projlib/msdial_utils)
+tr <- tut$to_report
+best <- tr[["best normalization"]]
+mat_id <- util$mat_id_of_blank_subtracted(best)
+lst <- tut$proc[[mat_id]]
+b1 <- names(lst)[1]
+batch <- lst[[b1]]
+```
+
+Page 4 of the app, **Calibration and quantification**, turns the signals of the targeted compounds
+into concentrations. At the top you choose the **normalization method** (the best one,
+`r tut$method_labels[[best]]`, is preselected) and the **batch**; the tables and figures follow. The
+examples below show batch `r b1`.
+
+How a calibration curve is made, in short:
+
+1. The **zero calibrant** (`Cal0`) gives two signal thresholds: 3× and 10× its mean signal (or its
+   mean plus 3 and 10 standard deviations).
+2. The **LOD** is the lowest calibration level whose mean signal is above the first threshold, the
+   **LLOQ** the lowest above the second (and, with the RSD% option, with an RSD% of at most 20%).
+3. The curve is fitted from the LLOQ upwards: linear or quadratic, weighted 1, 1/x or 1/x², the
+   combination with the highest R².
+4. The **ULOQ** is the top of the curve's linear range (see 4.2 and the next chapter).
+
+## 4.1 Calibration curve samples
+
+```{r}
+#| label: table-4-1
+v <- util$spiked_conc_pts(batch$calcurve)
+tut_table(as.data.frame(table(v[!is.na(v)]), check.names = FALSE) |>
+            stats::setNames(c("Concentration", "Number of samples")), height = "300px")
+```
+
+The number of calibration samples per concentration level in the chosen batch: the replicates the
+curve of this batch is fitted on.
+
+## 4.2 Calibration curve limits
+
+```{r}
+#| label: table-4-2
+rd <- SumExp::row_df(batch$calcurve)
+concn <- batch$concn
+rd_q <- SumExp::row_df(concn)
+study <- util$extract_ctrl_smpl_cat(concn, "")
+sig <- study[[util$src_mat_id_for_conc(concn)]]
+detected <- rowSums(sig >= rd_q$lod_signal, na.rm = TRUE) > 0
+detection <- dplyr::case_when(
+  !(rd_q$has_proper_range %in% TRUE) ~ "",
+  !detected ~ "Not detected in any study sample",
+  !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
+  TRUE ~ ""
+)
+notes <- show$calib_notes_html(util$calib_notes(rd, batch_view = TRUE, detection = detection))
+t42 <- tibble::tibble(
+  Chemical = rd$feature_name,
+  Calibration = dplyr::coalesce(rd$src_calcurve, "None"),
+  LOD = rd$lod, LLOQ = rd$lloq,
+  `Maximum conc.` = ifelse(rd$has_proper_range %in% TRUE, rd$max_c_conc, NA),
+  ULOQ = ifelse(rd$has_proper_range %in% TRUE, signif(rd$uloq, 4), NA),
+  Notes = notes,
+  state = dplyr::case_when(!(rd$has_proper_range %in% TRUE) ~ "bad", rd$kept_calcurve %in% TRUE ~ "kept",
+                           rd$src_calcurve %in% "Global" ~ "global", TRUE ~ "")
+)
+# Removed before calibration (blank filter / QC RSD% filter): at the end, as in the app
+rem <- tr[["removed features"]]
+rem <- rem[rem$mat_id == best & rem$targeted, ]
+if (nrow(rem) > 0) {
+  t42 <- dplyr::bind_rows(t42, tibble::tibble(
+    Chemical = rem$feature_name, Calibration = "None",
+    Notes = show$calib_notes_html(tibble::tibble(removed = paste0(
+      "Removed: ", ifelse(rem$reason == "QC RSD%", "QC RSD% above the limit", "blank filter")))),
+    state = "removed"))
+}
+DT::datatable(t42, rownames = FALSE, selection = "none", escape = setdiff(names(t42), "Notes"),
+              caption = htmltools::HTML(show$calib_notes_legend_html()),
+              options = list(dom = "ft", paging = FALSE, scrollX = TRUE, scrollY = "420px", scrollCollapse = TRUE,
+                             columnDefs = list(list(targets = ncol(t42) - 1, visible = FALSE)))) |>
+  DT::formatStyle("state", target = "row",
+                  backgroundColor = DT::styleEqual(c("bad", "kept", "global", "removed"),
+                                                   c("lightcoral", "#FFD9A0", "lightblue", "#D9D9D9")))
+```
+
+One row per targeted compound with its limits in the chosen batch. In the app, **select a row**
+(or step with the arrow keys ↑ / ↓) to show that compound in figures 4.4–4.7.
+
+**How to read it**
+
+- **Calibration**: the curve used for the compound in this batch: the batch's own (*Batch*), the
+  curve of all batches together (*Global*, blue rows), or none (red rows).
+- **LOD and LLOQ** are calibration levels; values below them are replaced or reported as
+  *n.d.* / *n.q.* (see 4.6).
+- **Maximum conc.** is the highest level the curve is fitted on; the **ULOQ** is the top of its
+  linear range. They differ when the top levels bend away from the line and the curve was not cut
+  there (option *Enforce linear range*). A quadratic curve has no ULOQ.
+- **Notes** show an icon per kind of note; **hover an icon** for the full text:
+
+```{r}
+#| label: table-note-icons
+#| results: asis
+cats <- util$calib_note_categories
+meaning <- c(
+  notvalid = "No valid curve: e.g. too few levels above the LLOQ, no signal, or R² below the minimum. The row is red.",
+  kept = "Kept although not valid (option *Keep all calibration curves*). The row is orange.",
+  global = "The batch's own curve is not valid, or the batch has too few replicates: the global curve is used.",
+  uloq = "Linear range: levels above the ULOQ, which were cut off or are above the linear range.",
+  detection = "Detection in the samples: not detected in any study sample, or detected but below the LLOQ (not exported).",
+  removed = "Removed before calibration by the blank filter or the QC RSD% filter. The row is grey."
+)
+# The app's icon of each category (without the hidden text the tables carry for searching)
+icon <- vapply(names(cats), function(k) {
+  sub('<span style="display:none">.*$', "", show$calib_notes_html(tibble::tibble(!!k := cats[[k]]), size = 20))
+}, "")
+cat(paste0("  - ", icon, " **", cats, "**: ", meaning[names(cats)], collapse = "\n"), "\n")
+```
+
+The exported tables have the same notes in full, as text.
+
+## 4.3 Chemicals with concentrations
+
+```{r}
+#| label: table-4-3
+tut_table(purrr::map_dfr(lst, function(x) {
+  se <- x$concn[SumExp::row_df(x$concn)$has_proper_range %in% TRUE, ]
+  tibble::tibble(`Number of chemicals` = sum(rowSums(!is.na(se[["conc"]])) > 0))
+}, .id = "Batch"), height = "200px")
+```
+
+The number of compounds per batch with a valid calibration curve **and** concentrations in the
+samples. Compounds without any study sample at or above the LLOQ are not quantified and not
+exported.

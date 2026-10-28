@@ -1,0 +1,154 @@
+---
+title: "Normalization, filters and blanks (3.8–3.11)"
+---
+
+```{r}
+#| label: setup
+source("_prepare.R")
+box::use(show = projlib/show, util = projlib/msdial_utils)
+library(ggplot2)
+raw <- tut$raw
+tr <- tut$to_report
+norm_se <- tr[["normalized"]]
+best <- tr[["best normalization"]]
+names_tbl <- SumExp::row_df(raw) |> tibble::rownames_to_column("feature_id") |> dplyr::select(feature_id, feature_name)
+```
+
+QuaNTA normalizes the peak areas with the internal standards in three ways and keeps all of them:
+
+- **Closest RT**: each feature divided by the internal standard closest in retention time;
+- **LOESS**: a smooth trend of the internal standards along the injection order, removed from
+  every feature;
+- **Multivariate (PCA)**: the main pattern shared by all internal standards, removed from every
+  feature.
+
+The method with the **lowest median RSD% among the QC replicates** is chosen as the default (here
+`r tut$method_labels[[best]]`); you can choose another one on pages 4 and 5. After normalization, the
+blanks are compared with the samples (blank filter) and subtracted.
+
+```{r}
+#| label: table-median-rsd
+rsd <- tr[["median RSD% per normalization"]]
+tut_table(tibble::tibble(Method = unname(tut$method_labels[names(rsd)]), `Median QC RSD%` = round(unname(rsd), 2),
+                         Chosen = ifelse(names(rsd) == best, "✓", "")), height = "220px")
+```
+
+## 3.8 Comparison of normalization methods
+
+```{r}
+#| label: figure-3-8
+#| fig-height: 5.5
+prep <- show$qc_rsd_by_method(norm_se)
+labs <- prep$labs
+df <- prep$df |> dplyr::left_join(names_tbl, by = "feature_id")
+rsd_txt <- apply(as.matrix(df[unname(labs)]), 1, function(v) {
+  paste0(names(labs), ": ", ifelse(is.na(v), "NA (all 0s)", paste0(round(v, 1), "%")), collapse = "<br>")
+})
+df_long <- df |>
+  dplyr::mutate(txt = paste0("<b>", feature_name, "</b> (", QC, ")<br>", rsd_txt,
+                             "<br>Lowest: ", sub("^\\S+ ", "", as.character(sign)))) |>
+  tidyr::pivot_longer(dplyr::all_of(unname(labs)), names_to = "Data", values_to = "RSD") |>
+  dplyr::mutate(RSD = ifelse(is.na(RSD), 0, RSD), Data = factor(Data, levels = unname(labs), labels = names(labs)))
+p <- ggplot(df_long, aes(x = Data, y = RSD, group = feature_id, color = sign, text = txt)) +
+  geom_line(alpha = 0.5) + geom_point(size = 1, alpha = 0.6) +
+  scale_color_manual(values = show$norm_sign_colors, drop = FALSE) +
+  facet_wrap(~QC) + labs(x = NULL, y = "RSD%", color = "Lowest RSD%")
+plotly::ggplotly(p, tooltip = "text") |>
+  plotly::layout(legend = list(title = list(text = "Lowest RSD%<br>(click to filter)")))
+```
+
+Each line is one targeted compound in one QC group: its RSD% among the QC replicates without
+normalization (Raw) and with each method. The colour is the method that gave that compound its
+lowest RSD%.
+
+**How to read it**
+
+- **Lines going down** from Raw mean that normalization made the QC replicates more alike, as it
+  should.
+- **The colours** show which method works best for most compounds; the overall choice is the
+  median in the table above.
+- **Lines going up** are compounds that the internal standards do not represent well (e.g. a
+  very different retention time or chemistry).
+
+## 3.9 RSD% values
+
+```{r}
+#| label: table-3-9
+t39 <- df |> dplyr::select(QC, Feature = feature_name, dplyr::all_of(unname(labs))) |>
+  dplyr::rename(dplyr::all_of(labs)) |> dplyr::mutate(QC = factor(QC))
+tut_table(t39, search = TRUE) |> DT::formatRound(names(labs), 2)
+```
+
+The RSD% of 3.8 as a table: per compound, QC group and method. Filter by QC group or search a
+compound in the boxes above the columns.
+
+## 3.10 Removed features
+
+```{r}
+#| label: table-3-10
+rem <- tr[["removed features"]]
+rem <- rem[rem$mat_id == best, ]
+std <- SumExp::row_df(raw)$.std_type[match(rem$feature_id, rownames(raw))]
+t310 <- tibble::tibble(
+  Feature = rem$feature_name,
+  Type = dplyr::case_when(rem$targeted ~ "Targeted", std %in% "vIS" ~ "Volumetric IS", TRUE ~ "Non-targeted"),
+  `Removed by` = ifelse(rem$reason == "QC RSD%", "QC RSD%", paste0("Blank filter (≤ ", tr[["blank_filter_factor"]], "× blank)")),
+  `QC RSD%` = round(rem$qc_rsd, 1)
+) |> dplyr::arrange(Type != "Targeted", Feature)
+tut_table(t310, height = "300px",
+          caption = paste0(nrow(t310), " removed features (", sum(t310$Type == "Targeted"), " targeted, ",
+                           sum(t310$Type == "Non-targeted"), " non-targeted)"))
+```
+
+The features removed for the chosen normalization method (here `r tut$method_labels[[best]]`) and
+why:
+
+- **Blank filter**: a feature is removed unless its maximum or average signal in the samples is
+  more than `r tr[["blank_filter_factor"]]` × its average signal in the blanks; it is mostly
+  contamination.
+- **QC RSD% filter** (optional, off in this example): a feature is removed when its RSD% among the
+  QC replicates is above the limit; it is measured too imprecisely.
+
+Removed targeted compounds are not calibrated; they appear at the end of table 4.2.
+
+## 3.11 Blanks compared to samples
+
+```{r}
+#| label: figure-3-11
+removed_blank <- rem$feature_id[rem$reason == "Blank filter" & rem$targeted]
+tgt <- rownames(norm_se)[util$is_targeted_feature(norm_se)]
+kept <- setdiff(tgt, rem$feature_id)
+cd <- SumExp::col_df(norm_se)
+keep <- cd$.ctrl_cat != "CalCurve"
+smp <- tibble::as_tibble(cd[keep, ]) |> dplyr::mutate(group = show$sample_group(cd[keep, ]))
+blank_plot <- function(fid, removed) {
+  show$plotly_blank_comparison(
+    y = unname(norm_se[[best]][fid, keep]), smp = smp, name = names_tbl$feature_name[match(fid, names_tbl$feature_id)],
+    factor = tr[["blank_filter_factor"]], view = "groups", y_title = paste(tut$method_labels[[best]], "normalized"),
+    subtitle = if (removed) "<span style='color:#c23636'><b>Removed by the blank filter</b></span>" else
+      "<span style='color:#2E9E5B'><b>Kept by the blank filter</b></span>"
+  )
+}
+if (length(removed_blank) > 0) blank_plot(removed_blank[1], TRUE)
+```
+
+```{r}
+#| label: figure-3-11-kept
+blank_plot(kept[1], FALSE)
+```
+
+One feature at a time: its normalized signal in the blanks (red) next to the QCs and the study
+samples, before blank filtering and subtraction. The bars are the group means with their standard
+deviation, the points the samples; the dashed line is the threshold of the blank filter
+(`r tr[["blank_filter_factor"]]` × the blank mean). The first plot shows a compound the blank filter
+removed, the second one it kept. In the app, choose *Per sample* for one bar per injection, and
+step through the features with the arrow keys ↑ / ↓.
+
+**How to read it**
+
+- **Samples far above the threshold**: the compound is clearly measured; the blank level is
+  subtracted.
+- **Samples at the level of the blanks**: what is measured is mainly contamination from the
+  procedure, and the feature is removed.
+- **High blanks in one batch only** point to a contamination in that batch; blank subtraction is
+  done per batch.

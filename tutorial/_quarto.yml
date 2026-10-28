@@ -14,13 +14,29 @@ website:
     search: true
     contents:
       - index.qmd
-      - section: "Calibration and quantification"
+      - section: "1 Input data and processing"
         contents:
+          - data-and-upload.qmd
+      - section: "2 Data overview"
+        contents:
+          - data-overview.qmd
+      - section: "3 Quality control and normalization"
+        contents:
+          - internal-standards.qmd
+          - normalization-and-blanks.qmd
+      - section: "4 Calibration and quantification"
+        contents:
+          - calibration-limits.qmd
           - calibration-curves.qmd
+          - concentrations.qmd
+      - section: "5 Report export"
+        contents:
+          - reports-and-exports.qmd
 
 format:
   html:
     theme: cosmo
+    css: styles.css
     toc: true
     mainfont: Lato, 'Segoe UI', sans-serif
 

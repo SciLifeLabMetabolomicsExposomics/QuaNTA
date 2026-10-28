@@ -1,0 +1,5 @@
+/* The figures of QuaNTA set their own height (e.g. 480 px): the box of the figure takes it, so
+   that the figure gets no scroll bars (Quarto's default box height is smaller) */
+.cell-output-display > .plotly.html-widget {
+  height: auto !important;
+}
