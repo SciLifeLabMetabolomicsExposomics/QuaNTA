@@ -1,2 +1,4 @@
 /.quarto/
+# Quarto's temporary copy of _freeze/site_libs/ while it renders or previews
+/site_libs/
 **/*.quarto_ipynb
