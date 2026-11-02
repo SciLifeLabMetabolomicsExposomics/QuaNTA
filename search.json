@@ -7,7 +7,7 @@
     "text": "Page 5 of the app, Report export, gives you the results to keep: two reports and the tables of the data. Everything on this page uses one final normalization method.",
     "crumbs": [
       "5 Report export",
-      "Reports and exported tables (page 5)"
+      "Reports and exported tables"
     ]
   },
   {
@@ -18,7 +18,7 @@
     "text": "Final normalization method\nChoose the method first; the buttons stay greyed out until you do. Best is the method with the lowest median RSD% among the QC replicates (here Multivariate (PCA)), and each option shows its median RSD%:\n\n\n\n\n\n\nChoose another method when, for example, 3.8 shows that it works clearly better for the compounds you are most interested in.",
     "crumbs": [
       "5 Report export",
-      "Reports and exported tables (page 5)"
+      "Reports and exported tables"
     ]
   },
   {
@@ -29,7 +29,7 @@
     "text": "Reports\n\n\n\n\n\n\n\n\nButton\nReport\nFor\n\n\n\n\nQC/QA report (html)\nthe internal report: all quality-control steps, tables and interactive figures, as on pages 2–4 of the app\nchecking and documenting the processing\n\n\nSummary report (pdf)\nthe external report: the project, the methods and the results in a few pages\nsharing the results\n\n\n\nA progress bar shows how far the report is; the HTML report is shown in the app when it is ready, and Download HTML Report saves it. The reports name the settings that were used, so they document the processing.",
     "crumbs": [
       "5 Report export",
-      "Reports and exported tables (page 5)"
+      "Reports and exported tables"
     ]
   },
   {
@@ -37,10 +37,21 @@
     "href": "reports-and-exports.html#exported-tables",
     "title": "Reports and exported tables (page 5)",
     "section": "Exported tables",
-    "text": "Exported tables\nExport data into tables writes four Excel files for the final method (and each of their sheets as a .csv file), ready to download:\n\n\n\n\n\n\n\nFile\nContent\n\n\n\n\n….norm.xlsx\nnormalized peak areas of all features (also non-targeted)\n\n\n….norm_blk.xlsx\nthe same after blank subtraction\n\n\n….conc.xlsx\nconcentrations of the targeted compounds: QCs, study samples and blanks\n\n\n….conc_all.xlsx\nthe same with all samples, including the calibration samples\n\n\n\nThis is the start of a batch sheet of the concentration table of the example (QuaNTA_example_ESIpos.mvis.conc.xlsx), the feature columns first and then the samples:\n\n\n\n\n\n\nHow to read it\n\nSheets: Full has one row per compound over all batches (average and median of the measured values, the curve used per batch); then one sheet per batch with its limits, statistics, model and Notes, the full text of the note icons of table 4.2.\nStatistics (minimum, maximum, average, median) use the measured values of the study samples only: values replaced by the LOD/LLOQ rules are left out.\nColoured cells in the sample columns are values that were replaced or are above the ULOQ; the last sheet, Legend, explains the colours:\n\n\n\n\n\n\n\n\n\n\n\n\n\nTipReuse the processing\n\n\n\nSave the settings with Download settings (.yml) on page 1. Loading the file later, in the app or with run_quanta.R on the command line, processes new data the same way.",
+    "text": "Exported tables\nExport data into tables writes five Excel files for the final method (and each of their sheets as a .csv file), ready to download:\n\n\n\nFile\nContent\n\n\n\n\n….norm.xlsx\nnormalized peak areas of all features (also non-targeted)\n\n\n….norm_blk.xlsx\nthe same after blank subtraction\n\n\n….conc.xlsx\nconcentrations of the targeted compounds: QCs, study samples and blanks\n\n\n….conc_all.xlsx\nthe same with all samples, including the calibration samples\n\n\n….history.xlsx\nwhat the processing did with each feature and sample (see Processing history)\n\n\n\nThis is the start of a batch sheet of the concentration table of the example (QuaNTA_example_ESIpos.mvis.conc.xlsx), the feature columns first and then the samples:\n\n\n\n\n\n\nHow to read it\n\nSheets: Full has one row per compound over all batches (average and median of the measured values, the curve used per batch); then one sheet per batch with its limits, statistics, model and Notes, the full text of the note icons of table 4.2.\nStatistics (minimum, maximum, average, median) use the measured values of the study samples only: values replaced by the LOD/LLOQ rules are left out.\nColoured cells in the sample columns are values that were replaced or are above the ULOQ; the last sheet, Legend, explains the colours:",
     "crumbs": [
       "5 Report export",
-      "Reports and exported tables (page 5)"
+      "Reports and exported tables"
+    ]
+  },
+  {
+    "objectID": "reports-and-exports.html#processing-history",
+    "href": "reports-and-exports.html#processing-history",
+    "title": "Reports and exported tables (page 5)",
+    "section": "Processing history",
+    "text": "Processing history\nSome steps of the processing cannot always be done the usual way, for example a batch without blank samples or a compound without a valid calibration curve in its batch. QuaNTA then uses a fallback (e.g. the blank of all batches, or the global curve) and logs it, as it logs every feature and sample it removes. The same log is shown in three places:\n\nIn the app, page 1, the tab Processing history next to the processing log: the fallbacks and removals of each step, and the full feature and sample tables in a popup.\nIn the internal report, section 1.1, the tabs Feature flow (where the features ended), Fallbacks and removals, Feature history and Sample history.\nIn the exported tables, the file ….history.xlsx (each sheet also as a .csv file).\n\nThe feature history of the example (QuaNTA_example_ESIpos.mvis.history.xlsx), a few targeted compounds:\n\n\n\n\n\n\nHow to read it\n\nOne row per feature of the input file, also those removed on the way, with its Status: where it ended (e.g. Quantified, Kept, Removed (blank filter)).\nA column per step, in the order of the processing: what the step did with the feature (Passed, Removed and why, Not applied). Empty: the step does not concern the feature, or it was removed before.\nCalibration, batch N: the curve used in each batch, its own or the global one, or why the compound was not quantified there.\nThe sheet Sample history does the same for the samples (outliers, vIS correction, replaced IS zeros, the blank subtracted, the calibration of their batch), and Events lists every logged event, with its kind: removed, fallback, changed (a value replaced) or note.\n\n\n\n\n\n\n\nTipReuse the processing\n\n\n\nSave the settings with Download settings (.yml) on page 1. Loading the file later, in the app or with run_quanta.R on the command line, processes new data the same way.",
+    "crumbs": [
+      "5 Report export",
+      "Reports and exported tables"
     ]
   },
   {
@@ -59,7 +70,7 @@
     "href": "internal-standards.html#internal-standards",
     "title": "Internal standards and outliers (3.1–3.7)",
     "section": "3.1 Internal standards",
-    "text": "3.1 Internal standards\n\n\n\n\n\n\nAll internal standards with their retention time, m/z, the RSD% of their raw peak areas over all samples, and the number of samples where they were not found (zero). Failed IS are red. In the app, select a row (or use the arrow keys ↑ / ↓) to show that IS in 3.4 and 3.5.\nHow to read it\n\nA low RSD% (e.g. below 20–30%) means the IS was measured consistently; a high RSD% points to drift, matrix effects or injection problems, which normalization should correct.\nZero values are samples where the IS was not found.",
+    "text": "3.1 Internal standards\nAll internal standards with their retention time, m/z, the RSD% of their raw peak areas over all samples, and the number of samples where they were not found (zero). Failed IS are red. In the app, select a row (or use the arrow keys ↑ / ↓) to show that IS in 3.4 and 3.5.\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nA low RSD% (e.g. below 20–30%) means the IS was measured consistently; a high RSD% points to drift, matrix effects or injection problems, which normalization should correct.\nZero values are samples where the IS was not found.",
     "crumbs": [
       "3 Quality control and normalization",
       "Internal standards and outliers (3.1–3.7)"
@@ -70,7 +81,7 @@
     "href": "internal-standards.html#failed-internal-standards",
     "title": "Internal standards and outliers (3.1–3.7)",
     "section": "3.2 Failed internal standards",
-    "text": "3.2 Failed internal standards\n\n\n\n\n\n\nAn IS fails when more than 10% of the samples have a zero value: it cannot be trusted to normalize the others. Failed IS are removed before normalization. Here 2 of 22 internal standards failed.",
+    "text": "3.2 Failed internal standards\nAn IS fails when more than 10% of the samples have a zero value: it cannot be trusted to normalize the others. Failed IS are removed before normalization. Here 2 of 22 internal standards failed.",
     "crumbs": [
       "3 Quality control and normalization",
       "Internal standards and outliers (3.1–3.7)"
@@ -81,7 +92,7 @@
     "href": "internal-standards.html#outlier-samples",
     "title": "Internal standards and outliers (3.1–3.7)",
     "section": "3.3 Outlier samples",
-    "text": "3.3 Outlier samples\n\n\n\n\n\n\nA sample is an outlier when more than 20% of the internal standards deviate by more than 3 standard deviations from their mean (in log scale): something went wrong with the whole sample, e.g. a wrong injection volume. Outlier samples are removed before normalization (4 here). With the processing option Non-calibration samples only, calibration samples are never removed.",
+    "text": "3.3 Outlier samples\nA sample is an outlier when more than 20% of the internal standards deviate by more than 3 standard deviations from their mean (in log scale): something went wrong with the whole sample, e.g. a wrong injection volume. Outlier samples are removed before normalization (4 here). With the processing option Non-calibration samples only, calibration samples are never removed.\n\n\n\n\n\n\n\n\n\n\n\n\nNoteInternal standards not found in a sample\n\n\n\nThe mean and SD of each IS are taken from its non-zero values, and a zero (the IS was not found in that sample) counts as an outlying IS: a sample that misses many IS is an outlier. After the outlier check, the remaining zeros of the IS are replaced, for the normalization only, by the mean of that IS in the same file type (Sample, QC, Standard or Blank), or by its mean in all samples when it has no value in that file type. The processing history lists every replaced zero.",
     "crumbs": [
       "3 Quality control and normalization",
       "Internal standards and outliers (3.1–3.7)"
@@ -92,7 +103,7 @@
     "href": "internal-standards.html#raw-rsd-of-the-selected-is",
     "title": "Internal standards and outliers (3.1–3.7)",
     "section": "3.4 Raw RSD% of the selected IS",
-    "text": "3.4 Raw RSD% of the selected IS\n\n\n\n\n\n\nThe RSD% of the raw peak areas of one IS (here Cotinine-13C-d3_IS) within each QC group and each sample class, with the number of samples. The QC groups are replicates of the same material, so their RSD% shows the technical variation alone.",
+    "text": "3.4 Raw RSD% of the selected IS\nThe RSD% of the raw peak areas of one IS (here Cotinine-13C-d3_IS) within each QC group and each sample class, with the number of samples. The QC groups are replicates of the same material, so their RSD% shows the technical variation alone.",
     "crumbs": [
       "3 Quality control and normalization",
       "Internal standards and outliers (3.1–3.7)"
@@ -103,7 +114,7 @@
     "href": "internal-standards.html#distribution-of-the-selected-is",
     "title": "Internal standards and outliers (3.1–3.7)",
     "section": "3.5 Distribution of the selected IS",
-    "text": "3.5 Distribution of the selected IS\n\n\n\n\n\n\nThe raw peak areas of the selected IS by sample group (left) and along the injection order (right). Outlier samples are drawn as crosses.\nHow to read it\n\nThe boxes should be at the same height in all groups: the IS was added in the same amount everywhere. A group clearly higher or lower suggests a matrix effect in that group.\nAlong the injection order, the points should form a flat band. A slope or a jump (e.g. at a new batch) is instrument drift, which the normalization corrects.",
+    "text": "3.5 Distribution of the selected IS\nThe raw peak areas of the selected IS by sample group (left) and along the injection order (right). Outlier samples are drawn as crosses.\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nThe boxes should be at the same height in all groups: the IS was added in the same amount everywhere. A group clearly higher or lower suggests a matrix effect in that group.\nAlong the injection order, the points should form a flat band. A slope or a jump (e.g. at a new batch) is instrument drift, which the normalization corrects.",
     "crumbs": [
       "3 Quality control and normalization",
       "Internal standards and outliers (3.1–3.7)"
@@ -114,7 +125,7 @@
     "href": "internal-standards.html#volumetric-internal-standard",
     "title": "Internal standards and outliers (3.1–3.7)",
     "section": "3.6 Volumetric internal standard",
-    "text": "3.6 Volumetric internal standard\n\n\n\n\n\n\n\n\n\n\n\n\nThe volumetric IS (vIS) is added to the final extract just before injection; its peak area shows how constant the injected volume was. The bars are its raw peak area in each sample along the injection order; the table gives its RSD% within groups of samples.\nHow to read it\n\nA flat row of bars and a low RSD% mean a constant volume. Single low bars are samples with less volume (or a failed injection); the processing option Pre-normalize by the volumetric IS corrects for this.",
+    "text": "3.6 Volumetric internal standard\nThe volumetric IS (vIS) is added to the final extract just before injection; its peak area shows how constant the injected volume was. The bars are its raw peak area in each sample along the injection order; the table gives its RSD% within groups of samples.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nA flat row of bars and a low RSD% mean a constant volume. Single low bars are samples with less volume (or a failed injection); the processing option Pre-normalize by the volumetric IS corrects for this.",
     "crumbs": [
       "3 Quality control and normalization",
       "Internal standards and outliers (3.1–3.7)"
@@ -125,7 +136,7 @@
     "href": "internal-standards.html#internal-standards-over-the-sequence",
     "title": "Internal standards and outliers (3.1–3.7)",
     "section": "3.7 Internal standards over the sequence",
-    "text": "3.7 Internal standards over the sequence\n\n\n\n\n\n\n\n\n\n\nThe peak areas of all (non-failed) internal standards per sample along the injection order, stacked, with a LOESS trend of their total. The app has two panels to compare: here the raw values (top) and after the best normalization, Multivariate (PCA) (bottom).\nHow to read it\n\nRaw: the height of the stacks follows the instrument response; a trend in the LOESS line is drift over the run.\nNormalized: the stacks should become even and the trend flat. If they do not, the normalization did not correct the drift well; compare the methods in 3.8.",
+    "text": "3.7 Internal standards over the sequence\nThe peak areas of all (non-failed) internal standards per sample along the injection order, stacked, with a LOESS trend of their total. The app has two panels to compare: here the raw values (top) and after the best normalization, Multivariate (PCA) (bottom).\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nRaw: the height of the stacks follows the instrument response; a trend in the LOESS line is drift over the run.\nNormalized: the stacks should become even and the trend flat. If they do not, the normalization did not correct the drift well; compare the methods in 3.8.",
     "crumbs": [
       "3 Quality control and normalization",
       "Internal standards and outliers (3.1–3.7)"
@@ -134,78 +145,71 @@
   {
     "objectID": "data-overview.html",
     "href": "data-overview.html",
-    "title": "Data overview (2.1–2.6)",
+    "title": "2. Data overview",
     "section": "",
-    "text": "Page 2 of the app, Data overview, appears as soon as the file is read: what is in the data, before any processing. Use it to check that QuaNTA understood the file as you meant it — the sample categories, the calibration levels and the feature types — before you click Process data.",
+    "text": "Data overview is available as the file is read and gives an overview of what is in the data. Can be used to double check that the data was formatted by the app according to your wishes.",
     "crumbs": [
-      "2 Data overview",
-      "Data overview (2.1–2.6)"
+      "2 Data overview"
     ]
   },
   {
     "objectID": "data-overview.html#samples-by-category",
     "href": "data-overview.html#samples-by-category",
-    "title": "Data overview (2.1–2.6)",
+    "title": "2. Data overview",
     "section": "2.1 Samples by category",
-    "text": "2.1 Samples by category\n\n\n\n\n\n\nEvery sample by its category (from the File type row) and class. The calibration samples are counted together here; their levels are in 2.2.\nHow to read it\n\nCheck the categories: blanks, calibration samples (CalCurve), QCs and study samples (Sample). A QC counted as a study sample, or a blank missing, means a wrong File type in the file.\nQC classes are the QC materials; at least two replicates of a class are needed for the RSD% in 3.8 and for choosing the best normalization.",
+    "text": "2.1 Samples by category\nEvery sample by its category (from the File type row) and class. The calibration samples are counted together here; their levels are in 2.2.\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nCheck the categories: blanks, calibration samples (CalCurve), QCs and study samples (Sample). A QC counted as a study sample, or a blank missing, means a wrong File type in the file.\nQC classes are the QC materials; at least two replicates of a class are needed for the RSD% in 3.8 and for choosing the best normalization.",
     "crumbs": [
-      "2 Data overview",
-      "Data overview (2.1–2.6)"
+      "2 Data overview"
     ]
   },
   {
     "objectID": "data-overview.html#calibration-levels",
     "href": "data-overview.html#calibration-levels",
-    "title": "Data overview (2.1–2.6)",
+    "title": "2. Data overview",
     "section": "2.2 Calibration levels",
-    "text": "2.2 Calibration levels\n\n\n\n\n\n\nThe number of calibration samples per concentration level (read from the names, e.g. Cal0-5 = 0.5), per batch and in total.\nHow to read it\n\nEvery level should have replicates in every batch. The LOD/LLOQ method mean + SD needs at least two zero calibrants (Cal0), and the RSD% option at least two replicates of each level; a batch without them uses the curve of all batches together.\nA level missing in one batch shortens that batch’s curve.",
+    "text": "2.2 Calibration levels\nThe number of calibration samples per concentration level (read from the names, e.g. Cal0-5 = 0.5), per batch and in total.\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nDouble-check replicates if they exist in every batch. The LOD/LLOQ method mean + SD needs at least two zero calibrants (Cal0), and the RSD% option at least two replicates of each level; a batch without them uses the curve of all batches together.\nA level missing in one batch shortens that batch’s curve.",
     "crumbs": [
-      "2 Data overview",
-      "Data overview (2.1–2.6)"
+      "2 Data overview"
     ]
   },
   {
     "objectID": "data-overview.html#classes-of-analytes",
     "href": "data-overview.html#classes-of-analytes",
-    "title": "Data overview (2.1–2.6)",
+    "title": "2. Data overview",
     "section": "2.3 Classes of analytes",
-    "text": "2.3 Classes of analytes\n\n\n\n\n\n\nThe features by their Comment: targeted compounds (Quant), internal standards (IS), the volumetric internal standard (vIS) and non-targeted features. (The app lists Quant\\… and IS\\… with their class names; they are counted together here.)",
+    "text": "2.3 Classes of analytes\nThe features by their Comment: targeted compounds (Quant), internal standards (IS), the volumetric internal standard (vIS) and non-targeted features. (The app lists Quant\\… and IS\\… with their class names; they are counted together here.)",
     "crumbs": [
-      "2 Data overview",
-      "Data overview (2.1–2.6)"
+      "2 Data overview"
     ]
   },
   {
     "objectID": "data-overview.html#features-by-mz-and-retention-time",
     "href": "data-overview.html#features-by-mz-and-retention-time",
-    "title": "Data overview (2.1–2.6)",
+    "title": "2. Data overview",
     "section": "2.4 Features by m/z and retention time",
-    "text": "2.4 Features by m/z and retention time\n\n\n\n\n\n\nEvery feature at its retention time and m/z. After processing, the targeted compounds are coloured by their outcome: Quantified (green), Valid curve, not found in samples (orange), No valid calibration (red), or Removed by the blank filter or the QC RSD% filter (crosses). The internal standards are black diamonds, the volumetric IS a blue one; the non-targeted features (grey) can be switched on in the legend.\nHow to read it\n\nClusters of compounds that were not quantified in one region (e.g. early retention times) point to a chromatographic or matrix problem there.\nInternal standards should cover the retention-time range of the targeted compounds: the Closest RT normalization uses the nearest one.",
+    "text": "2.4 Features by m/z and retention time\nEvery feature at its retention time and m/z. After processing, the targeted compounds are coloured by their outcome: Quantified (green), Valid curve, not found in samples (orange), No valid calibration (red), or Removed by the blank filter or the QC RSD% filter (crosses). The internal standards are black diamonds, the volumetric IS a blue one; the non-targeted features (grey) can be switched on in the legend.\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nClusters of compounds that were not quantified in one region (e.g. early retention times) point to a chromatographic or matrix problem there.\nInternal standards should cover the retention-time range of the targeted compounds: the Closest RT normalization uses the nearest one.",
     "crumbs": [
-      "2 Data overview",
-      "Data overview (2.1–2.6)"
+      "2 Data overview"
     ]
   },
   {
     "objectID": "data-overview.html#distribution-of-mz",
     "href": "data-overview.html#distribution-of-mz",
-    "title": "Data overview (2.1–2.6)",
+    "title": "2. Data overview",
     "section": "2.5 Distribution of m/z",
-    "text": "2.5 Distribution of m/z\n\n\n\n\n\n\nThe number of features per m/z, in bins of 0.5. Hover over a bar for its range; drag to zoom.",
+    "text": "2.5 Distribution of m/z\nThe number of features per m/z, in bins of 0.5. Hover over a bar for its range; drag to zoom.",
     "crumbs": [
-      "2 Data overview",
-      "Data overview (2.1–2.6)"
+      "2 Data overview"
     ]
   },
   {
     "objectID": "data-overview.html#distribution-of-intensities",
     "href": "data-overview.html#distribution-of-intensities",
-    "title": "Data overview (2.1–2.6)",
+    "title": "2. Data overview",
     "section": "2.6 Distribution of intensities",
-    "text": "2.6 Distribution of intensities\n\n\n\n\n\n\nAll raw peak areas of all features and samples: in linear scale (left) and in log scale (right, positive values only). The note tells how many values are zero or missing.\nHow to read it\n\nThe log panel shows the dynamic range of the data; most peak areas usually span several orders of magnitude.\nMany zeros are normal for non-targeted features (not found in every sample), but a large share of zeros in the internal standards fails them (see 3.2).",
+    "text": "2.6 Distribution of intensities\nAll raw peak areas of all features and samples: in linear scale (left) and in log scale (right, positive values only). The note tells how many values are zero or missing.\n\n\n\n\n\n\n\n\n\n\n\n\nTip\n\n\n\n\nThe log panel shows the dynamic range of the data; most peak areas usually span several orders of magnitude.\nMany zeros are normal for non-targeted features (not found in every sample), but a large share of zeros in the internal standards fails them (see 3.2).",
     "crumbs": [
-      "2 Data overview",
-      "Data overview (2.1–2.6)"
+      "2 Data overview"
     ]
   },
   {
@@ -321,45 +325,41 @@
   {
     "objectID": "data-and-upload.html",
     "href": "data-and-upload.html",
-    "title": "Your data and its processing (page 1)",
+    "title": "1. Input data and processing",
     "section": "",
-    "text": "Page 1 of the app, Input data and processing, is where everything starts: you describe the project, upload the MS-DIAL file, read it and process it. This chapter shows how the file must be structured, what QuaNTA checks when it reads it, and what the processing settings do.",
+    "text": "The start page of QuaNTA where metadata is provided, data is uploaded, read and processed using the settings provided by the user. All settings and metadata can be saved as a parameters file for ease of reprocessing with new settings or same settings for new data.",
     "crumbs": [
-      "1 Input data and processing",
-      "Your data and its processing (page 1)"
+      "1 Input data and processing"
     ]
   },
   {
-    "objectID": "data-and-upload.html#the-data-file",
-    "href": "data-and-upload.html#the-data-file",
-    "title": "Your data and its processing (page 1)",
-    "section": "The data file",
-    "text": "The data file\nQuaNTA reads the alignment result exported from MS-DIAL (Export → Alignment result, peak areas) as a tab-delimited .txt file. Upload it as it is, or compressed as .zip or .gz with that one file inside.\nThe file has two parts: four rows of sample information at the top, and below them one row per feature (a compound or an unknown peak) with its peak area in every sample. This is the top-left corner of the example file:\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nClass\nBlk\nC0\nC0-005\nC0-01\n\n\n\n\n\n\n\nFile type\nBlank\nStandard\nStandard\nStandard\n\n\n\n\n\n\n\nInjection order\n1\n2\n3\n4\n\n\n\n\n\n\n\nBatch ID\n1\n1\n1\n1\n\n\nAlignment ID\nAverage Rt(min)\nAverage Mz\nMetabolite name\nComment\nMS/MS spectrum\nPROCBLK3_B1_1\nCal0_E_B1_2\nCal0-005_E_B1_3\nCal0-01_E_B1_4\n\n\n16572\n13.016\n219.17401\n(+)-Nootkatone\nQuant\n\n2698760\n0\n419457\n749115\n\n\n5569\n9.437\n136.02139\n1,3-benzothiazole\nQuant\n\n2713850\n131522\n0\n0\n\n\n19717\n8.393\n240.14929\n1,3-Di-o-tolylguanidine\nQuant\n\n1685925\n0\n0\n384821\n\n\n15351\n7.449\n212.11803\n1,3-Diphenylguanidine\nQuant\n\n100897380\n1928345\n2064414\n2317076\n\n\n\n\n\n\nThe four sample rows (shaded) describe each sample column:\n\n\n\n\n\n\n\n\nRow\nContent\nIn QuaNTA\n\n\n\n\nClass\nthe group of the sample, e.g. Healthy, QC1, C0-5\nthe groups in figures and statistics\n\n\nFile type\nSample, QC, Standard or Blank\nstudy sample, QC, calibration sample or (method) blank\n\n\nInjection order\na number\nthe order along the run (drift, figures over the sequence)\n\n\nBatch ID\na number\nblank subtraction and calibration per batch\n\n\n\nThe feature columns QuaNTA needs (exact names): Alignment ID, Average Rt(min), Average Mz, Metabolite name and Comment. Other columns are ignored.\n\nNaming conventions\nThe Comment column tells QuaNTA what each feature is:\n\n\n\n\n\n\n\nComment\nMeaning\n\n\n\n\nQuant\na targeted compound, quantified with a calibration curve\n\n\nQuant\\&lt;class&gt;\na targeted compound with a compound class after the backslash, e.g. Quant\\ATZ\n\n\nIS\nan isotope-labelled internal standard\n\n\nIS\\&lt;class&gt;\nan internal standard with a compound class, e.g. IS\\ATZ\n\n\nvIS\nthe volumetric internal standard (added to check and correct the volume)\n\n\nR\nremoved from the data when it is read\n\n\nempty or anything else\na non-targeted feature\n\n\n\nThe calibration samples (File type = Standard) carry their concentration in the sample name, after Cal, with a dash for the decimal point: Cal0 (the zero calibrant), Cal0-005 (0.005), Cal0-5 (0.5), Cal10 (10). QC samples with the same Class are replicates of one QC material; several QC materials (e.g. QC-low, QC-high) are possible.\nThe example file has 196 targeted compounds, 22 internal standards, 1 volumetric internal standard and 1000 non-targeted features, measured in 299 samples in 3 batches.\n\n\n\n\n\n\nWarningCheck before uploading\n\n\n\nWhen you click Process data, QuaNTA lists Comment values that do not follow the conventions (e.g. quant, IS-ATZ) and column names that look like the required ones but are not exact (e.g. Comment2). Values that look like Quant or IS are shown in red: they would be treated as non-targeted. Fix them in MS-DIAL or in the file and upload again.",
+    "objectID": "data-and-upload.html#file-structure",
+    "href": "data-and-upload.html#file-structure",
+    "title": "1. Input data and processing",
+    "section": "File structure",
+    "text": "File structure\nQuaNTA reads a .txt file formatted according to the MS-DIAL alignment result output format. Upload it as it is, or compressed as .zip or .gz.\nThe file has two parts: four rows of sample information at the top, and below them one row of headers above all feature (a compound or an unknown peak) rows with its peak area in every sample. This is the top-left corner of the example file:\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nClass\nBlk\nC0\nC0-005\nC0-01\n\n\n\n\n\n\n\nFile type\nBlank\nStandard\nStandard\nStandard\n\n\n\n\n\n\n\nInjection order\n1\n2\n3\n4\n\n\n\n\n\n\n\nBatch ID\n1\n1\n1\n1\n\n\nAlignment ID\nAverage Rt(min)\nAverage Mz\nMetabolite name\nComment\nMS/MS spectrum\nPROCBLK3_B1_1\nCal0_E_B1_2\nCal0-005_E_B1_3\nCal0-01_E_B1_4\n\n\n16572\n13.016\n219.17401\n(+)-Nootkatone\nQuant\n\n2698760\n0\n419457\n749115\n\n\n5569\n9.437\n136.02139\n1,3-benzothiazole\nQuant\n\n2713850\n131522\n0\n0\n\n\n19717\n8.393\n240.14929\n1,3-Di-o-tolylguanidine\nQuant\n\n1685925\n0\n0\n384821\n\n\n15351\n7.449\n212.11803\n1,3-Diphenylguanidine\nQuant\n\n100897380\n1928345\n2064414\n2317076\n\n\n\n\n\n\n\n\nThe four sample rows\nThe four sample rows (shaded above) describe each sample column:\n\n\n\n\n\n\n\n\nRow\nContent\nIn QuaNTA\n\n\n\n\nClass\nthe group of the sample, e.g. Healthy, QC1, C0-5\nthe groups in figures and statistics\n\n\nFile type\nSample, QC, Standard or Blank\nstudy sample, QC, calibration sample or method blank\n\n\nInjection order\na number\nthe order along the sequence (drift, figures over the sequence)\n\n\nBatch ID\na number\nblank subtraction and calibration per batch\n\n\n\n\n\nThe feature columns\nQuaNTA needs these feature columns (exact names): Alignment ID, Average Rt(min), Average Mz, Metabolite name and Comment. Other columns are ignored.\n\n\nNaming conventions\nThe Comment column tells QuaNTA what each feature is:\n\n\n\n\n\n\n\nComment\nMeaning\n\n\n\n\nQuant\na targeted compound, quantified with a calibration curve\n\n\nQuant\\&lt;class&gt;\na targeted compound with a compound class after the backslash, e.g. Quant\\ATZ\n\n\nIS\nan isotope-labelled internal standard\n\n\nIS\\&lt;class&gt;\nan internal standard with a compound class, e.g. IS\\ATZ\n\n\nvIS\nthe volumetric internal standard (added to check and correct the volume)\n\n\nR\nremoved from the data when it is read\n\n\nempty or anything else\na non-targeted feature\n\n\n\nThe calibration samples (File type = Standard) carry their concentration in the sample name, after Cal, with a dash for the decimal point: Cal0 (the zero calibrant), Cal0-005 (0.005), Cal0-5 (0.5), Cal10 (10). QC samples with the same Class are replicates of one QC material; several QC materials (e.g. QC-low, QC-high) are possible.\n\n\nExample dataset\nThe example dataset provided with the QuaNTA app is completely synthetic and has 196 targeted compounds, 22 internal standards, 1 volumetric internal standard and 1000 non-targeted features, measured in 299 samples in 3 batches.\n\n\n\n\n\n\nWarningCheck before uploading\n\n\n\nWhen you click Process data, QuaNTA lists Comment values that do not follow the conventions (e.g. quant, IS-ATZ) and column names that look like the required ones but are not exact (e.g. Comment2). Values that look like Quant or IS are shown in red: they would be treated as non-targeted. Fix them in MS-DIAL or in the file and upload again.",
     "crumbs": [
-      "1 Input data and processing",
-      "Your data and its processing (page 1)"
+      "1 Input data and processing"
     ]
   },
   {
     "objectID": "data-and-upload.html#uploading-and-reading",
     "href": "data-and-upload.html#uploading-and-reading",
-    "title": "Your data and its processing (page 1)",
+    "title": "1. Input data and processing",
     "section": "Uploading and reading",
-    "text": "Uploading and reading\n\nFill in the project information (title, user, unit of the concentrations). It goes into the reports.\nOptionally load a parameters file (.yml) saved earlier with Download settings; the example has example_data/QuaNTA_example_parameters.yml. Loading one replaces all settings and removes the results of a previous run (QuaNTA asks first).\nUpload the data file and click Read data file. The Data reading log on the right shows what was read; page 2 then shows an overview of the data.",
+    "text": "Uploading and reading\nThe initial page has 3 sections: Input and metadata, reading and processing data and logs\n\n\n\nStarting page of app when opened.\n\n\n\nUpload file, read and process\n\nIf the user has previously saved a parameters file it contains metadata, processing settings and which dataset was uploaded at the time of saving it.\nOtherwise, fill in metadata (optional), choose a .txt, .zip or .gz (containing a .txt file) by clicking “Browse” in lower left corner\nChoose whether to process batch-wise or globally and read file by clicking “Read data file”. Section 2 is now viewable.\n\n\n\n\nExample parameters file and data loaded and read.",
     "crumbs": [
-      "1 Input data and processing",
-      "Your data and its processing (page 1)"
+      "1 Input data and processing"
     ]
   },
   {
     "objectID": "data-and-upload.html#processing-settings",
     "href": "data-and-upload.html#processing-settings",
-    "title": "Your data and its processing (page 1)",
+    "title": "1. Input data and processing",
     "section": "Processing settings",
-    "text": "Processing settings\nThe settings are grouped as in the app. Hover the ⓘ next to each in the app for the full explanation; options that the data cannot support (e.g. a volumetric IS option without a vIS) are greyed out.\n\n\n\n\n\n\nClick Process data to run all steps. Before it starts, a popup lists anything worth checking: settings that were corrected (e.g. a number outside its range), Comment values and column names that do not follow the conventions, and notes on the data (e.g. no targeted compounds, or batches that will use the global calibration curve). The Processing log shows the progress; when it is done, pages 3 and 4 show the results.\n\n\n\n\n\n\nTipSave your settings\n\n\n\nDownload settings (.yml) saves the project information and all settings, with the name of the dataset. Load the file later to process the same way, or use it with the command-line version (run_quanta.R).",
+    "text": "Processing settings\nThe settings are grouped as in the app. Hover the ⓘ next to each in the app for the full explanation; options that the data cannot support (e.g. a volumetric IS option without a vIS) are greyed out.\n\n\n\n\n\n\n\n\nProcessing data\n\nHaving chosen your processing settings click Process data. A popup will warn you of any problems detected in the raw data.\n\n\n\n\nThe popup before processing, with a note on the columns of the example file.\n\n\n\nClick Proceed to start. The Processing log on the right shows the progress; when it ends with “Finished.”, pages 3 and 4 show the results.\n\n\n\n\nProcessing finished: the processing log on the right.\n\n\n\n\n\n\n\n\nTipSave your settings\n\n\n\nDownload settings (.yml) saves metadata, processing settings and the name of the dataset.",
     "crumbs": [
-      "1 Input data and processing",
-      "Your data and its processing (page 1)"
+      "1 Input data and processing"
     ]
   },
   {

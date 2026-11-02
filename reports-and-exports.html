@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Reports and exported tables (page 5) – QuaNTA tutorial</title>
+<title>Reports and exported tables (page 5) – Introduction</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -40,7 +40,7 @@ ul.task-list li input[type="checkbox"] {
 <link href="site_libs/quarto-html/quarto-syntax-highlighting-7b89279ff1a6dce999919e0e67d4d9ec.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-d00a7c9cc2cf5d29686512c5a0e26890.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-d7064cd301301ce313693ac0caf77a9e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -83,7 +83,7 @@ ul.task-list li input[type="checkbox"] {
 <link rel="stylesheet" href="styles.css">
 </head>
 
-<body class="nav-sidebar docked quarto-light">
+<body class="nav-sidebar docked fullcontent quarto-light">
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
@@ -92,7 +92,7 @@ ul.task-list li input[type="checkbox"] {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./reports-and-exports.html">5 Report export</a></li><li class="breadcrumb-item"><a href="./reports-and-exports.html">Reports and exported tables (page 5)</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./reports-and-exports.html">5 Report export</a></li><li class="breadcrumb-item"><a href="./reports-and-exports.html">Reports and exported tables</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
       <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
@@ -124,105 +124,338 @@ ul.task-list li input[type="checkbox"] {
 </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+            <a href="./data-and-upload.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">1 Input data and processing</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="./data-and-upload.html#file-structure" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">File structure</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./data-and-upload.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Your data and its processing (page 1)</span></a>
+  <a href="./data-and-upload.html#the-four-sample-rows" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The four sample rows</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-and-upload.html#the-feature-columns" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The feature columns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-and-upload.html#naming-conventions" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Naming conventions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-and-upload.html#example-dataset" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Example dataset</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-and-upload.html#uploading-and-reading" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Uploading and reading</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-and-upload.html#processing-settings" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Processing settings</span></a>
   </div>
 </li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+            <a href="./data-overview.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">2 Data overview</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./data-overview.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Data overview (2.1–2.6)</span></a>
+  <a href="./data-overview.html#samples-by-category" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">2.1 Samples by category</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-overview.html#calibration-levels" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">2.2 Calibration levels</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-overview.html#classes-of-analytes" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">2.3 Classes of analytes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-overview.html#features-by-mz-and-retention-time" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">2.4 Features by m/z and RT</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-overview.html#distribution-of-mz" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">2.5 Distribution of m/z</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data-overview.html#distribution-of-intensities" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">2.6 Distribution of intensities</span></a>
   </div>
 </li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
  <span class="menu-text">3 Quality control and normalization</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="./internal-standards.html" class="sidebar-item-text sidebar-link">
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="./internal-standards.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Internal standards and outliers (3.1–3.7)</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./internal-standards.html#internal-standards" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.1 Internal standards</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./normalization-and-blanks.html" class="sidebar-item-text sidebar-link">
+  <a href="./internal-standards.html#failed-internal-standards" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.2 Failed internal standards</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./internal-standards.html#outlier-samples" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.3 Outlier samples</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./internal-standards.html#raw-rsd-of-the-selected-is" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.4 Raw RSD% of the selected IS</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./internal-standards.html#distribution-of-the-selected-is" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.5 Distribution of the selected IS</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./internal-standards.html#volumetric-internal-standard" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.6 Volumetric internal standard</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./internal-standards.html#internal-standards-over-the-sequence" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.7 IS over the sequence</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="./normalization-and-blanks.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Normalization, filters and blanks (3.8–3.11)</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./normalization-and-blanks.html#comparison-of-normalization-methods" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.8 Normalization methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./normalization-and-blanks.html#rsd-values" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.9 RSD% values</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./normalization-and-blanks.html#removed-features" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.10 Removed features</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./normalization-and-blanks.html#blanks-compared-to-samples" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">3.11 Blanks compared to samples</span></a>
   </div>
 </li>
       </ul>
   </li>
+      </ul>
+  </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
  <span class="menu-text">4 Calibration and quantification</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
-  <a href="./calibration-limits.html" class="sidebar-item-text sidebar-link">
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="./calibration-limits.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Calibration limits (4.1–4.3)</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./calibration-limits.html#calibration-curve-samples" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">4.1 Calibration curve samples</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./calibration-curves.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Calibration curves (4.4 and 4.5)</span></a>
+  <a href="./calibration-limits.html#calibration-curve-limits" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">4.2 Calibration curve limits</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./concentrations.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Concentrations (4.6 and 4.7)</span></a>
+  <a href="./calibration-limits.html#chemicals-with-concentrations" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">4.3 Chemicals with concentrations</span></a>
   </div>
 </li>
       </ul>
   </li>
-        <li class="sidebar-item sidebar-item-section">
+          <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
- <span class="menu-text">5 Report export</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <a href="./calibration-curves.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Calibration curves (4.4 and 4.5)</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
           </a> 
       </div>
-      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./reports-and-exports.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">Reports and exported tables (page 5)</span></a>
+  <a href="./calibration-curves.html#the-calibration-points" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">4.4 The calibration points</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./calibration-curves.html#the-samples-on-the-curve" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">4.5 The samples on the curve</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="./concentrations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Concentrations (4.6 and 4.7)</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./concentrations.html#concentration-per-class" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">4.6 Concentration per class</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./concentrations.html#qc-samples-in-acquisition-order" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">4.7 QC samples in acquisition order</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true">
+ <span class="menu-text">5 Report export</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="./reports-and-exports.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Reports and exported tables</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./reports-and-exports.html#final-normalization-method" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Final normalization method</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./reports-and-exports.html#reports" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reports</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./reports-and-exports.html#exported-tables" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exported tables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./reports-and-exports.html#processing-history" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Processing history</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
       </ul>
   </li>
     </ul>
@@ -230,21 +463,11 @@ ul.task-list li input[type="checkbox"] {
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc" class="toc-active">
-    <h2 id="toc-title">On this page</h2>
-   
-  <ul>
-  <li><a href="#final-normalization-method" id="toc-final-normalization-method" class="nav-link active" data-scroll-target="#final-normalization-method">Final normalization method</a></li>
-  <li><a href="#reports" id="toc-reports" class="nav-link" data-scroll-target="#reports">Reports</a></li>
-  <li><a href="#exported-tables" id="toc-exported-tables" class="nav-link" data-scroll-target="#exported-tables">Exported tables</a></li>
-  </ul>
-<div class="toc-actions"><ul><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/blob/main/tutorial/reports-and-exports.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
-    </div>
+    
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./reports-and-exports.html">5 Report export</a></li><li class="breadcrumb-item"><a href="./reports-and-exports.html">Reports and exported tables (page 5)</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./reports-and-exports.html">5 Report export</a></li><li class="breadcrumb-item"><a href="./reports-and-exports.html">Reports and exported tables</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">Reports and exported tables (page 5)</h1>
 </div>
@@ -269,8 +492,8 @@ ul.task-list li input[type="checkbox"] {
 <p>Choose the method first; the buttons stay greyed out until you do. <strong>Best</strong> is the method with the lowest median RSD% among the QC replicates (here Multivariate (PCA)), and each option shows its median RSD%:</p>
 <div class="cell">
 <div class="cell-output-display">
-<div class="datatables html-widget html-fill-item" id="htmlwidget-4cfe03db36de0f63b081" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-4cfe03db36de0f63b081">{"x":{"filter":"none","vertical":false,"data":[["Best: Multivariate (PCA)","Without normalization","LOESS","Closest RT","Multivariate (PCA)"],[26.5,31.5,27.8,28.6,26.5]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>Option<\/th>\n      <th>Median RSD%<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"t","paging":false,"scrollX":true,"scrollY":"240px","scrollCollapse":true,"columnDefs":[{"className":"dt-center","targets":"_all"},{"name":"Option","targets":0},{"name":"Median RSD%","targets":1}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
+<div class="datatables html-widget html-fill-item" id="htmlwidget-e0137ccbc361240e7f3c" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-e0137ccbc361240e7f3c">{"x":{"filter":"none","vertical":false,"data":[["Best: Multivariate (PCA)","Without normalization","LOESS","Closest RT","Multivariate (PCA)"],[26.5,31.5,27.8,28.6,26.5]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>Option<\/th>\n      <th>Median RSD%<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"t","paging":false,"scrollX":true,"scrollY":"240px","scrollCollapse":true,"columnDefs":[{"className":"dt-center","targets":"_all"},{"name":"Option","targets":0},{"name":"Median RSD%","targets":1}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
 </div>
 </div>
 <p>Choose another method when, for example, 3.8 shows that it works clearly better for the compounds you are most interested in.</p>
@@ -307,12 +530,8 @@ ul.task-list li input[type="checkbox"] {
 </section>
 <section id="exported-tables" class="level2">
 <h2 class="anchored" data-anchor-id="exported-tables">Exported tables</h2>
-<p><strong>Export data into tables</strong> writes four Excel files for the final method (and each of their sheets as a <code>.csv</code> file), ready to download:</p>
+<p><strong>Export data into tables</strong> writes five Excel files for the final method (and each of their sheets as a <code>.csv</code> file), ready to download:</p>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>File</th>
@@ -336,13 +555,17 @@ ul.task-list li input[type="checkbox"] {
 <td><code>….conc_all.xlsx</code></td>
 <td>the same with all samples, including the calibration samples</td>
 </tr>
+<tr class="odd">
+<td><code>….history.xlsx</code></td>
+<td>what the processing did with each feature and sample (see <a href="#processing-history">Processing history</a>)</td>
+</tr>
 </tbody>
 </table>
 <p>This is the start of a batch sheet of the concentration table of the example (QuaNTA_example_ESIpos.mvis.conc.xlsx), the feature columns first and then the samples:</p>
 <div class="cell">
 <div class="cell-output-display">
-<div class="datatables html-widget html-fill-item" id="htmlwidget-ba43d1f1f92f9cbd71dc" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-ba43d1f1f92f9cbd71dc">{"x":{"filter":"none","vertical":false,"data":[["(+)-Nootkatone","1-Methyl-1H-benzotriazole","1,3-benzothiazole","1,3-Di-o-tolylguanidine","1,3-Diphenylguanidine","1H-Benzotriazole","3'-Hydroxycotinine","Acetylcarnitine","Aminocaproic acid","Arnicolide C","Asymmetric dimethylarginine","Atenolol","Atorvastatin","Atrazine","Atrazine desethyl","Atrazine desethyl-2-hydroxy","Atrazine desisopropyl","Benodanil","Benzoic acid","Benzoylecgonine","Betaine","Bioallethrin","Bis(1,3-dichloro-2-propyl) Phosphate","Butocarboxim","Butyrylcarnitine"],["0.005","0.1","0.5","0.01","0.05","0.2","0.02","0.005","2","0.5","0.02","0.01","0.02","0.01","0.1","0.05","0.05","0.02","0.1","0.01","0.01","0.2","5","0.5","0.01"],["0.02","1","5","0.02","0.2","0.5","0.2","0.02","10","5","0.2","0.02","0.05","0.02","1","0.05","0.5","0.02","0.5","0.02","0.05","0.5","5","5","0.05"],["50","50","50",null,"50","50","50",null,"50","50","50","50","50","50","50","50","50","50","50",null,"50","50","50","50","50"],["0.785","1.061","5.724","3.101","1.262","0.619","2.735","0.444","10.168","5.75","4.402","2.073","0.084","0.032","1.069","0.139","0.688","0.02","5.384","0.082","4.481","0.564","5.095","5.099","2.549"],["7.579","2.969","35.513","18.761","23.383","8.373","31.032","6.172","21.601","12.97","15.588","350.733","3.4","0.639","14.248","4.4","42.557","0.665","32.642","2.072","21.592","4.806","45.972","53.624","15.793"],["4.508","2.069","16.903","8.51","8.711","3.245","10.11","2.25","17.368","7.513","7.857","18.298","0.594","0.136","4.163","2.529","7.16","0.098","14.466","0.568","11.802","3.041","22.804","15.538","6.976"],["4.618","2.069","14.739","7.661","7.98","3.14","7.479","2.074","18.853","6.468","7.335","7.727","0.41","0.101","2.912","3.048","4.024","0.06","13.251","0.375","10.828","3.46","19.579","9.425","6.842"],["0.946","0.933","0.902","0.918","0.945","0.94","0.972","0.994","0.923","0.912","0.987","0.934","0.907","0.939","0.928","0.917","0.931","0.923","0.917","0.928","0.999","0.883","0.917","0.951","0.996"],["linear-1","linear-1","linear-1/x","quadratic-1/x","linear-1","linear-1","linear-1","quadratic-1/x","linear-1/x","linear-1/x2","linear-1/x","linear-1","linear-1/x","linear-1/x","linear-1/x","linear-1","linear-1/x","linear-1/x","linear-1","quadratic-1/x","linear-1","linear-1/x","linear-1/x","linear-1/x","linear-1"],["Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch"],["","","","","","","","","","","","","","","","","","","","","","","","",""],["0.01","0.5","10.793","0.01","0.2","0.25","0.1","0.005","5","2.5","0.05","0.02","0.025","0.01","0.25","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"],["0.02","0.5","11.432","0.01","0.887","0.25","0.1","0.005","5","2.5","0.05","0.02","0.025","0.01","0.25","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"],["0.02","0.5","10.057","0.01","0.2","0.25","0.1","0.005","73.55","2.5","0.05","0.02","0.025","0.01","0.25","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"],["0.02","0.5","14.063","0.01","0.1","0.25","0.1","0.005","5","2.5","0.05","0.02","0.025","0.01","0.5","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>Chemical<\/th>\n      <th>LOD<\/th>\n      <th>LLOQ<\/th>\n      <th>ULOQ<\/th>\n      <th>Min Conc.<\/th>\n      <th>Max Conc.<\/th>\n      <th>Avg. Conc.<\/th>\n      <th>Median Conc.<\/th>\n      <th>R2<\/th>\n      <th>Model<\/th>\n      <th>Calibration<\/th>\n      <th>Notes<\/th>\n      <th>PROCBLK2_B1_43<\/th>\n      <th>PROCBLK4_B1_70<\/th>\n      <th>PROCBLK4_B1_84<\/th>\n      <th>PROCBLK2_B1_99<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"t","paging":false,"scrollX":true,"scrollY":"380px","scrollCollapse":true,"columnDefs":[{"className":"dt-center","targets":"_all"},{"name":"Chemical","targets":0},{"name":"LOD","targets":1},{"name":"LLOQ","targets":2},{"name":"ULOQ","targets":3},{"name":"Min Conc.","targets":4},{"name":"Max Conc.","targets":5},{"name":"Avg. Conc.","targets":6},{"name":"Median Conc.","targets":7},{"name":"R2","targets":8},{"name":"Model","targets":9},{"name":"Calibration","targets":10},{"name":"Notes","targets":11},{"name":"PROCBLK2_B1_43","targets":12},{"name":"PROCBLK4_B1_70","targets":13},{"name":"PROCBLK4_B1_84","targets":14},{"name":"PROCBLK2_B1_99","targets":15}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
+<div class="datatables html-widget html-fill-item" id="htmlwidget-389e848f40f4e6c28eab" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-389e848f40f4e6c28eab">{"x":{"filter":"none","vertical":false,"data":[["(+)-Nootkatone","1-Methyl-1H-benzotriazole","1,3-benzothiazole","1,3-Di-o-tolylguanidine","1,3-Diphenylguanidine","1H-Benzotriazole","3'-Hydroxycotinine","Acetylcarnitine","Aminocaproic acid","Arnicolide C","Asymmetric dimethylarginine","Atenolol","Atorvastatin","Atrazine","Atrazine desethyl","Atrazine desethyl-2-hydroxy","Atrazine desisopropyl","Benodanil","Benzoic acid","Benzoylecgonine","Betaine","Bioallethrin","Bis(1,3-dichloro-2-propyl) Phosphate","Butocarboxim","Butyrylcarnitine"],["0.005","0.1","0.5","0.01","0.05","0.2","0.02","0.005","2","0.5","0.02","0.01","0.02","0.01","0.1","0.05","0.05","0.02","0.1","0.01","0.01","0.2","5","0.5","0.01"],["0.02","1","5","0.02","0.2","0.5","0.2","0.02","10","5","0.2","0.02","0.05","0.02","1","0.05","0.5","0.02","0.5","0.02","0.05","0.5","5","5","0.05"],["50","50","50",null,"50","50","50",null,"50","50","50","50","50","50","50","50","50","50","50",null,"50","50","50","50","50"],["0.785","1.061","5.724","3.101","1.262","0.619","2.735","0.444","10.168","5.75","4.402","2.073","0.084","0.032","1.069","0.139","0.688","0.02","5.384","0.082","4.481","0.564","5.095","5.099","2.549"],["7.579","2.969","35.513","18.761","23.383","8.373","31.032","6.172","21.601","12.97","15.588","350.733","3.4","0.639","14.248","4.4","42.557","0.665","32.642","2.072","21.592","4.806","45.972","53.624","15.793"],["4.508","2.069","16.903","8.51","8.711","3.245","10.11","2.25","17.368","7.513","7.857","18.298","0.594","0.136","4.163","2.529","7.16","0.098","14.466","0.568","11.802","3.041","22.804","15.538","6.976"],["4.618","2.069","14.739","7.661","7.98","3.14","7.479","2.074","18.853","6.468","7.335","7.727","0.41","0.101","2.912","3.048","4.024","0.06","13.251","0.375","10.828","3.46","19.579","9.425","6.842"],["0.946","0.933","0.902","0.918","0.945","0.94","0.972","0.994","0.923","0.912","0.987","0.934","0.907","0.939","0.928","0.917","0.931","0.923","0.917","0.928","0.999","0.883","0.917","0.951","0.996"],["linear-1","linear-1","linear-1/x","quadratic-1/x","linear-1","linear-1","linear-1","quadratic-1/x","linear-1/x","linear-1/x2","linear-1/x","linear-1","linear-1/x","linear-1/x","linear-1/x","linear-1","linear-1/x","linear-1/x","linear-1","quadratic-1/x","linear-1","linear-1/x","linear-1/x","linear-1/x","linear-1"],["Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch","Batch"],["","","","","","","","","","","","","","","","","","","","","","","","",""],["0.01","0.5","10.793","0.01","0.2","0.25","0.1","0.005","5","2.5","0.05","0.02","0.025","0.01","0.25","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"],["0.02","0.5","11.432","0.01","0.887","0.25","0.1","0.005","5","2.5","0.05","0.02","0.025","0.01","0.25","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"],["0.02","0.5","10.057","0.01","0.2","0.25","0.1","0.005","73.55","2.5","0.05","0.02","0.025","0.01","0.25","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"],["0.02","0.5","14.063","0.01","0.1","0.25","0.1","0.005","5","2.5","0.05","0.02","0.025","0.01","0.5","0.025","0.25","0.01","0.25","0.01","0.013","0.25","2.5","2.5","0.013"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>Chemical<\/th>\n      <th>LOD<\/th>\n      <th>LLOQ<\/th>\n      <th>ULOQ<\/th>\n      <th>Min Conc.<\/th>\n      <th>Max Conc.<\/th>\n      <th>Avg. Conc.<\/th>\n      <th>Median Conc.<\/th>\n      <th>R2<\/th>\n      <th>Model<\/th>\n      <th>Calibration<\/th>\n      <th>Notes<\/th>\n      <th>PROCBLK2_B1_43<\/th>\n      <th>PROCBLK4_B1_70<\/th>\n      <th>PROCBLK4_B1_84<\/th>\n      <th>PROCBLK2_B1_99<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"t","paging":false,"scrollX":true,"scrollY":"380px","scrollCollapse":true,"columnDefs":[{"className":"dt-center","targets":"_all"},{"name":"Chemical","targets":0},{"name":"LOD","targets":1},{"name":"LLOQ","targets":2},{"name":"ULOQ","targets":3},{"name":"Min Conc.","targets":4},{"name":"Max Conc.","targets":5},{"name":"Avg. Conc.","targets":6},{"name":"Median Conc.","targets":7},{"name":"R2","targets":8},{"name":"Model","targets":9},{"name":"Calibration","targets":10},{"name":"Notes","targets":11},{"name":"PROCBLK2_B1_43","targets":12},{"name":"PROCBLK4_B1_70","targets":13},{"name":"PROCBLK4_B1_84","targets":14},{"name":"PROCBLK2_B1_99","targets":15}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
 </div>
 </div>
 <p><strong>How to read it</strong></p>
@@ -353,10 +576,33 @@ ul.task-list li input[type="checkbox"] {
 </ul>
 <div class="cell">
 <div class="cell-output-display">
-<div class="datatables html-widget html-fill-item" id="htmlwidget-e9e7a0e1f5d135c9a71b" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-e9e7a0e1f5d135c9a71b">{"x":{"filter":"none","vertical":false,"data":[["","","","",""],["Not detected (signal below the LOD signal): replaced by LLOQ/4","Detected, not quantified (signal from the LOD signal to below the mean signal of the LLOQ level): replaced by LLOQ/2","Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ","Above the ULOQ (the top of the linear range), within the curve (not replaced)","Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>Colour<\/th>\n      <th>Meaning<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"t","paging":false,"ordering":false,"columnDefs":[{"name":"Colour","targets":0},{"name":"Meaning","targets":1}],"order":[],"autoWidth":false,"orderClasses":false,"rowCallback":"function(row, data, displayNum, displayIndex, dataIndex) {\nvar value=data[0]; $(this.api().cell(row, 0).node()).css({'background-color':$.inArray(dataIndex + 1, [1]) >= 0 ? \"#FAAFAF\" : $.inArray(dataIndex + 1, [2]) >= 0 ? \"#FCEACF\" : $.inArray(dataIndex + 1, [3]) >= 0 ? \"#D3EBF2\" : $.inArray(dataIndex + 1, [4]) >= 0 ? \"#E3E0B8\" : $.inArray(dataIndex + 1, [5]) >= 0 ? \"#A8A05A\" : null});\n}"}},"evals":["options.rowCallback"],"jsHooks":[]}</script>
+<div class="datatables html-widget html-fill-item" id="htmlwidget-1e6bb15fbb9398dab746" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-1e6bb15fbb9398dab746">{"x":{"filter":"none","vertical":false,"data":[["","","","",""],["Not detected (signal below the LOD signal): replaced by LLOQ/4","Detected, not quantified (signal from the LOD signal to below the mean signal of the LLOQ level): replaced by LLOQ/2","Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ","Above the ULOQ (the top of the linear range), within the curve (not replaced)","Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>Colour<\/th>\n      <th>Meaning<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"t","paging":false,"ordering":false,"columnDefs":[{"name":"Colour","targets":0},{"name":"Meaning","targets":1}],"order":[],"autoWidth":false,"orderClasses":false,"rowCallback":"function(row, data, displayNum, displayIndex, dataIndex) {\nvar value=data[0]; $(this.api().cell(row, 0).node()).css({'background-color':$.inArray(dataIndex + 1, [1]) >= 0 ? \"#FAAFAF\" : $.inArray(dataIndex + 1, [2]) >= 0 ? \"#FCEACF\" : $.inArray(dataIndex + 1, [3]) >= 0 ? \"#D3EBF2\" : $.inArray(dataIndex + 1, [4]) >= 0 ? \"#E3E0B8\" : $.inArray(dataIndex + 1, [5]) >= 0 ? \"#A8A05A\" : null});\n}"}},"evals":["options.rowCallback"],"jsHooks":[]}</script>
 </div>
 </div>
+</section>
+<section id="processing-history" class="level2">
+<h2 class="anchored" data-anchor-id="processing-history">Processing history</h2>
+<p>Some steps of the processing cannot always be done the usual way, for example a batch without blank samples or a compound without a valid calibration curve in its batch. QuaNTA then uses a <strong>fallback</strong> (e.g.&nbsp;the blank of all batches, or the global curve) and logs it, as it logs every feature and sample it removes. The same log is shown in three places:</p>
+<ul>
+<li><strong>In the app</strong>, page 1, the tab <em>Processing history</em> next to the processing log: the fallbacks and removals of each step, and the full feature and sample tables in a popup.</li>
+<li><strong>In the internal report</strong>, section 1.1, the tabs <em>Feature flow</em> (where the features ended), <em>Fallbacks and removals</em>, <em>Feature history</em> and <em>Sample history</em>.</li>
+<li><strong>In the exported tables</strong>, the file <code>….history.xlsx</code> (each sheet also as a <code>.csv</code> file).</li>
+</ul>
+<p>The feature history of the example (QuaNTA_example_ESIpos.mvis.history.xlsx), a few targeted compounds:</p>
+<div class="cell">
+<div class="cell-output-display">
+<div class="datatables html-widget html-fill-item" id="htmlwidget-bf8e99110476232610a8" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-bf8e99110476232610a8">{"x":{"filter":"none","vertical":false,"data":[["(+)-Nootkatone","1,3-benzothiazole","1,3-Di-o-tolylguanidine","1,3-Diphenylguanidine","1H-Benzimidazole","1H-Benzotriazole","1-Methyl-1H-benzotriazole","2-Hydroxybenzimidazole","3'-Hydroxycotinine","4- &amp; 5-Methyl-1H-benzotriazole","4-(Methylnitrosamino)-1-(3-pyridyl)-1-butanol","4-Methyl Hippuric Acid","5,6-Dimethylbenzimidazole","Aminocaproic acid","Amoxicillin","Arnicolide C","Atenolol","Atorvastatin","Atrazine","Atrazine desethyl","Atrazine desethyl-2-hydroxy","Atrazine desisopropyl","Atrazine-2-hydroxy","Benodanil","Benzenesulfonamide"],[16572,5569,19717,15351,4330,4395,5433,5510,12539,5435,15027,12644,6785,5299,43438,37469,24441,78009,16038,11806,9367,9893,13289,34998,7847],["Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted","Targeted"],[13.016,9.436999999999999,8.393000000000001,7.449,5.343,7.041,7.653,6.794,5.164,8.625999999999999,6.263,6.625,8.836,2.048,2.874,10.645,5.299,11.648,10.847,8.613,5.06,7.192,8.956,10.659,10.53],[219.17401,136.02139,240.14929,212.11803,119.06017,120.05536,134.07094,135.05501,193.09694,134.07097,210.12367,194.08105,147.09146,132.10159,366.11121,335.18475,267.17007,559.25891,216.10056,188.06958,170.10332,174.05382,198.13458,323.98737,158.0269],["Quantified","Quantified","Quantified","Quantified","Quantified","Quantified","Quantified","Not quantified","Quantified","Not quantified","Quantified","Not quantified","Not quantified","Quantified","Not quantified","Quantified","Quantified","Quantified","Quantified","Quantified","Quantified","Quantified","Quantified","Quantified","Quantified"],["","","","","","","","","","","","","","","","","","","","","","","","",""],["PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS","PCA of the IS"],["Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed","Passed"],["Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied","Not applied"],["Batch curve","Batch curve","Batch curve","Batch curve","Batch curve; not exported (no study sample above the LLOQ)","Batch curve","Batch curve","Not quantified: Only 2 calibration level(s) from the LLOQ upwards (minimum 3)","Batch curve","Batch curve; not exported (no study sample above the LLOQ)","Batch curve; not exported (no study sample above the LLOQ)","Not quantified: No calibration level above the LLOQ signal","Batch curve; not exported (no study sample above the LLOQ)","Batch curve","Not quantified: No calibration level above the LLOQ signal with RSD% &lt;= 20%","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve; not exported (no study sample above the LLOQ)","Batch curve","Global curve (Only 2 calibration level(s) from the LLOQ upwards (minimum 3) in the batch); not exported (no study sample above the LLOQ)"],["Batch curve","Not quantified: Only 2 calibration level(s) from the LLOQ upwards (minimum 3)","Batch curve","Batch curve","Batch curve; not exported (no study sample above the LLOQ)","Batch curve","Batch curve","Not quantified: Only 1 calibration level(s) from the LLOQ upwards (minimum 3)","Batch curve","Batch curve; not exported (no study sample above the LLOQ)","Batch curve; not exported (no study sample above the LLOQ)","Not quantified: No calibration level above the LLOQ signal","Batch curve; not exported (no study sample above the LLOQ)","Not quantified: Only 2 calibration level(s) from the LLOQ upwards (minimum 3)","Batch curve; not exported (no study sample above the LLOQ)","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve; not exported (no study sample above the LLOQ)","Batch curve; not exported (no study sample above the LLOQ)","Batch curve; not exported (no study sample above the LLOQ)"],["Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Not quantified: No calibration level above the LLOQ signal","Batch curve","Batch curve; not exported (no study sample above the LLOQ)","Batch curve","Not quantified: No calibration level above the LLOQ signal","Batch curve; not exported (no study sample above the LLOQ)","Batch curve; not exported (no study sample above the LLOQ)","Batch curve; not exported (no study sample above the LLOQ)","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve","Batch curve"],["","","","","Batch 2: Full calibration range used (No sample or QC at or above the LLOQ)","","","","","Batch 1: Full calibration range used (No sample or QC at or above the LLOQ)","Batch 1: Full calibration range used (No sample or QC at or above the LLOQ)","","","","Batch 2: Full calibration range used (No sample or QC at or above the LLOQ); Batch 3: Full calibration range used (No sample or QC at or above the LLOQ)","","","","","","","","","","Batch 1: Full calibration range used (No sample or QC at or above the LLOQ); Batch 2: Full calibration range used (No sample or QC at or above the LLOQ)"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>Feature<\/th>\n      <th>Alignment ID<\/th>\n      <th>Type<\/th>\n      <th>RT [min]<\/th>\n      <th>m/z<\/th>\n      <th>Status<\/th>\n      <th>Failed IS check<\/th>\n      <th>Normalized by<\/th>\n      <th>Blank filter<\/th>\n      <th>QC RSD% filter<\/th>\n      <th>Calibration, batch 1<\/th>\n      <th>Calibration, batch 2<\/th>\n      <th>Calibration, batch 3<\/th>\n      <th>Notes<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"t","paging":false,"scrollX":true,"scrollY":"380px","scrollCollapse":true,"columnDefs":[{"className":"dt-center","targets":"_all"},{"name":"Feature","targets":0},{"name":"Alignment ID","targets":1},{"name":"Type","targets":2},{"name":"RT [min]","targets":3},{"name":"m/z","targets":4},{"name":"Status","targets":5},{"name":"Failed IS check","targets":6},{"name":"Normalized by","targets":7},{"name":"Blank filter","targets":8},{"name":"QC RSD% filter","targets":9},{"name":"Calibration, batch 1","targets":10},{"name":"Calibration, batch 2","targets":11},{"name":"Calibration, batch 3","targets":12},{"name":"Notes","targets":13}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
+</div>
+</div>
+<p><strong>How to read it</strong></p>
+<ul>
+<li><strong>One row per feature</strong> of the input file, also those removed on the way, with its <strong>Status</strong>: where it ended (e.g.&nbsp;<em>Quantified</em>, <em>Kept</em>, <em>Removed (blank filter)</em>).</li>
+<li><strong>A column per step</strong>, in the order of the processing: what the step did with the feature (<em>Passed</em>, <em>Removed</em> and why, <em>Not applied</em>). Empty: the step does not concern the feature, or it was removed before.</li>
+<li><strong>Calibration, batch N</strong>: the curve used in each batch, its own or the global one, or why the compound was not quantified there.</li>
+<li>The sheet <strong>Sample history</strong> does the same for the samples (outliers, vIS correction, replaced IS zeros, the blank subtracted, the calibration of their batch), and <strong>Events</strong> lists every logged event, with its kind: <em>removed</em>, <em>fallback</em>, <em>changed</em> (a value replaced) or <em>note</em>.</li>
+</ul>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -780,4 +1026,4 @@ ul.task-list li input[type="checkbox"] {
 
 
 
-<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/blob/main/tutorial/reports-and-exports.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions"><ul><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/blob/main/tutorial/reports-and-exports.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/Exposomics-SciLifeLab/QuaNTA/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
