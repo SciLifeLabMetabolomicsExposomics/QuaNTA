@@ -14,6 +14,8 @@ is_out <- tr[["is outlier sample"]]
 is_rd <- SumExp::row_df(is_se)
 # The IS shown in 3.4 and 3.5: the first one, as preselected in the app
 i_sel <- 1L
+# The best normalization method: used in the text of 3.7, above its chunk
+best <- tr[["best normalization"]]
 ```
 
 The internal standards (IS) are the backbone of the quality control: they are added in the same
@@ -155,12 +157,12 @@ tut_table(vrsd, height = "300px")
   less volume (or a failed injection); the processing option *Pre-normalize by the volumetric IS*
   corrects for this.
 :::
+
 ## 3.7 Internal standards over the sequence
 ```{r}
 norm_se <- tr[["normalized"]]
 keep <- util$ctrl_smpl_cat(norm_se) != "CalCurve"
 bars_se <- norm_se[util$is_internal_std(norm_se), keep]
-best <- tr[["best normalization"]]
 ```
 The peak areas of all (non-failed) internal standards per sample along the injection order,
 stacked, with a LOESS trend of their total. The app has two panels to compare: here the raw values
