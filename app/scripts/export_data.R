@@ -7,12 +7,14 @@
 # 3. Concentration data of targeted features (blank subtracted): QC samples, study samples and
 #    blanks, in this order
 # 4. The same with all samples, including the calibration samples, in the order of injection
+# 5. What happened to each feature and sample during the processing (from its event log)
 #
 # Output file names are based on the input file name and normalization method.
 # 1. (base name).(normalized method).norm.xlsx
 # 2. (base name).(normalized method).norm_blk.xlsx
 # 3. (base name).(normalized method).conc.xlsx
 # 4. (base name).(normalized method).conc_all.xlsx
+# 5. (base name).(normalized method).history.xlsx
 # ------------------------------------------------------------------------------------------- #
 
 # Load packages and project local libraries
@@ -22,6 +24,7 @@ box::use(
   projlib/msdial,     # Handle MS-Dial files
   util = projlib/msdial_utils,        # Utility functions for MS-Dial data
   io = projlib/check_io_exist,
+  projlib/history,    # What happened to each feature and sample
 )
 # Get the input file name provided by the user
 user_inputs <- msdial$get_user_input("input_file", "intermediate_dir", "table_dir")
@@ -59,9 +62,9 @@ FILE$o <- local({
     file.path(user_inputs$table_dir, paste0(b, ".", x, ".", p, ".xlsx"))
   }
   out_data <- if (IS_TARGET_MODE) {
-    c("norm", "norm_blk", "conc", "conc_all")
+    c("norm", "norm_blk", "conc", "conc_all", "history")
   } else {
-    c("norm", "norm_blk")
+    c("norm", "norm_blk", "history")
   }
   lapply(setNames(nm = out_data), \(.x) {
     lapply(ns, paste_file_name, p = .x)
@@ -152,6 +155,14 @@ if (IS_TARGET_MODE) {
   )
   cat(glue::glue("{mat_id} concentration data of all samples (with the calibration samples)",
                  " has been saved to {basename(FILE$o$conc_all[[ii]])}."), "\n")
+}
+
+# What happened to each feature and sample ----------
+if (is.null(to_report[["feature history"]])) {   # Processed with an older version
+  cat("No processing history in the processed data (re-run the processing to add it).\n")
+} else {
+  history$write_history_xlsx(to_report, mat_id, FILE$o$history[[ii]])
+  cat(glue::glue("The processing history has been saved to {basename(FILE$o$history[[ii]])}."), "\n")
 }
 
 # CSV copies ----------

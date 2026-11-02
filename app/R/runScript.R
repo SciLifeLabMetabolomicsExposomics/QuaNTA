@@ -213,10 +213,10 @@ runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data
       },
       content = function(file) {
         # Only the tables of the selected method:
-        # "(base name).(method).(norm|norm_blk|conc|conc_all).xlsx" and their CSV copies
-        # "(base name).(method).(norm|norm_blk|conc|conc_all).(sheet).csv"
+        # "(base name).(method).(norm|norm_blk|conc|conc_all|history).xlsx" and their CSV copies
+        # "(base name).(method).(norm|norm_blk|conc|conc_all|history).(sheet).csv"
         method <- sub("_norm$", "", norm_method())
-        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc|conc_all)(\\.[^.]+)?\\.(xlsx|csv)$")
+        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc|conc_all|history)(\\.[^.]+)?\\.(xlsx|csv)$")
         files <- list.files(ws$tables, pattern = pattern, full.names = TRUE)
         if (length(files) == 0) stop("No exported tables of this method yet. Run the export first.")
         zip::zip(zipfile = file, files = files, mode = "cherry-pick")

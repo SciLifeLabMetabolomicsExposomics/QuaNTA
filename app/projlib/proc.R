@@ -88,32 +88,54 @@ count_zeros_per_feature <- function(mat) {
 
 #' Impute zeros with the mean of the same sample type
 #'
+#' The mean of the non-zero values of the feature in the samples of the same type (`sample_type`).
+#' When the feature has no non-zero value in that type, the mean of its non-zero values in all
+#' samples is used instead.
+#'
 #' @param se A [`SumExp::SumExp`] object
 #' @param mat_id The name of a matrix in `se` to be imputed
-#' @returns A [`SumExp::SumExp`] object with the imputed matrix
+#' @returns A list of two elements:
+#' * `se`: the [`SumExp::SumExp`] object with the imputed matrix
+#' * `imputed`: a tibble of the imputed values (`feature_id`, `sample_id`, `sample_type`, `value`,
+#'   and `fallback`: `TRUE` when the mean of all samples was used)
 #' @md
 #' @export
 impute_zeros_with_mean_of_same_type <- function(se, mat_id) {
-  by_type <- SumExp::split_columns(se, SumExp::col_df(se)[["sample_type"]])
-  avg_by_type <- purrr::map(by_type, function(ea) {
-    # Get the mean of the same sample type
-    mat <- ea[[mat_id]]
-    mat[mat == 0] <- NA
-    rowMeans(mat, na.rm = TRUE)
-  })
-  # Impute zeros with the mean of the same type
-  for (typ in names(by_type)) {
-    i_typ <- SumExp::col_df(se)[["sample_type"]] == typ
-    for (ii in seq_len(nrow(se))) {
-      # Replace the zeros with the mean of the same type
-      old_values <- se[[mat_id]][ii, i_typ]
-      se[[mat_id]][ii, i_typ][old_values == 0] <- avg_by_type[[typ]][ii]
+  mat <- se[[mat_id]]
+  type <- SumExp::col_df(se)[["sample_type"]]
+  non_zero <- mat
+  non_zero[!is.finite(non_zero) | non_zero == 0] <- NA
+  avg_all <- rowMeans(non_zero, na.rm = TRUE)
+  imputed <- list()
+  for (typ in unique(type)) {
+    i_typ <- type == typ
+    # The mean of the same type; NaN when the feature has no non-zero value in that type
+    avg_typ <- rowMeans(non_zero[, i_typ, drop = FALSE], na.rm = TRUE)
+    fallback <- is.nan(avg_typ)
+    avg_typ[fallback] <- avg_all[fallback]
+    for (ii in seq_len(nrow(mat))) {
+      is_zero <- i_typ & mat[ii, ] == 0
+      if (!any(is_zero)) next
+      mat[ii, is_zero] <- avg_typ[ii]
+      imputed[[length(imputed) + 1]] <- tibble::tibble(
+        feature_id = rownames(mat)[ii], sample_id = colnames(mat)[is_zero], sample_type = typ,
+        value = unname(avg_typ[ii]), fallback = fallback[[ii]]
+      )
     }
   }
-  se
+  se[[mat_id]] <- mat
+  imputed <- if (length(imputed) == 0) {
+    tibble::tibble(feature_id = character(), sample_id = character(), sample_type = character(),
+                   value = numeric(), fallback = logical())
+  } else {
+    dplyr::bind_rows(imputed)
+  }
+  list(se = se, imputed = imputed)
 }
 
 #' Identify outliers
+#'
+#' Missing values (`NA`) are left out of the mean and SD, and are not outliers themselves.
 #'
 #' @param times A numeric value for the threshold. mean +/- times * sd
 #' @param x A numeric vector
@@ -121,12 +143,17 @@ impute_zeros_with_mean_of_same_type <- function(se, mat_id) {
 #' @returns A logical vector indicating whether each element is an outlier
 #' @export
 identify_outliers <- function(x, times = 3) {
-  m <- mean(x)
-  sd <- stats::sd(x)
-  return((x > m + times * sd) | (x < m - times * sd))
+  m <- mean(x, na.rm = TRUE)
+  sd <- stats::sd(x, na.rm = TRUE)
+  out <- (x > m + times * sd) | (x < m - times * sd)
+  out[is.na(out)] <- FALSE
+  out
 }
 
 #' Count outlying internal standard features per sample
+#'
+#' In log scale (peak areas deviate by factors). The mean and SD of each internal standard are of
+#' its non-zero values; a zero (the IS was not found in the sample) counts as outlying.
 #'
 #' @param se A [`SumExp::SumExp`] object
 #' @param mat_id The name of a matrix in `se`
@@ -136,9 +163,11 @@ identify_outliers <- function(x, times = 3) {
 #' @export
 count_outliers_per_sample <- function(se, mat_id, times = 3) {
   x <- se[[mat_id]]
-  x <- log1p(x)              # Log-transform the data
   if (nrow(x) == 0) return(stats::setNames(rep(0, ncol(x)), colnames(x)))   # No IS left
-  outlying <- apply(x, 1, identify_outliers, times = times)
+  is_missing <- !is.finite(x) | x <= 0
+  x[is_missing] <- NA
+  x <- log(x)
+  outlying <- apply(x, 1, identify_outliers, times = times) | t(is_missing)
   # A samples x IS matrix (transposed by `apply` above); `apply` gives a vector with one IS only
   outlying <- matrix(outlying, nrow = ncol(x), dimnames = list(colnames(x), rownames(x)))
   return(rowSums(outlying))

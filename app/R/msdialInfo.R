@@ -7,6 +7,24 @@
 
 .hr <- function() shiny::tags$hr(class = "q-divider")
 
+# "Read data file" and "Process data" greyed out in the browser as soon as a data file is chosen:
+# the server learns of the new file only when its upload has finished, and until then the steps
+# would run on the earlier file, which the finished upload then deletes. They are enabled again by
+# app.R ("Step buttons are disabled ...") when the upload has arrived. A file stopped by the Serve
+# upload limit (R/uploadLimit.R) never reaches this listener (it stops the event first).
+.disable_steps_while_uploading <- function(input_id) {
+  shiny::tags$script(shiny::HTML(sprintf("
+    document.addEventListener('change', function(e) {
+      var el = e.target;
+      if (!el || el.id !== '%s' || !el.files || el.files.length === 0) return;
+      ['read_msdial-run_button', 'proc-run_button'].forEach(function(id) {
+        var b = document.getElementById(id);
+        if (b) b.disabled = true;
+      });
+    });
+  ", input_id)))
+}
+
 #' MS-DIAL User Information UI for Shiny
 #'
 #' @param uiId The ID of the UI module. It should match the ID of [msdialInfoServer()].
@@ -43,6 +61,7 @@ msdialInfoUI <- function(uiId) {
       accept = c(".txt", ".gz", ".zip"),
       width = "100%"
     ),
+    .disable_steps_while_uploading(ns("input_file_upload")),
     shiny::verbatimTextOutput(ns("input_file_out"), placeholder = TRUE)
     # The download of the parameters is at the end of the processing settings (app.R):
     # msdialInfoDownloadUI()

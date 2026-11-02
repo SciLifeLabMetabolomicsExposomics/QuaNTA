@@ -152,7 +152,7 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
 #| label: setup
 options(box.path = Sys.getenv("R_BOX_PATH", "app/"))
 box::use(SumExp, util = projlib/msdial_utils, proc = projlib/proc, show = projlib/show,
-         msdial = projlib/msdial, ggplot2[...])
+         msdial = projlib/msdial, history = projlib/history, ggplot2[...])
 library(dplyr, warn.conflicts = FALSE)
 # Light grey plot area with grey grid lines (as the interactive plots, see the styles above)
 theme_set(theme_minimal(base_size = 14) +
@@ -408,8 +408,20 @@ tibble(Setting = c("Normalization (this report)", "Best normalization (lowest me
                  if (isTRUE(p$r2_filter)) sprintf("%.3f", p$min_r2) else "None",
                  if (isFALSE(p$impute_llox)) "Reported as n.d. / n.q. (no value)" else "Replaced (LLOQ/4, LLOQ/2)",
                  val(isTRUE(p$average_cal_reps)),
-                 if (is.null(tr[["vIS prenormalization"]])) "No" else paste("Yes:", paste(tr[["vIS prenormalization"]], collapse = ", then ")))) |>
+                 if (is.null(tr[["vIS prenormalization"]])) "No" else
+                   paste0("Yes: ", paste(tr[["vIS prenormalization"]], collapse = ", then "),
+                          if (length(tr[["samples without vIS value"]]) > 0)
+                            paste0(" (", length(unique(unlist(tr[["samples without vIS value"]]))),
+                                   " sample(s) without a vIS value not corrected; see 3.6)")))) |>
   knitr::kable()
+```
+
+```{r}
+#| results: asis
+# What happened to the features and samples (the event log of the processing, see
+# projlib/history.R); not in data processed by older versions
+HAS_HISTORY <- !is.null(tr[["feature history"]]) && !is.null(tr[["feature history"]][[MAT]])
+if (HAS_HISTORY) cat(knitr::knit_child(file.path(chapters_dir, "internal-history.qmd"), quiet = TRUE))
 ```
 
 :::
@@ -565,7 +577,10 @@ if (any(is_failed)) {
 ## 3.3 Outlier samples {#outlier-samples}
 
 A sample is an outlier when more than 20% of the IS deviate by more than 3 standard deviations from
-the IS mean (log scale). Outlier samples are removed before normalization.
+the IS mean (log scale; the mean and SD of the non-zero values) or are missing (zero) in it. Outlier
+samples are removed before normalization. The remaining zeros of the IS are then replaced, for the
+normalization only, by the mean of the IS in the same sample type (in all samples when it has no
+value in that type).
 
 ```{r}
 #| results: asis
@@ -670,6 +685,11 @@ if (length(vis_rows) == 0) {
   cat("The raw peak area of each volumetric internal standard (vIS) per sample, in injection order",
       "(all samples, also outliers), coloured by sample group or by batch (buttons). Drag to zoom,",
       "double-click to reset; click legend entries to hide or show groups.\n\n")
+  # The samples the vIS pre-normalization left uncorrected (no vIS value: 0 or missing)
+  for (nm in names(tr[["samples without vIS value"]])) {
+    cat('<p class="note-line">Not corrected by ', nm, " (no vIS value): ",
+        paste(tr[["samples without vIS value"]][[nm]], collapse = ", "), ".</p>\n\n", sep = "")
+  }
   if (length(vis_rows) > 1) cat("::: {.panel-tabset}\n\n")
   for (VIS_I in vis_rows) cat(knitr::knit_child(file.path(chapters_dir, "internal-vis.qmd"), quiet = TRUE))
   if (length(vis_rows) > 1) cat(":::\n\n")
@@ -1090,7 +1110,8 @@ if (isTRUE(as.logical(params$on_serve))) {
 **QuaNTA rules (no literature reference).** Each value is decided once, from its signal: `r if (LLOX_IMPUTED) "with a signal below the LOD signal it is replaced by LLOQ/4 (not detected), with a signal from the LOD signal to below the mean signal of the LLOQ level by LLOQ/2 (detected, not quantified)," else "with a signal below the LOD signal it is reported as n.d. (not detected), with a signal from the LOD signal to below the mean signal of the LLOQ level as n.q. (detected, not quantified), without a value (this processing did not replace them);"`
 whatever its calculated concentration; with a signal at or above the mean signal of the LLOQ level
 and a concentration below the LLOQ it is set to the LLOQ. Outlier samples: more than 20% of the internal standards
-deviate by more than 3 standard deviations from their mean (log scale).
+deviate by more than 3 standard deviations from their mean (log scale, of their non-zero values) or
+are missing (zero).
 
 ## References {.unnumbered}
 

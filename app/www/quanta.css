@@ -332,3 +332,5 @@ table.dataTable tbody tr.selected a { color: #FFFFFF !important; }
 .modal-dialog:has(.q-proc-popup) { max-width: min(1250px, 95vw); }
 .modal-content:has(.q-proc-popup) .modal-body { max-height: min(75vh, calc(100vh - 230px)); overflow-y: auto; }
 .modal-dialog:has(.q-proc-popup) { margin-top: 1rem; margin-bottom: 1rem; }
+/* An empty line between its messages (not between the lines within a message) */
+.q-proc-popup > ul > li + li { margin-top: 1em; }

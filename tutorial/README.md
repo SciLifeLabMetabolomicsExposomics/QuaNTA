@@ -20,3 +20,12 @@ Pages. Read it at: **https://exposomics-scilifelab.github.io/QuaNTA/**
   (`.github/workflows/tutorial.yml`), on every push to `main` that changes `tutorial/`.
 - A page whose `.qmd` did not change is not run again. After a change of the app that changes the
   figures, delete `_data/` and `_freeze/` and render again, so that all pages are made anew.
+- The screenshots of the app (`images/*.png`) are taken by `_screenshots.R` from the running app
+  with the example data; rendering does not run it. When the look of the app changed, run it from
+  this folder and **commit the new images**:
+
+  ```sh
+  Rscript _screenshots.R
+  ```
+
+  It needs `shinytest2` (`install.packages("shinytest2")`) and Chrome or Microsoft Edge.

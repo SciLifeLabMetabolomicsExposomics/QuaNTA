@@ -60,7 +60,7 @@ help_popup_content <- function(on_serve = FALSE) {
                        "are replaced by LLOQ/4, below the mean signal of the LLOQ level by LLOQ/2 (or,",
                        "optionally, reported as n.d. / n.q.), above it but below the LLOQ set to the LLOQ;",
                        "outlier samples have more than 20% of the internal",
-                       "standards beyond 3 SD (log scale).")
+                       "standards beyond 3 SD (log scale, of their non-zero values) or missing (zero).")
       )
     )
   )

@@ -52,6 +52,15 @@ Handles **reading and writing** MS-DIAL raw and processed data:
 - **Concentration calculation**: `compute_concentration()` transforms signals to concentrations using fitted models
 - **Post-calibration**: `apply_llox_rules()` sets the values below the quantification limits (LLOQ/4, LLOQ/2 or the LLOQ, from the signal); `uloq_of_calcurves()` gives the ULOQ
 
+### `history.R`
+
+**What happened to each feature and sample** during the processing, from the event log of `process.R`
+(`to_report[["events"]]`):
+
+- `event_table()`: the logged events as one table, with the names of the features and samples
+- `feature_history()`, `sample_history()`: one row per feature (per data version) / sample, a column per processing step
+- `write_history_xlsx()`: the exported `….history.xlsx` (used by `export_data.R`)
+
 ### `show.R`
 
 Functions for generating **plots and tables** for reports:

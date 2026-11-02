@@ -1,0 +1,69 @@
+### Feature flow
+
+Where the features of the input file ended in this data version (`r method_label[MAT]`): from their
+type (left) to their status after the processing (right). Hover over a band for the number of
+features; the same per feature is in the tab *Feature history*.
+
+```{r}
+# Type -> status of the feature history (projlib/history.R, as in the app)
+fh <- tr[["feature history"]][[MAT]]
+history$plotly_feature_flow(fh)
+```
+
+### Fallbacks and removals
+
+What the processing did differently from the usual way because the data did not allow it
+(**fallback**), and what it left out (**removed**), counted per step. The full list, one row per
+feature, sample or batch, is below; the same is exported in the processing history
+(`….history.xlsx`).
+
+```{r}
+ev <- tr[["events"]]
+ev <- ev[is.na(ev$mat_id) | ev$mat_id == MAT, ]
+if (nrow(ev) == 0) {
+  knitr::asis_output("Nothing was removed and no fallback was needed.\n")
+} else {
+  ev |>
+    group_by(Step = step, Kind = kind, Event = event, `Applies to` = scope) |>
+    summarise(Count = n(), Examples = paste(head(unique(name), 5), collapse = ", "), .groups = "drop") |>
+    mutate(Examples = ifelse(Count > 5, paste0(Examples, ", …"), Examples)) |>
+    knitr::kable()
+}
+```
+
+```{r}
+if (nrow(ev) > 0) {
+  ev |>
+    transmute(Step = step, Kind = factor(kind), `Applies to` = factor(scope), Name = name,
+              Batch = batch_id, Event = factor(event), Detail = detail) |>
+    dt() |>
+    DT::formatStyle("Kind", backgroundColor = DT::styleEqual(c("removed", "fallback"), c(FAILED_BG, KEPT_BG)))
+}
+```
+
+### Feature history
+
+One row per feature of the input file, also those removed on the way: what each step did with it,
+in the order of the processing (empty: the step does not concern the feature, or it was removed
+before). Filter the columns to find a feature or a status.
+
+```{r}
+fh |>
+  mutate(across(c(Type, Status), factor)) |>
+  dt() |>
+  DT::formatStyle("Status", backgroundColor = DT::styleEqual(
+    c("Removed (failed IS)", "Removed (blank filter)", "Removed (QC RSD% filter)", "Not quantified"),
+    rep(FAILED_BG, 4)))
+```
+
+### Sample history
+
+One row per sample of the input file: what each step did with it.
+
+```{r}
+tr[["sample history"]] |>
+  mutate(across(c(`Sample type`, Status, Batch), factor)) |>
+  dt() |>
+  DT::formatStyle("Status", backgroundColor = DT::styleEqual("Removed (outlier)", FAILED_BG))
+```
+

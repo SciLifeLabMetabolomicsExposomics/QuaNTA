@@ -4,7 +4,7 @@ project:
   render: ["*.qmd"]   # Not README.md (for the repository)
 
 website:
-  title: "QuaNTA tutorial"
+  title: "Introduction"
   description: "How to read and use the results of QuaNTA, step by step, with interactive figures."
   repo-url: https://github.com/Exposomics-SciLifeLab/QuaNTA
   repo-subdir: tutorial
@@ -12,32 +12,120 @@ website:
   sidebar:
     style: docked
     search: true
+    collapse-level: 1   # All menus collapsed (the one of the open page is expanded)
+    # A menu per page of the app, a submenu per tutorial page with links to its sections. The
+    # links use the IDs Quarto makes from the headings: rename a heading, update its link here.
     contents:
       - index.qmd
       - section: "1 Input data and processing"
+        href: data-and-upload.qmd
         contents:
-          - data-and-upload.qmd
+          - section: "File structure"
+            href: data-and-upload.qmd#file-structure
+            contents:
+              - text: "The four sample rows"
+                href: data-and-upload.qmd#the-four-sample-rows
+              - text: "The feature columns"
+                href: data-and-upload.qmd#the-feature-columns
+              - text: "Naming conventions"
+                href: data-and-upload.qmd#naming-conventions
+              - text: "Example dataset"
+                href: data-and-upload.qmd#example-dataset
+          - text: "Uploading and reading"
+            href: data-and-upload.qmd#uploading-and-reading
+          - text: "Processing settings"
+            href: data-and-upload.qmd#processing-settings
       - section: "2 Data overview"
+        href: data-overview.qmd
         contents:
-          - data-overview.qmd
+          - text: "2.1 Samples by category"
+            href: data-overview.qmd#samples-by-category
+          - text: "2.2 Calibration levels"
+            href: data-overview.qmd#calibration-levels
+          - text: "2.3 Classes of analytes"
+            href: data-overview.qmd#classes-of-analytes
+          - text: "2.4 Features by m/z and RT"
+            href: data-overview.qmd#features-by-mz-and-retention-time
+          - text: "2.5 Distribution of m/z"
+            href: data-overview.qmd#distribution-of-mz
+          - text: "2.6 Distribution of intensities"
+            href: data-overview.qmd#distribution-of-intensities
       - section: "3 Quality control and normalization"
         contents:
-          - internal-standards.qmd
-          - normalization-and-blanks.qmd
+          - section: "Internal standards and outliers (3.1–3.7)"
+            href: internal-standards.qmd
+            contents:
+              - text: "3.1 Internal standards"
+                href: internal-standards.qmd#internal-standards
+              - text: "3.2 Failed internal standards"
+                href: internal-standards.qmd#failed-internal-standards
+              - text: "3.3 Outlier samples"
+                href: internal-standards.qmd#outlier-samples
+              - text: "3.4 Raw RSD% of the selected IS"
+                href: internal-standards.qmd#raw-rsd-of-the-selected-is
+              - text: "3.5 Distribution of the selected IS"
+                href: internal-standards.qmd#distribution-of-the-selected-is
+              - text: "3.6 Volumetric internal standard"
+                href: internal-standards.qmd#volumetric-internal-standard
+              - text: "3.7 IS over the sequence"
+                href: internal-standards.qmd#internal-standards-over-the-sequence
+          - section: "Normalization, filters and blanks (3.8–3.11)"
+            href: normalization-and-blanks.qmd
+            contents:
+              - text: "3.8 Normalization methods"
+                href: normalization-and-blanks.qmd#comparison-of-normalization-methods
+              - text: "3.9 RSD% values"
+                href: normalization-and-blanks.qmd#rsd-values
+              - text: "3.10 Removed features"
+                href: normalization-and-blanks.qmd#removed-features
+              - text: "3.11 Blanks compared to samples"
+                href: normalization-and-blanks.qmd#blanks-compared-to-samples
       - section: "4 Calibration and quantification"
         contents:
-          - calibration-limits.qmd
-          - calibration-curves.qmd
-          - concentrations.qmd
+          - section: "Calibration limits (4.1–4.3)"
+            href: calibration-limits.qmd
+            contents:
+              - text: "4.1 Calibration curve samples"
+                href: calibration-limits.qmd#calibration-curve-samples
+              - text: "4.2 Calibration curve limits"
+                href: calibration-limits.qmd#calibration-curve-limits
+              - text: "4.3 Chemicals with concentrations"
+                href: calibration-limits.qmd#chemicals-with-concentrations
+          - section: "Calibration curves (4.4 and 4.5)"
+            href: calibration-curves.qmd
+            contents:
+              - text: "4.4 The calibration points"
+                href: calibration-curves.qmd#the-calibration-points
+              - text: "4.5 The samples on the curve"
+                href: calibration-curves.qmd#the-samples-on-the-curve
+          - section: "Concentrations (4.6 and 4.7)"
+            href: concentrations.qmd
+            contents:
+              - text: "4.6 Concentration per class"
+                href: concentrations.qmd#concentration-per-class
+              - text: "4.7 QC samples in acquisition order"
+                href: concentrations.qmd#qc-samples-in-acquisition-order
       - section: "5 Report export"
         contents:
-          - reports-and-exports.qmd
+          - section: "Reports and exported tables"
+            href: reports-and-exports.qmd
+            contents:
+              - text: "Final normalization method"
+                href: reports-and-exports.qmd#final-normalization-method
+              - text: "Reports"
+                href: reports-and-exports.qmd#reports
+              - text: "Exported tables"
+                href: reports-and-exports.qmd#exported-tables
+              - text: "Processing history"
+                href: reports-and-exports.qmd#processing-history
 
 format:
   html:
     theme: cosmo
     css: styles.css
-    toc: true
+    include-after-body: _sidebar-links.html   # "View source" / "Report an issue" in the menu
+    toc: false   # No "On this page": the sections are in the menu on the left
+    lightbox: true   # Images (the screenshots) open enlarged when clicked
     mainfont: Lato, 'Segoe UI', sans-serif
 
 execute:

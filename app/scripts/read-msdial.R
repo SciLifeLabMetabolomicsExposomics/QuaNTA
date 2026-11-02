@@ -254,7 +254,7 @@ if (length(batch_ids) > 1) {
   # If not processing per batch, assign all samples to a single batch
   if (! params$per_batch) {
     cat("Processing per batch is disabled. Assigning all samples to a single batch, `all`.\n")
-    sample_info <- sample_info |> 
+    sample_info <- sample_info |>
       dplyr::mutate(
         org_batch_id = batch_id,
         batch_id = "all"
@@ -293,6 +293,8 @@ if (!any(sample_info$.ctrl_cat == "CalCurve")) {
 
 if (is_non_target_mode) {
   # warning("Hence, the processing of the data will be stopped before calibration!")
+  # (Not empty: an empty `{}` would make Rscript print "NULL" in the log)
+  invisible(NULL)
 } else {
   # Function to identify concentration values from the given IDs
   catch_concentration <- function(sid) {

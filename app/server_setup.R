@@ -15,6 +15,7 @@ box::use(
   util = projlib / msdial_utils, # Utility functions for MS-Dial data
   projlib / msdial, # Handle MS-Dial files
   projlib / show, # Functions to present data
+  projlib / history, # What happened to each feature and sample
   ggplot2[...], # Too long to write and usually specific enough
   io = projlib / check_io_exist, # Check input/output files
 )

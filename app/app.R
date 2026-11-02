@@ -101,7 +101,7 @@ SECTION_TIPS <- list(
   "2.6" = "All raw peak areas of all features and samples, in linear scale (left) and log scale (right, positive values only): the dynamic range of the data and the share of zeros.",
   "3.1" = "All internal standards (IS) with retention time, m/z, the RSD% of the raw peak areas over all samples and the number of zero values; failed IS are coloured. Select a row (or use the arrow keys) to show the IS in 3.4 and 3.5.",
   "3.2" = "An IS fails when more than 10% of the samples have a zero value. Failed IS are removed before normalization.",
-  "3.3" = "A sample is an outlier when more than 20% of the IS deviate by more than 3 SD from their mean (log scale). Outlier samples are removed before normalization; with the processing option \"Non-calibration samples only\", calibration samples are always kept.",
+  "3.3" = "A sample is an outlier when more than 20% of the IS deviate by more than 3 SD from their mean (log scale) or are missing (zero). Outlier samples are removed before normalization; with the processing option \"Non-calibration samples only\", calibration samples are always kept.",
   "3.4" = "RSD% of the raw peak areas of the IS selected in 3.1, within each QC group and each sample class (with the number of samples). An RSD% needs at least 2 samples.",
   "3.5" = "Raw peak areas of the IS selected in 3.1, by sample group (left) and along the injection order (right).",
   "3.6" = "Raw peak area of each volumetric IS per sample along the injection order (all samples, also outliers), and its RSD% per group: how constant the added volume was.",
@@ -335,7 +335,9 @@ ui <-
           navset_underline(
             id = "log_tabs",
             nav_panel("Data reading log", runReadMsdialUI_2("read_msdial")),
-            nav_panel("Processing log", runProcessUI_2("proc"))
+            nav_panel("Processing log", runProcessUI_2("proc")),
+            # What happened to the features and samples (the event log of the processing)
+            nav_panel("Processing history", uiOutput("history_ui"))
           )
         )
       )
@@ -1578,13 +1580,113 @@ server <- function(input, output, session) {
     rsd_tbl <- DT::datatable(rsd, rownames = FALSE, filter = "top", selection = "none",
                              options = list(paging = FALSE, scrollY = "400px", scrollCollapse = TRUE, scrollX = TRUE,
                                             dom = "rti"))   # Column filters only; scrolls
+    # (Before processing there is nothing to report)
+    not_corrected <- tryCatch(to_report_r()[["samples without vIS value"]], error = function(e) NULL)
     shiny::tagList(
       if (length(plots) == 1) plots[[1]]$plot else
         do.call(shiny::tabsetPanel, lapply(plots, \(x) shiny::tabPanel(x$name, x$plot))),
       shiny::h5("RSD% of the volumetric internal standards", style = "margin-top: 1.2em;"),
       shiny::helpText("Raw peak areas, all samples (also outliers), within groups of samples."),
-      rsd_tbl
+      rsd_tbl,
+      # The samples the vIS pre-normalization left uncorrected (no vIS value: 0 or missing)
+      lapply(names(not_corrected), \(nm)
+        shiny::helpText(paste0("Not corrected by ", nm, " (no vIS value): ",
+                               paste(not_corrected[[nm]], collapse = ", "), "."),
+                        style = "color: #b35900;"))
     )
+  })
+
+
+  ################################################################################################################
+  ### Page 1, log card, "Processing history": what happened to the features and samples (the event
+  ### log of the processing, projlib/history.R), the full tables in a popup
+
+  history_tr <- reactive(tryCatch(to_report_r(), error = function(e) NULL))
+
+  output$history_ui <- renderUI({
+    tr <- history_tr()
+    if (is.null(tr) || is.null(tr[["feature history"]])) {
+      return(helpText("Available after the processing: what each step did with the features and samples,",
+                      "where a fallback was needed and what was removed."))
+    }
+    versions <- names(tr[["feature history"]])
+    choices <- stats::setNames(versions, dplyr::coalesce(unname(history$version_labels[versions]), versions))
+    tagList(
+      selectInput("history_version", "Data version", choices = choices,
+                  selected = intersect(tr[["best normalization"]], versions)[1], width = "100%"),
+      helpText("Where the features ended: from their type (left) to their status (right). Hover over",
+               "a band for the number of features."),
+      plotly::plotlyOutput("history_flow", height = "340px"),
+      helpText("Fallbacks (the data did not allow the usual way) and removals, per step. The full tables",
+               "are also exported with the tables (….history.xlsx)."),
+      DT::dataTableOutput("history_summary"),
+      div(class = "d-flex gap-2 mt-2",
+          actionButton("history_features", "Feature history", icon = icon("table"), class = "btn-sm-quanta"),
+          actionButton("history_samples", "Sample history", icon = icon("table"), class = "btn-sm-quanta"),
+          actionButton("history_events", "All events", icon = icon("list"), class = "btn-sm-quanta"))
+    )
+  })
+
+  # The events of the selected data version (and those of all versions)
+  history_events <- reactive({
+    tr <- req(history_tr())
+    m <- req(input$history_version)
+    ev <- tr[["events"]]
+    ev[is.na(ev$mat_id) | ev$mat_id == m, ]
+  })
+
+  history_dt <- function(df, status_col = NULL, bad = character()) {
+    out <- DT::datatable(df, rownames = FALSE, filter = "top", selection = "none",
+                         options = list(paging = FALSE, scrollX = TRUE, scrollY = "60vh", scrollCollapse = TRUE,
+                                        dom = "rti"))
+    if (!is.null(status_col)) {
+      out <- DT::formatStyle(out, status_col, backgroundColor = DT::styleEqual(bad, rep("#F8D0D0", length(bad))))
+    }
+    out
+  }
+
+  output$history_flow <- plotly::renderPlotly({
+    fh <- req(history_tr())[["feature history"]][[req(input$history_version)]]
+    history$plotly_feature_flow(req(fh), height = 340)
+  })
+
+  output$history_summary <- DT::renderDataTable({
+    ev <- history_events()
+    ev <- ev[ev$kind %in% c("removed", "fallback"), ]
+    df <- ev |>
+      dplyr::count(Step = step, Kind = kind, Event = event, name = "Count")
+    DT::datatable(df, rownames = FALSE, selection = "none",
+                  options = list(paging = FALSE, dom = "t", scrollY = "300px", scrollCollapse = TRUE,
+                                 language = list(emptyTable = "Nothing removed, no fallback needed."))) |>
+      DT::formatStyle("Kind", backgroundColor = DT::styleEqual(c("removed", "fallback"), c("#F8D0D0", "#FFE3B3")))
+  })
+
+  history_modal <- function(title, table_id) {
+    showModal(modalDialog(title = title, size = "xl", easyClose = TRUE, footer = modalButton("Close"),
+                          DT::dataTableOutput(table_id)))
+  }
+  observeEvent(input$history_features, history_modal(
+    paste0("Feature history (", dplyr::coalesce(unname(history$version_labels[input$history_version]), input$history_version), ")"),
+    "history_features_tbl"))
+  observeEvent(input$history_samples, history_modal("Sample history", "history_samples_tbl"))
+  observeEvent(input$history_events, history_modal(
+    paste0("All events (", dplyr::coalesce(unname(history$version_labels[input$history_version]), input$history_version), ")"),
+    "history_events_tbl"))
+
+  output$history_features_tbl <- DT::renderDataTable({
+    fh <- req(history_tr())[["feature history"]][[req(input$history_version)]]
+    history_dt(dplyr::mutate(fh, dplyr::across(c(Type, Status), factor)), "Status",
+               c("Removed (failed IS)", "Removed (blank filter)", "Removed (QC RSD% filter)", "Not quantified"))
+  })
+  output$history_samples_tbl <- DT::renderDataTable({
+    sh <- req(history_tr())[["sample history"]]
+    history_dt(dplyr::mutate(sh, dplyr::across(c(`Sample type`, Status, Batch), factor)), "Status", "Removed (outlier)")
+  })
+  output$history_events_tbl <- DT::renderDataTable({
+    ev <- history_events()
+    df <- dplyr::transmute(ev, Step = step, Kind = factor(kind), `Applies to` = factor(scope), Name = name,
+                           Batch = batch_id, Event = factor(event), Detail = detail)
+    history_dt(df, "Kind", "removed")
   })
 
 

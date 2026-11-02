@@ -166,7 +166,12 @@ box::use(settings = projlib / settings)
 params <- settings$options_with_parameters_file(params, "proc")
 # Averaged calibration points have no replicates within a batch: no RSD% at the LLOQ level and
 # no SD of the zero calibrant (the app disables those options then)
+settings_overridden <- character()   # For the event log (below)
 if (isTRUE(params$average_cal_reps)) {
+  if (isTRUE(params$use_rsd20)) settings_overridden <- c(settings_overridden, "RSD% <= 20% for the LLOQ not used")
+  if (params$llox_method != "pt_signal_mean") {
+    settings_overridden <- c(settings_overridden, "LOD/LLOQ method `pt_signal_mean` used instead of `pt_signal_mean_plus_sd`")
+  }
   if (isTRUE(params$use_rsd20) || params$llox_method != "pt_signal_mean") {
     cat("Averaged calibration points: the RSD% 20% threshold is not used and the LOD/LLOQ method is",
         "`pt_signal_mean` (no replicates to compute an SD or RSD%).\n")
@@ -224,6 +229,7 @@ box::use(
   util = projlib / msdial_utils, # Utility functions for MS-Dial data
   projlib / proc, # Processing functions
   projlib / show, # Data of the app's figures and tables (prepared at the end)
+  projlib / history, # What happened to each feature and sample (from the event log)
 )
 # Get the input file name provided by the user
 user_inputs <- msdial$get_user_input("input_file", "intermediate_dir")
@@ -263,6 +269,8 @@ stopifnot(!is.null(IS_NON_TARGET_MODE))
 #       length() == ncol(`internal std. before qc`)
 # - `is outlier sample`: A logical vector flagging outlier samples
 #       length() == ncol(`internal std. before qc`)
+# - `imputed IS zeros`: The zeros of the internal standards replaced for the normalization:
+#       `feature_id`, `sample_id`, `sample_type`, `value`, `fallback` (mean of all samples used)
 # - `excluded categories in normalization`: Sample categories excluded from normalization
 # - `LOESS fit`: A list of LOESS models for each sample. Output of `proc$get_loess_fit()`
 # - `multivariate IS-PCA`: Factor, loadings, etc. of `proc$multivariate_is_pca_normalization()`
@@ -279,6 +287,8 @@ stopifnot(!is.null(IS_NON_TARGET_MODE))
 #       `mat_id`, `feature_id`, `feature_name`, `targeted`, `reason`, `qc_rsd`
 # - `matrix ids to blk subt`: IDs of matrices that underwent blank subtraction
 # - `normalized - blank`: A list of `SumExp` objects after blank subtraction, split by batch
+# - `events`: What happened to the features, samples and batches (see `log_event()`)
+# - `feature history`, `sample history`: The same per feature and per sample (see `history.R`)
 to_report <- rlang::list2(
   "params" = params,
   "Completed" = FALSE,
@@ -286,6 +296,36 @@ to_report <- rlang::list2(
   "blank_filter" = params$blank_filter,
   "blank_filter_factor" = params$blank_filter_factor,
 )
+
+#' The event log: what happened to a feature, sample or batch on the way, mostly where the data
+#' did not allow the usual way (a fallback) or something was removed. One row per event; the
+#' exported history tables, the internal report and the app are made from it.
+#'
+#' @param step The processing step, e.g. "Blank filter"
+#' @param scope "feature", "sample", "batch" or "run" (the whole processing)
+#' @param id The IDs of the features or samples (row / column names), batch IDs, or a name
+#' @param event What happened, e.g. "Removed"
+#' @param detail Why or how (one per `id`, or one for all)
+#' @param kind "removed", "fallback", "changed" or "note"
+#' @param mat_id The data version (matrix ID, e.g. "loess_norm"), `NA` for all
+#' @param batch_id The batch, `NA` for all (or the global calibration)
+events <- list()
+log_event <- function(step, scope, id, event, detail = NA_character_, kind = "note",
+                      mat_id = NA_character_, batch_id = NA_character_) {
+  if (length(id) == 0) return(invisible())
+  events[[length(events) + 1]] <<- tibble::tibble(
+    step = step, scope = scope, id = as.character(id), mat_id = mat_id, batch_id = as.character(batch_id),
+    kind = kind, event = event, detail = as.character(detail)
+  )
+  invisible()
+}
+if (length(settings_overridden) > 0) {
+  log_event("Settings", "run", "Average calibration replicates", "Setting not used", settings_overridden, "fallback")
+}
+if (isTRUE(params$log_calibration) && params$weight != "1") {
+  log_event("Settings", "run", "Log-scale calibration", "Setting not used",
+            paste0("Weighting `1` used instead of `", params$weight, "` (the only one in log scale)"), "fallback")
+}
 
 
 #  -----  NORMALIZATION USING INTERNAL STANDARDS  ------------------------------
@@ -303,6 +343,8 @@ if (isTRUE(params$vis_prenorm)) {
     raw0 <- proc_sumexp[["raw"]]
     out <- raw0
     not_vis <- !seq_len(nrow(raw0)) %in% vis_rows
+    # The samples left uncorrected by each vIS (named by the vIS), for the internal report and the app
+    not_corrected <- list()
     for (v in vis_rows) {
       vis <- raw0[v, ]
       ok <- is.finite(vis) & vis > 0
@@ -310,9 +352,15 @@ if (isTRUE(params$vis_prenorm)) {
       out[not_vis, ] <- sweep(out[not_vis, , drop = FALSE], 2, factor, `*`)
       cat("vIS pre-normalization by ", rownames(raw0)[v], " (average area ", signif(mean(vis[ok]), 4), ")",
           if (any(!ok)) paste0("; ", sum(!ok), " sample(s) without a vIS value not corrected"), ".\n", sep = "")
+      if (any(!ok)) {
+        not_corrected[[SumExp::row_df(proc_sumexp)$feature_name[v]]] <- as.character(SumExp::col_df(proc_sumexp)$sample_name[!ok])
+        log_event("vIS pre-normalization", "sample", colnames(raw0)[!ok], "Not corrected",
+                  paste0("No value (0 or missing) of the vIS ", SumExp::row_df(proc_sumexp)$feature_name[v]), "fallback")
+      }
     }
     proc_sumexp[["raw"]] <- labelled::set_label_attribute(out, "Raw (vIS pre-normalized)")
     to_report[["vIS prenormalization"]] <- SumExp::row_df(proc_sumexp)$feature_name[vis_rows]
+    to_report[["samples without vIS value"]] <- not_corrected
   }
 }
 
@@ -334,6 +382,9 @@ num_zeros <- proc$count_zeros_per_feature(internal_std_se[["raw"]])
 # Mark features with > 10% zeros
 is_failed <- num_zeros > ncol(internal_std_se) * 0.1
 to_report[["is failed internal std."]] <- is_failed
+log_event("Failed internal standards", "feature", rownames(internal_std_se)[is_failed], "Removed",
+          sprintf("Zero in %d of %d injections (%.1f%%; more than 10%%)", num_zeros[is_failed],
+                  ncol(internal_std_se), 100 * num_zeros[is_failed] / ncol(internal_std_se)), "removed")
 # Remove failed internal standard features
 is_failed_in_proc_sumexp <- rownames(proc_sumexp) %in% rownames(internal_std_se)[is_failed]
 proc_sumexp <- proc_sumexp[!is_failed_in_proc_sumexp, ]
@@ -343,8 +394,6 @@ if (nrow(internal_std_se) == 0) {
        "injections): the data cannot be normalized. Check the internal standards in the file.",
        call. = FALSE)
 }
-# Impute remaining zeros with the mean of the same type
-internal_std_se <- proc$impute_zeros_with_mean_of_same_type(internal_std_se, "raw")
 cat("Internal standards check done (N = ", sum(is_failed), " failed have been removed).\n", sep = "")
 
 ##  OUTLIER SAMPLE REMOVAL  --------------------------------
@@ -361,12 +410,19 @@ if (params$rm_outlier) { # Controlled by the command line option
     is_cal <- util$ctrl_smpl_cat(internal_std_se) == "CalCurve"
     if (any(is_outlier & is_cal)) {
       cat("Calibration samples kept although outlying (option): ", sum(is_outlier & is_cal), "\n", sep = "")
+      kept <- is_outlier & is_cal
+      log_event("Outlier samples", "sample", names(is_outlier)[kept], "Kept although outlying",
+                sprintf("%d of %d IS outlying or missing; calibration samples are kept (option)",
+                        n_out[kept], n_internal_std), "fallback")
     }
     is_outlier[is_cal] <- FALSE
   }
   to_report[["number of outlier internal std. per sample"]] <- n_out
   to_report[["is outlier sample"]] <- is_outlier
   
+  log_event("Outlier samples", "sample", names(is_outlier)[is_outlier], "Removed",
+            sprintf("%d of %d IS beyond 3 SD (log scale) or missing; the limit is 20%%",
+                    n_out[is_outlier], n_internal_std), "removed")
   if (any(is_outlier)) {
     # Exclude the outlying samples
     stopifnot(identical(names(is_outlier), colnames(internal_std_se)))
@@ -376,6 +432,33 @@ if (params$rm_outlier) { # Controlled by the command line option
     cat("Outlier samples (N = ", sum(is_outlier), ") are removed.\n", sep = "")
   } else {
     cat("No outlier samples are found.\n")
+  }
+}
+
+##  ZEROS OF THE INTERNAL STANDARDS  -----------------------
+# The remaining zeros of the IS (not failed, in the samples kept) replaced by the mean of the
+# same sample type; when the IS has no value in that type, by its mean in all samples. Only in
+# the IS used for the normalization (after the outlier check: a zero there counts as outlying)
+imputed <- proc$impute_zeros_with_mean_of_same_type(internal_std_se, "raw")
+internal_std_se <- imputed$se
+to_report[["imputed IS zeros"]] <- imputed$imputed
+is_name <- stats::setNames(SumExp::row_df(internal_std_se)$feature_name, rownames(internal_std_se))
+local({
+  imp <- imputed$imputed
+  nm <- unname(is_name[imp$feature_id])
+  log_event("Zeros of the internal standards", "sample", imp$sample_id, "IS zero replaced",
+            ifelse(imp$fallback,
+                   paste0(nm, ": its mean in all samples (no value in any ", imp$sample_type, " sample)"),
+                   paste0(nm, ": its mean in the ", imp$sample_type, " samples")),
+            ifelse(imp$fallback, "fallback", "changed"))
+})
+if (nrow(imputed$imputed) > 0) {
+  cat("Zeros of the internal standards replaced by the mean of the same sample type: ",
+      nrow(imputed$imputed), ".\n", sep = "")
+  fb <- unique(imputed$imputed[imputed$imputed$fallback, c("feature_id", "sample_type")])
+  for (i in seq_len(nrow(fb))) {
+    cat("  ", is_name[[fb$feature_id[i]]], " has no value in any ", fb$sample_type[i],
+        " sample: its mean in all samples is used there.\n", sep = "")
   }
 }
 
@@ -430,6 +513,8 @@ mvis_out <- tryCatch(
   error = function(e) {
     warning("Multivariate (PCA) IS normalization skipped: ", conditionMessage(e),
             call. = FALSE, immediate. = TRUE)
+    log_event("Normalization", "run", "Multivariate (PCA)", "Method not computed", conditionMessage(e),
+              "fallback", mat_id = "mvis_norm")
     NULL
   }
 )
@@ -453,6 +538,11 @@ if (all(is.na(median_rsd[norm_mat_ids]))) {
 }
 if (all(is.na(median_rsd[norm_mat_ids]))) rsd_basis <- NA_character_
 best_norm <- proc$select_best_normalization(median_rsd, candidates = norm_mat_ids)
+if (!identical(rsd_basis, "QC")) {
+  log_event("Best normalization", "run", "Best normalization", "Chosen without QC replicates",
+            if (is.na(rsd_basis)) paste0("No replicates for an RSD%: ", best_norm, " by default")
+            else "No QC replicates: the replicates of the calibration levels are used", "fallback")
+}
 to_report[["median RSD% per normalization"]] <- median_rsd
 to_report[["median RSD% basis"]] <- rsd_basis
 to_report[["best normalization"]] <- best_norm
@@ -500,6 +590,14 @@ if (params$blank_filter) {
     cat("Performing blank filtering for matrix:", mat_id, "\n")
     na_before <- is_all_na_row(proc_sumexp[[mat_id]])
     std_values <- proc_sumexp[[mat_id]][is_std, , drop = FALSE]
+    # The ratio that decided (as in `proc$filter_by_blank()`: the maximum in the other samples
+    # over the blank mean), for the event log
+    blank_ratio <- local({
+      m <- proc_sumexp[[mat_id]]
+      is_blank <- util$ctrl_smpl_cat(proc_sumexp) == "Blank"
+      blank_avg <- rowMeans(m[, is_blank, drop = FALSE], na.rm = TRUE)
+      suppressWarnings(apply(m[, !is_blank, drop = FALSE], 1, max, na.rm = TRUE)) / blank_avg
+    })
     proc_sumexp <- proc$filter_by_blank(
       proc_sumexp,
       mat_id = mat_id,
@@ -507,8 +605,14 @@ if (params$blank_filter) {
     )
     proc_sumexp[[mat_id]][is_std, ] <- std_values   # Kept (see `is_std`)
     SumExp::row_df(proc_sumexp)$blank_filtered[is_std] <- TRUE
-    removed_features[[length(removed_features) + 1]] <-
-      removed_tbl(mat_id, !na_before & is_all_na_row(proc_sumexp[[mat_id]]), "Blank filter")
+    is_removed <- !na_before & is_all_na_row(proc_sumexp[[mat_id]])
+    removed_features[[length(removed_features) + 1]] <- removed_tbl(mat_id, is_removed, "Blank filter")
+    r <- blank_ratio[is_removed]
+    log_event("Blank filter", "feature", rownames(proc_sumexp)[is_removed], "Removed",
+              ifelse(is.finite(r),
+                     sprintf("Sample maximum %.2f × the blank mean (needed: more than %g ×)", r, params$blank_filter_factor),
+                     "The ratio to the blank mean could not be computed (no value)"),
+              "removed", mat_id = mat_id)
   }
   to_report[["after blank filtering"]] <- proc_sumexp
 }
@@ -539,6 +643,11 @@ to_report[["batches without blank"]] <- batches_without_blank
 if (length(batches_without_blank) > 0) {
   cat("Batches without blank samples (the average of all blank samples is subtracted):",
       paste(batches_without_blank, collapse = ", "), "\n")
+}
+log_event("Blank subtraction", "batch", batches_without_blank, "Blank of all batches subtracted",
+          "No blank samples in the batch", "fallback", batch_id = batches_without_blank)
+if (!any(util$ctrl_smpl_cat(proc_sumexp) == "Blank")) {
+  log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "No blank samples in the data", "fallback")
 }
 # Which blank average is subtracted from each sample (shown in the exported tables)
 SumExp::col_df(proc_sumexp)[["blank_source"]] <- ifelse(
@@ -597,6 +706,7 @@ if (rsd_filter$enabled) {
       "RSD%. No features were removed by the QC RSD% filter."
     )
     warning("QC RSD% filtering skipped. ", rsd_filter$skip_reason, call. = FALSE, immediate. = TRUE)
+    log_event("QC RSD% filter", "run", "QC RSD% filter", "Not done", rsd_filter$skip_reason, "fallback")
   } else {
     # The maximum RSD% of each feature; NA where the filter does not apply
     limit <- ifelse(targeted, rsd_filter$max_targeted, rsd_filter$max_nontargeted)
@@ -616,6 +726,8 @@ if (rsd_filter$enabled) {
       }
       removed_features[[length(removed_features) + 1]] <-
         removed_tbl(mat_id, to_remove, "QC RSD%", qc_rsd = rsd)
+      log_event("QC RSD% filter", "feature", rownames(proc_sumexp)[to_remove], "Removed",
+                sprintf("QC RSD%% %.1f (maximum %g)", rsd[to_remove], limit[to_remove]), "removed", mat_id = mat_id)
       cat("QC RSD% filtering for ", mat_id, ": ", sum(to_remove & targeted), " targeted and ",
           sum(to_remove & !targeted), " non-targeted features removed (the volumetric IS is not filtered).\n", sep = "")
     }
@@ -682,8 +794,16 @@ prepare_app_data <- function(tr) {
 }
 
 #' Mark the expected processing has been completed
-mark_completed_and_save_to_report <- function() {
+#'
+#' @param lst_proc The calibrated data (`NULL` without calibration), for the feature history
+mark_completed_and_save_to_report <- function(lst_proc = NULL) {
   cat("Processing steps are completed.\n")
+  # What happened to each feature and sample (exported with the tables, shown in the reports)
+  to_report[["events"]] <- history$event_table(events, to_report[["before normalization"]])
+  to_report[["feature history"]] <- history$feature_history(to_report, lst_proc)
+  to_report[["sample history"]] <- history$sample_history(to_report)
+  cat("Events logged: ", nrow(to_report[["events"]]), " (",
+      sum(to_report[["events"]]$kind == "fallback"), " fallbacks).\n", sep = "")
   cat("Saving intermediate data during the processing...\n")
   to_report[["Completed"]] <- TRUE
   saveRDS(to_report, file = FILE$to_rep)
@@ -1231,6 +1351,51 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
 to_report[["calibration per batch"]] <- dplyr::bind_rows(calibration_per_batch)
 cat("\nCalibration used per batch:\n")
 print(as.data.frame(to_report[["calibration per batch"]]), right = FALSE)
+
+# The event log of the calibration, from its final result per data version and batch (what was
+# used in the end, after the fallbacks to the global curves)
+local({
+  cpb <- to_report[["calibration per batch"]]
+  for (k in seq_len(nrow(cpb))) {
+    m <- to_blk_subt[match(cpb$mat_id[k], mat_ids_after_blk_subt)]
+    b <- cpb$batch_id[k]
+    if (is.na(cpb$calibration[k])) {
+      log_event("Calibration", "batch", b, "Not calibrated", cpb$note[k], "removed", mat_id = m, batch_id = b)
+    } else if (cpb$calibration[k] == "Global") {
+      log_event("Calibration", "batch", b, "Global curves used", cpb$note[k], "fallback", mat_id = m, batch_id = b)
+    }
+    res <- lst_proc[[cpb$mat_id[k]]][[b]]
+    if (is.null(res$concn)) next
+    rd <- SumExp::row_df(res$concn)
+    id <- rownames(res$concn)
+    flag <- \(x) !is.na(x) & x
+    # Chemicals of a batch calibrated with its own curves that use the global one
+    if (cpb$calibration[k] == "Batch + Global") {
+      g <- rd$src_calcurve %in% "Global"
+      log_event("Calibration", "feature", id[g], "Global curve used",
+                paste0("Not valid in the batch: ", dplyr::coalesce(rd$range_issue[g], "no valid range")),
+                "fallback", mat_id = m, batch_id = b)
+    }
+    no_range <- !flag(rd$has_proper_range)
+    log_event("Calibration", "feature", id[no_range], "Not quantified",
+              dplyr::coalesce(rd$range_issue[no_range], "No valid calibration range"), "removed",
+              mat_id = m, batch_id = b)
+    kept <- flag(rd$kept_calcurve)
+    log_event("Calibration", "feature", id[kept], "Curve kept although not valid",
+              dplyr::coalesce(rd$range_issue[kept], "No valid calibration range"), "fallback",
+              mat_id = m, batch_id = b)
+    full <- flag(rd$no_quant_samples) & !no_range
+    log_event("Calibration", "feature", id[full], "Full calibration range used",
+              "No sample or QC at or above the LLOQ", "fallback", mat_id = m, batch_id = b)
+    lin <- !is.na(rd$linear_range_note) & !no_range
+    log_event("Calibration", "feature", id[lin], "Above the linear range", rd$linear_range_note[lin], "note",
+              mat_id = m, batch_id = b)
+    not_exp <- !no_range & !flag(rd$to_export)
+    log_event("Calibration", "feature", id[not_exp], "Not exported",
+              dplyr::coalesce(rd$range_issue[not_exp], "No study sample above the LLOQ"), "removed",
+              mat_id = m, batch_id = b)
+  }
+})
 # Values below the LOD / LLOQ: replaced, or without a value ("n.d." / "n.q.") without --impute_llox
 for (mat_id_to_calib in names(lst_proc)) {
   for (batch_id in names(lst_proc[[mat_id_to_calib]])) {
@@ -1247,4 +1412,4 @@ saveRDS(lst_proc, file = FILE$proc)
 cat("The `SumExp` object after processing saved to:", FILE$proc, "\n")
 
 # Mark the processing step as completed
-mark_completed_and_save_to_report()
+mark_completed_and_save_to_report(lst_proc)

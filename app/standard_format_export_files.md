@@ -179,3 +179,37 @@ The feature information column section (1st section) is a reordered copy of the 
 For the `closest` RT normalized data only, additionally `Target IS` and `Target IS (Rt)` columns are included.
 The `Target IS` column contains the name of the closest internal standard feature that was used for normalization.
 The `Target IS (Rt)` column contains the retention time of the closest internal standard feature.
+
+## Processing history
+
+### File name
+
+* `(source file name).(normalization method).history.xlsx`
+
+### Contents
+
+What happened to each feature and each sample during the processing, made from the event log of
+`process.R` (`to_report[["events"]]`). Its sheets:
+
+* `Feature history`: one row per feature of the input file, also those removed on the way (failed
+  internal standards, blank filter, QC RSD% filter). After the feature information (`Feature`,
+  `Alignment ID`, `Type`, `RT [min]`, `m/z`) its `Status` (where it ended, e.g. `Quantified`,
+  `Kept`, `Removed (blank filter)`), then a column per processing step in the order of the
+  processing: `Failed IS check`, `Normalized by`, `Blank filter`, `QC RSD% filter`, one
+  `Calibration, batch N` per batch (the curve used, or why the feature was not quantified), and
+  `Notes` (e.g. levels above the linear range). A cell tells what the step did (`Passed`,
+  `Removed: <why>`, `Not applied`, ...); it is empty where the step does not concern the feature,
+  or the feature was removed before.
+* `Sample history`: one row per sample of the input file: `Sample`, `Sample type`, `Class`, `Batch`,
+  `Injection order`, `Status` (`Kept` / `Removed (outlier)`), `vIS pre-normalization`,
+  `Outlier check`, `IS zeros replaced` (how many zeros of the internal standards were replaced
+  for the normalization, and by what), `Blank subtraction` (which blank mean), and one
+  `Calibration (<version>)` per data version (the calibration of the sample's batch).
+* `Events`: everything the processing logged that concerns this data version or all of them, one
+  row per feature, sample or batch: `Step`, `Applies to` (feature, sample, batch or run), `Name`,
+  `ID`, `Batch`, `Kind` (`removed`, `fallback`: the data did not allow the usual way, `changed`: a
+  value replaced, `note`), `Event` and `Detail`.
+* `Legend`: the explanation of the sheets.
+
+As for the other tables, each sheet (but the legend) is also saved as a CSV file:
+`(source file name).(normalization method).history.(sheet).csv`.

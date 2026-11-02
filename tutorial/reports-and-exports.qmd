@@ -42,7 +42,7 @@ document the processing.
 
 ## Exported tables
 
-**Export data into tables** writes four Excel files for the final method (and each of their sheets
+**Export data into tables** writes five Excel files for the final method (and each of their sheets
 as a `.csv` file), ready to download:
 
 | File | Content |
@@ -51,6 +51,7 @@ as a `.csv` file), ready to download:
 | `….norm_blk.xlsx` | the same after blank subtraction |
 | `….conc.xlsx` | concentrations of the targeted compounds: QCs, study samples and blanks |
 | `….conc_all.xlsx` | the same with all samples, including the calibration samples |
+| `….history.xlsx` | what the processing did with each feature and sample (see [Processing history](#processing-history)) |
 
 This is the start of a batch sheet of the concentration table of the example
 (`r basename(conc_file)`), the feature columns first and then the samples:
@@ -89,6 +90,47 @@ DT::datatable(leg[, c("Colour", "Meaning")], rownames = FALSE, selection = "none
               options = list(dom = "t", paging = FALSE, ordering = FALSE)) |>
   DT::formatStyle("Colour", backgroundColor = DT::styleRow(seq_along(fills), fills))
 ```
+
+## Processing history
+
+Some steps of the processing cannot always be done the usual way, for example a batch without blank
+samples or a compound without a valid calibration curve in its batch. QuaNTA then uses a
+**fallback** (e.g. the blank of all batches, or the global curve) and logs it, as it logs every
+feature and sample it removes. The same log is shown in three places:
+
+- **In the app**, page 1, the tab *Processing history* next to the processing log: the fallbacks
+  and removals of each step, and the full feature and sample tables in a popup.
+- **In the internal report**, section 1.1, the tabs *Feature flow* (where the features ended),
+  *Fallbacks and removals*, *Feature history* and *Sample history*.
+- **In the exported tables**, the file `….history.xlsx` (each sheet also as a `.csv` file).
+
+```{r}
+#| label: table-history
+hist_file <- grep("\\.history\\.xlsx$", tut$table_files, value = TRUE)[1]
+```
+
+`r if (is.na(hist_file)) "" else paste0("The feature history of the example (", basename(hist_file), "), a few targeted compounds:")`
+
+```{r}
+#| label: table-feature-history
+if (!is.na(hist_file)) {
+  fh <- openxlsx::read.xlsx(hist_file, sheet = "Feature history", check.names = FALSE, sep.names = " ")
+  tut_table(utils::head(fh[fh$Type == "Targeted", ], 25), height = "380px")
+}
+```
+
+**How to read it**
+
+- **One row per feature** of the input file, also those removed on the way, with its **Status**:
+  where it ended (e.g. *Quantified*, *Kept*, *Removed (blank filter)*).
+- **A column per step**, in the order of the processing: what the step did with the feature
+  (*Passed*, *Removed* and why, *Not applied*). Empty: the step does not concern the feature, or
+  it was removed before.
+- **Calibration, batch N**: the curve used in each batch, its own or the global one, or why the
+  compound was not quantified there.
+- The sheet **Sample history** does the same for the samples (outliers, vIS correction, replaced
+  IS zeros, the blank subtracted, the calibration of their batch), and **Events** lists every
+  logged event, with its kind: *removed*, *fallback*, *changed* (a value replaced) or *note*.
 
 ::: {.callout-tip}
 ## Reuse the processing

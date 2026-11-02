@@ -38,7 +38,7 @@ processing <- list(
   per_batch           = TRUE,    # Blank subtraction and calibration per batch (Batch ID)
   # Quality control
   vis_prenorm         = FALSE,   # Pre-normalize all peak areas by the volumetric IS (vIS)
-  rm_outlier          = TRUE,    # Remove outlier samples (> 20% of the IS beyond 3 SD, log scale)
+  rm_outlier          = TRUE,    # Remove outlier samples (> 20% of the IS beyond 3 SD, log scale, or zero)
   rm_outlier_scope    = "all",   # "all" injections, or "no_calib": calibration samples always kept
   blank_filter        = TRUE,    # Blank filtering (after normalization, before blank subtraction)
   blank_filter_factor = 5,       # Kept when the sample max or mean > factor x blank mean (>= 0)

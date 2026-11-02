@@ -44,7 +44,7 @@ runProcessUI <- function(uiId) {
       label = label_tip("Remove outlier samples",
                         paste("Before normalization (after the removal of failed internal standards).",
                               "A sample is removed when more than 20% of the internal standards deviate",
-                              "by more than 3 SD from their mean (log scale).")),
+                              "by more than 3 SD from their mean (log scale) or are missing (zero) in it.")),
       value = TRUE,
       width = "100%"
     ),
