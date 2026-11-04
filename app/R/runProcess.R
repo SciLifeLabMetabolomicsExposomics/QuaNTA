@@ -39,6 +39,7 @@ runProcessUI <- function(uiId) {
       width = "100%"
     ),
     # Outlier removal
+    option_group(
     shiny::checkboxInput(
       inputId = ns("rm_outlier"),
       label = label_tip("Remove outlier samples",
@@ -63,14 +64,16 @@ runProcessUI <- function(uiId) {
         selected = "all",
         width = "100%"
       )
+    )
     ),
+    option_group(
     shiny::checkboxInput(
       inputId = ns("blank_filter"),
-      label = label_tip("Blank filtering",
+      label = label_tip("Blank filter",
                         paste("After normalization, before blank subtraction.",
-                              "A feature is kept when its maximum or mean in the samples is above the",
-                              "factor times its mean in the blanks. Internal standards (also the vIS) are",
-                              "not filtered.")),
+                              "A feature is kept when its maximum or mean (see below) in the study samples",
+                              "is above the factor times its mean in the blanks. QCs and calibration",
+                              "standards do not count. Internal standards (also the vIS) are not filtered.")),
       value = TRUE,
     ),
     # Only shown when blank filtering is selected (as the other options with settings)
@@ -79,16 +82,28 @@ runProcessUI <- function(uiId) {
       ns = ns,
       shiny::numericInput(
         inputId = ns("blank_filter_factor"),
-        label = "Blank filtering factor",
+        label = "Blank filter factor",
         value = 5,
         min = 0,
+      ),
+      shiny::radioButtons(
+        inputId = ns("blank_filter_stat"),
+        label = label_tip("Compare the blanks with",
+                          paste("Maximum: kept when at least one study sample is above the threshold (lenient;",
+                                "keeps features found in a few samples only). Mean: kept when the mean of",
+                                "the study samples is above it (strict).")),
+        choices = c("Maximum of the study samples" = "max", "Mean of the study samples" = "mean"),
+        selected = "max",
+        width = "100%"
       )
+    )
     ),
     # QC RSD% filter: remove features with a high RSD% among the QC replicates (after
     # normalization and blank subtraction)
+    option_group(
     shiny::checkboxInput(
       inputId = ns("rsd_filter"),
-      label = label_tip("Remove features with QC RSD% above a threshold",
+      label = label_tip("Remove features based on QC RSD%",
                         paste("After normalization and blank subtraction. The RSD% is computed within",
                               "each QC group (all batches together); with several groups, their median is used.",
                               "Without targeted (Quant) features, only non-targeted features can be filtered.")),
@@ -128,13 +143,27 @@ runProcessUI <- function(uiId) {
         )
       )
     )
+    )
     ),
     settings_group(
     "Calibration", "chart-line",
+    # Grouped by theme, in the order of the processing: the levels of a curve, its limits (from
+    # the zero calibrant), the fit from the LLOQ upwards, its linear range, and which curves are valid
+    settings_subhead("Calibration levels"),
+    shiny::checkboxInput(
+      inputId = ns("average_cal_reps"),
+      label = label_tip("Average calibration replicates per batch",
+                        paste("The replicates of each calibration level are averaged within each batch,",
+                              "giving one point per level and batch. If \"Process data per batch\" is ticked",
+                              "they will be used separately, per batch. If unticked they will be pooled so that",
+                              "each batch is represented in the global calibration curve by one point per concentration.")),
+      value = FALSE,
+      width = "100%"
+    ),
     # Option for keeping all calibration points (even though outside range)
     shiny::checkboxInput(
       inputId = ns("optimize_cal_points"),
-      label = label_tip("Optimize calibration curves to exclude points outside the sample range",
+      label = label_tip("Optimize calibration curves based on sample range",
                         paste("Calibration points above the highest sample signal are left out of the",
                               "curve, keeping at least 3 points (or the minimum number of calibration points,",
                               "if set higher). Without any sample or QC at or above",
@@ -142,9 +171,10 @@ runProcessUI <- function(uiId) {
       value = FALSE,
       width = "100%"
     ),
+    option_group(
     shiny::checkboxInput(
       inputId = ns("set_minimum_number"),
-      label = label_tip("Minimum number of calibration points per curve",
+      label = label_tip("Minimum calibration points per curve",
                         paste("A curve always needs at least 3 calibration levels (from the LLOQ",
                               "upwards); this is the default. Tick to require more. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
@@ -163,76 +193,49 @@ runProcessUI <- function(uiId) {
         min = 3,
         step = 1
       )
+    )
     ),
+    settings_subhead("LOD and LLOQ"),
+    shiny::radioButtons(
+      inputId = ns("llox_method"),
+      label = label_tip("LOD/LLOQ method",
+                        paste("LOD: the lowest calibration level whose mean signal is above the",
+                              "threshold with factor 3; LLOQ: with factor 10. The 'mean + SD' method needs at least",
+                              "2 Cal0 replicates (in a batch, or in all batches together for the global curve):",
+                              "it is greyed out when the data has fewer, and with averaged calibration replicates.",
+                              "A batch with fewer uses the global curve. Greyed out when the data has no targeted (Quant) features.")),
+      selected = "pt_signal_mean_plus_sd",
+      choiceValues = list("pt_signal_mean", "pt_signal_mean_plus_sd"),
+      choiceNames = list(
+        shiny::HTML(paste0("pt. > 3 (or 10) * mean", shiny::tags$sub("Cal0"))),
+        shiny::HTML(paste0("pt. > mean", shiny::tags$sub("Cal0"), " + 3 (or 10) * StdDev", shiny::tags$sub("Cal0")))
+      ),
+    ),
+    shiny::uiOutput(ns("hint_llox_method")),   # Why the option above is greyed out (see the server)
+    # RSD% 20% threshold for LLOQ
     shiny::checkboxInput(
-      inputId = ns("average_cal_reps"),
-      label = label_tip("Average calibration replicates per batch (global curve)",
-                        paste("The replicates of each calibration level are averaged within each batch,",
-                              "giving one point per level and batch. The global curve fitted on these",
-                              "averages is used for every batch. Without replicates, the RSD% 20% threshold",
-                              "and the SD of Cal0 (LOD/LLOQ method) cannot be used and are switched off. Greyed out when the data has no targeted (Quant) features.")),
-      value = FALSE,
+      inputId = ns("use_rsd20"),
+      label = label_tip("Use RSD 20% precision threshold for LLOQ",
+                        paste("The replicates at the LLOQ level must also have an RSD% of at most 20%. This needs",
+                              "at least 2 replicates of every calibration level (in a batch, or in all batches",
+                              "together for the global curve): greyed out when the data has fewer, and with averaged",
+                              "calibration replicates. A batch with fewer uses the global curve. Greyed out when the data has no targeted (Quant) features.")),
+      value = TRUE,
       width = "100%"
     ),
+    shiny::uiOutput(ns("hint_use_rsd20")),   # Why the option above is greyed out (see the server)
+    # Replace the concentrations below the LOD/LLOQ, or report them as "n.d." / "n.q."
     shiny::checkboxInput(
-      inputId = ns("keep_all_calcurves"),
-      label = label_tip("Keep all calibration curves",
-                        paste("Compounds whose calibration range is not valid (e.g. no level above the",
-                              "LLOQ signal, or too few levels) keep a curve from the LLOQ (or the lowest",
-                              "level) to the highest level. A batch still uses a valid global curve when",
-                              "there is one. The reports show why each curve was not valid. Greyed out when the data has no targeted (Quant) features.")),
-      value = FALSE,
+      inputId = ns("impute_llox"),
+      label = label_tip("Replace values below the LOD/LLOQ",
+                        paste("Ticked: values with a signal below the LOD signal are replaced by LLOQ/4 and those",
+                              "below the mean signal of the LLOQ level by LLOQ/2. Unticked: they are reported as 'n.d.' (not",
+                              "detected, below the LOD) and 'n.q.' (not quantified, below the LLOQ),",
+                              "without a value, and left out of plots and statistics. Greyed out when the data has no targeted (Quant) features.")),
+      value = TRUE,
       width = "100%"
     ),
-    shiny::checkboxInput(
-      inputId = ns("r2_filter"),
-      label = label_tip("Minimum R² of the calibration curves",
-                        paste("A compound whose calibration curve has a lower R² is considered failed:",
-                              "no concentrations, not exported (kept and marked with 'Keep all",
-                              "calibration curves'). The reports and tables show the reason. Greyed out when the data has no targeted (Quant) features.")),
-      value = FALSE,
-      width = "100%"
-    ),
-    shiny::conditionalPanel(
-      condition = "input.r2_filter == true",
-      ns = ns,
-      shiny::numericInput(
-        inputId = ns("min_r2"),
-        label = "Minimum R² (0-1)",
-        value = 0.99, min = 0, max = 1, step = 0.005
-      )
-    ),
-    shiny::checkboxInput(
-      inputId = ns("linear_only"),
-      label = label_tip("Linear models only",
-                        paste("Fit only linear calibration curves (with the chosen weighting), even when",
-                              "a quadratic curve would fit better. Greyed out when the data has no targeted (Quant) features.")),
-      value = FALSE,
-      width = "100%"
-    ),
-    shiny::numericInput(
-      inputId = ns("linear_range_tol"),
-      label = label_tip("Linear range: maximum deviation of the top level (%, 1-50)",
-                        paste("The ULOQ is the top of the linear range of a curve. Linear curves (also those chosen",
-                              "with mixed models): the mean signal of each calibration level is back-calculated;",
-                              "while the top level deviates from its nominal concentration by more than this, it is",
-                              "left out and the curve refitted, keeping at least the minimum number of levels. With",
-                              "log-scale fitting the linear range is found by SCALiR instead (this value is not",
-                              "used, greyed out). Quadratic curves have no ULOQ. Greyed out when the data has no",
-                              "targeted (Quant) features.")),
-      value = 15, min = 1, max = 50, step = 1
-    ),
-    shiny::checkboxInput(
-      inputId = ns("enforce_linear_range"),
-      label = label_tip("Enforce linear range (cut the curves at the ULOQ)",
-                        paste("Ticked: each curve is cut at its ULOQ and refitted; higher concentrations are",
-                              "extrapolated. Unticked: the curves keep their range; concentrations between the",
-                              "ULOQ and the highest level are marked as above the linear range. The levels above",
-                              "the ULOQ are named in the notes either way. Greyed out when the data has no",
-                              "targeted (Quant) features.")),
-      value = FALSE,
-      width = "100%"
-    ),
+    settings_subhead("Curve fit"),
     shiny::checkboxInput(
       inputId = ns("log_calibration"),
       label = label_tip("Log scale for calibration curve fitting",
@@ -258,41 +261,73 @@ runProcessUI <- function(uiId) {
         shiny::HTML(paste0("1/x", shiny::tags$sup("2")))
       ),
     ),
-    shiny::radioButtons(
-      inputId = ns("llox_method"),
-      label = label_tip("LOD/LLOQ method",
-                        paste("LOD: the lowest calibration level whose mean signal is above the",
-                              "threshold with factor 3; LLOQ: with factor 10. The 'mean + SD' method needs at least",
-                              "2 Cal0 replicates (in a batch, or in all batches together for the global curve):",
-                              "it is greyed out when the data has fewer, and with averaged calibration replicates.",
-                              "A batch with fewer uses the global curve. Greyed out when the data has no targeted (Quant) features.")),
-      selected = "pt_signal_mean_plus_sd",
-      choiceValues = list("pt_signal_mean", "pt_signal_mean_plus_sd"),
-      choiceNames = list(
-        shiny::HTML(paste0("pt. > 3 (or 10) * mean", shiny::tags$sub("Cal0"))),
-        shiny::HTML(paste0("pt. > mean", shiny::tags$sub("Cal0"), " + 3 (or 10) * StdDev", shiny::tags$sub("Cal0")))
-      ),
-    ),
-    # RSD% 20% threshold for LLOQ
+    shiny::uiOutput(ns("hint_weight")),   # Why the option above is greyed out (see the server)
     shiny::checkboxInput(
-      inputId = ns("use_rsd20"),
-      label = label_tip("Use RSD% 20% threshold for LLOQ",
-                        paste("The replicates at the LLOQ level must also have an RSD% of at most 20%. This needs",
-                              "at least 2 replicates of every calibration level (in a batch, or in all batches",
-                              "together for the global curve): greyed out when the data has fewer, and with averaged",
-                              "calibration replicates. A batch with fewer uses the global curve. Greyed out when the data has no targeted (Quant) features.")),
-      value = TRUE,
+      inputId = ns("linear_only"),
+      label = label_tip("Linear models only",
+                        paste("Fit only linear calibration curves (with the chosen weighting), even when",
+                              "a quadratic curve would fit better. Greyed out when the data has no targeted (Quant) features.")),
+      value = FALSE,
       width = "100%"
     ),
-    # Replace the concentrations below the LOD/LLOQ, or report them as "n.d." / "n.q."
+    settings_subhead("Linear range (ULOQ)"),
+    shiny::numericInput(
+      inputId = ns("linear_range_tol"),
+      label = label_tip("Linear range: maximum deviation of the top level (%, 1-50)",
+                        paste("The ULOQ is the top of the linear range of a curve. Linear curves (also those chosen",
+                              "with mixed models): the mean signal of each calibration level is back-calculated;",
+                              "while the top level deviates from its nominal concentration by more than this, it is",
+                              "left out and the curve refitted, down to 3 levels (the minimum number of levels only",
+                              "limits where a cut curve ends, not the ULOQ). With",
+                              "log-scale fitting the linear range is found by SCALiR instead (this value is not",
+                              "used, greyed out). Quadratic curves have no ULOQ. Greyed out when the data has no",
+                              "targeted (Quant) features.")),
+      value = 15, min = 1, max = 50, step = 1
+    ),
+    shiny::uiOutput(ns("hint_linear_range_tol")),   # Why the option above is greyed out (see the server)
     shiny::checkboxInput(
-      inputId = ns("impute_llox"),
-      label = label_tip("Replace values below the LOD/LLOQ",
-                        paste("Ticked: values with a signal below the LOD signal are replaced by LLOQ/4 and those",
-                              "below the mean signal of the LLOQ level by LLOQ/2. Unticked: they are reported as 'n.d.' (not",
-                              "detected, below the LOD) and 'n.q.' (not quantified, below the LLOQ),",
-                              "without a value, and left out of plots and statistics. Greyed out when the data has no targeted (Quant) features.")),
-      value = TRUE,
+      inputId = ns("enforce_linear_range"),
+      label = label_tip("Enforce linear range (cut the curves at the ULOQ)",
+                        paste("Ticked: each curve is cut at its ULOQ and refitted; higher concentrations are",
+                              "extrapolated. A curve keeps at least the minimum number of levels, so it can end",
+                              "above its ULOQ: the levels between are marked as above the linear range. Unticked: the curves keep their range; concentrations between the",
+                              "ULOQ and the highest level are marked as above the linear range. The levels above",
+                              "the ULOQ are named in the notes either way. Greyed out when the data has no",
+                              "targeted (Quant) features.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    settings_subhead("Curve validity"),
+    option_group(
+    shiny::checkboxInput(
+      inputId = ns("r2_filter"),
+      label = label_tip("Minimum R² of the calibration curves",
+                        paste("A compound whose calibration curve has a lower R² is considered failed:",
+                              "no concentrations, not exported (kept and marked with 'Keep all",
+                              "calibration curves'). The reports and tables show the reason. Greyed out when the data has no targeted (Quant) features.")),
+      value = FALSE,
+      width = "100%"
+    ),
+    shiny::conditionalPanel(
+      condition = "input.r2_filter == true",
+      ns = ns,
+      shiny::numericInput(
+        inputId = ns("min_r2"),
+        label = "Minimum R² (0-1)",
+        value = 0.99, min = 0, max = 1, step = 0.005
+      )
+    )
+    ),
+    shiny::checkboxInput(
+      inputId = ns("keep_all_calcurves"),
+      label = label_tip("Keep all calibration curves",
+                        paste("Compounds whose calibration range is not valid (e.g. no level above the",
+                              "LLOQ signal, or too few levels) keep a curve from the LLOQ (or the lowest",
+                              "level) to the highest level. A batch still uses a valid global curve when",
+                              "there is one. The reports show why each curve was not valid. Compounds with a",
+                              "curve are also exported when no study sample is above the LLOQ (e.g. data with",
+                              "QCs only); otherwise they are not. Greyed out when the data has no targeted (Quant) features.")),
+      value = FALSE,
       width = "100%"
     )
     ),
@@ -391,6 +426,29 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       # Pre-normalization by the volumetric IS
       if (!vis_ok && isTRUE(input$vis_prenorm)) shiny::updateCheckboxInput(session, "vis_prenorm", value = FALSE)
       shinyjs::toggleState("vis_prenorm", condition = vis_ok)
+    })
+
+    # Visible notes under the options greyed out by another option or by the data (not when the
+    # data has no targeted features: then all calibration options are greyed out)
+    hint_when <- function(id, f) output[[paste0("hint_", id)]] <- shiny::renderUI({
+      caps <- data_caps()
+      if (!is.null(caps) && !(isTRUE(caps$has_targeted) && isTRUE(caps$has_calib))) return(NULL)
+      txt <- f(caps, isTRUE(input$average_cal_reps), isTRUE(input$log_calibration))
+      if (length(txt) == 0) NULL else settings_hint(txt)
+    })
+    hint_when("llox_method", function(caps, avg, log_fit) {
+      if (avg) "Mean + SD: not available with averaged calibration replicates (no SD)."
+      else if (!is.null(caps) && !isTRUE(caps$cal0_ok)) "Mean + SD: not available, fewer than 2 Cal0 replicates in the data."
+    })
+    hint_when("use_rsd20", function(caps, avg, log_fit) {
+      if (avg) "Not available with averaged calibration replicates (no RSD%)."
+      else if (!is.null(caps) && !isTRUE(caps$reps_ok)) "Not available: fewer than 2 replicates per calibration level in the data."
+    })
+    hint_when("weight", function(caps, avg, log_fit) {
+      if (log_fit) "With log-scale fitting only the weighting 1 is possible."
+    })
+    hint_when("linear_range_tol", function(caps, avg, log_fit) {
+      if (log_fit) "Not used with log-scale fitting: SCALiR finds the linear range."
     })
 
     # On "Process data": warnings about the data in a popup; processing starts only on "Proceed"
@@ -609,6 +667,7 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       "impute_llox",
       "blank_filter",
       "blank_filter_factor",
+      "blank_filter_stat",
       "rsd_filter",
       "rsd_filter_scope",
       "rsd_max_targeted",

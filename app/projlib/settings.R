@@ -32,6 +32,7 @@ processing_options <- tibble::tribble(
   "log_calibration",     "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
   "blank_filter",        "proc",        "checkbox", list(TRUE),                      list(NULL),                                           NA,   NA,   FALSE,
   "blank_filter_factor", "proc",        "numeric",  list(5),                         list(NULL),                                           0,    NA,   FALSE,
+  "blank_filter_stat",   "proc",        "radio",    list("max"),                     list(c("max", "mean")),                               NA,   NA,   FALSE,
   "weight",              "proc",        "radio",    list("largestR2"),               list(c("largestR2", "1", "1_div_x", "1_div_x2")),     NA,   NA,   FALSE,
   "llox_method",         "proc",        "radio",    list("pt_signal_mean_plus_sd"),  list(c("pt_signal_mean", "pt_signal_mean_plus_sd")), NA,   NA,   FALSE,
   "use_rsd20",           "proc",        "checkbox", list(TRUE),                      list(NULL),                                           NA,   NA,   FALSE,

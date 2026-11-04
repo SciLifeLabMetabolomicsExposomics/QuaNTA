@@ -2,6 +2,9 @@ project:
   type: website
   output-dir: _site
   render: ["*.qmd"]   # Not README.md (for the repository)
+  # The calibration curve viewer of the app, copied before each render (see _copy-viewer.ts)
+  pre-render: _copy-viewer.ts
+  resources: [assets/calcurve_viewer.js]
 
 website:
   title: "Introduction"
@@ -91,19 +94,14 @@ website:
                 href: calibration-limits.qmd#calibration-curve-limits
               - text: "4.3 Chemicals with concentrations"
                 href: calibration-limits.qmd#chemicals-with-concentrations
-          - section: "Calibration curves (4.4 and 4.5)"
+          - text: "4.4 Calibration curves per chemical"
             href: calibration-curves.qmd
-            contents:
-              - text: "4.4 The calibration points"
-                href: calibration-curves.qmd#the-calibration-points
-              - text: "4.5 The samples on the curve"
-                href: calibration-curves.qmd#the-samples-on-the-curve
-          - section: "Concentrations (4.6 and 4.7)"
+          - section: "Concentrations (4.5 and 4.6)"
             href: concentrations.qmd
             contents:
-              - text: "4.6 Concentration per class"
+              - text: "4.5 Concentration per class"
                 href: concentrations.qmd#concentration-per-class
-              - text: "4.7 QC samples in acquisition order"
+              - text: "4.6 QC samples in acquisition order"
                 href: concentrations.qmd#qc-samples-in-acquisition-order
       - section: "5 Report export"
         contents:

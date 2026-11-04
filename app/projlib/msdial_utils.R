@@ -131,6 +131,18 @@ extract_ctrl_smpl_cat <- function(sumexp, cat) {
   sumexp[, !is.na(s_cat) & (s_cat %in% cat)]
 }
 
+#' Whether a signal is detected: at or above the LOD signal, and above 0
+#'
+#' The condition "above 0" only matters when the LOD signal is 0 (no signal in the zero
+#' calibrant): a sample without a signal (e.g. set to 0 by the blank subtraction) is then not
+#' detected.
+#'
+#' @param signal Signals (a vector or matrix)
+#' @param lod_signal The LOD signals, in the same scale (recycled as in `signal >= lod_signal`)
+#' @returns A logical vector or matrix as `signal` (`NA` where the signal or LOD signal is `NA`)
+#' @export
+is_detected <- function(signal, lod_signal) signal >= lod_signal & signal > 0
+
 #' Get which samples are calibration curve samples
 #'
 #' @param sumexp A [`SumExp::SumExp`] object including calibration curve samples

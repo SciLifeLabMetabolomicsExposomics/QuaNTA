@@ -395,13 +395,15 @@ tibble(Setting = c("Normalization (this report)", "Best normalization (lowest me
                    "Log-scale calibration", "Keep all calibration curves", "Linear models only",
                    "Linear range (ULOQ): max. deviation of the top level; curves cut at the ULOQ",
                    "Minimum R² of the calibration curves", "Values below the LOD/LLOQ",
-                   "Calibration replicates averaged per batch (global curve)", "Pre-normalization by the volumetric IS"),
+                   "Calibration replicates averaged per batch", "Pre-normalization by the volumetric IS"),
        Value = c(val(method_label[MAT]), val(method_label[tr[["best normalization"]]]),
                  val(length(batch_ids) > 1),
                  if (!isTRUE(p$rm_outlier)) "No" else if (identical(p$rm_outlier_scope, "no_calib"))
                    "Yes (calibration samples always kept)" else "Yes (all injections)",
                  val(p$blank_filter),
-                 val(p$blank_filter_factor), rsd_txt, val(p$weight), val(p$llox_method),
+                 paste0(val(p$blank_filter_factor), " (",
+                        if (identical(p$blank_filter_stat, "mean")) "mean" else "maximum", " of the study samples)"),
+                 rsd_txt, val(p$weight), val(p$llox_method),
                  val(p$use_rsd20), val(p$log_calibration), val(isTRUE(p$keep_all_calcurves)), val(isTRUE(p$linear_only)),
                  paste0(if (isTRUE(p$log_calibration)) "SCALiR" else if (is.null(p$linear_range_tol)) "–" else paste0(p$linear_range_tol, "%"),
                         "; ", if (isTRUE(p$enforce_linear_range)) "cut" else "not cut"),
@@ -971,8 +973,8 @@ if (is.null(removed) || nrow(filter(removed, mat_id == MAT)) == 0) {
 
 One targeted compound at a time in the (method) blanks, in red, next to the QCs, study samples and
 calibrants, `r method_label[MAT]` values before blank filtering and blank subtraction. The dashed line is the threshold of the
-blank filter: a feature is kept when its maximum or mean in the other samples (calibrants included) is
-above `r tr$blank_filter_factor %||% 5` × its mean in the blanks (on blanks and QC samples in
+blank filter: a feature is kept when its `r if (identical(tr$params$blank_filter_stat, "mean")) "mean" else "maximum"`
+in the study samples (QCs and calibrants do not count) is above `r tr$blank_filter_factor %||% 5` × its mean in the blanks (on blanks and QC samples in
 metabolomics, see @broadhurst2018); internal standards are not filtered. Search, and switch between a bar per group (mean ± SD, samples as
 points) and a bar per sample along the injection order. This report shows the targeted compounds only
 (all features would make the report very large); the app (3.11) shows all features, also the
@@ -1343,7 +1345,7 @@ window.addEventListener('load', function () {
     });
   }
 
-  // ---- QC samples in acquisition order (4.7): one compound, a line per QC group; measured values
+  // ---- QC samples in acquisition order (4.6): one compound, a line per QC group; measured values
   //      filled, values replaced by the LOD/LLOQ rules open; values without a value are counted ----
   var Q = window.QCVIEW;
   if (Q && document.getElementById('qcv')) {
@@ -1404,82 +1406,6 @@ window.addEventListener('load', function () {
       }, { responsive: true, displaylogo: false });
     });
   }
-
-  // ---- Calibration curves: one compound, one curve (global or a batch) ----
-  var D = window.CALVIEW, cv = document.getElementById('cv');
-  if (!D || !cv) return;                       // No calibration in this report
-  var vsel = cv.querySelector('.view');
-  D.views.forEach(function (v) { var o = document.createElement('option'); o.value = v; o.textContent = v; vsel.appendChild(o); });
-  vsel.value = D.views.length > 1 ? D.views[1] : D.views[0];
-  viewer('cv', D.comps, function (c) {
-    return c.name + (c.note ? '  (' + (c.note.indexOf('Removed') === 0 ? 'removed' : 'no valid curve') + ')' : '');
-  }, function (root) {
-    var c = D.comps[+root.querySelector('.sel').value], vn = root.querySelector('.view').value, v = c.v[vn];
-    var isLog = root.querySelector('.log').checked, traces = [], shapes = [], notes = [], info = root.querySelector('.info');
-    if (c.note) notes.push('<span class="warn">' + c.note + '</span>');
-    if (!v) { Plotly.react(root.querySelector('.plot'), [], {}); info.innerHTML = notes.join(' '); return; }
-    // Why the curve is not valid, kept although not valid, or replaced by the global one
-    if (v.why && c.note.indexOf('Removed') !== 0) notes.push('<span class="' + (v.kept ? 'kept' : 'warn') + '">' + vn + ': ' + v.why + '.</span>');
-    // No quantifiable sample: the full calibration range is shown
-    if (v.nq) notes.push('<span class="kept">' + v.nq + '.</span>');
-    if (v.model) notes.push('<span class="chip">Model: ' + v.model + '</span><span class="chip">R² ' + (v.r2 === null || v.r2 === undefined ? '–' : (+v.r2).toFixed(3)) + '</span>' +
-      '<span class="chip">LOD ' + fmt(v.lod) + '</span><span class="chip">LLOQ ' + fmt(v.lloq) + '</span>' +
-      '<span class="chip">ULOQ ' + (v.uloq === null || v.uloq === undefined ? '–' : fmt(v.uloq) + ' ' + D.unit) + '</span><span class="chip">Highest level ' + fmt(v.top) + ' ' + D.unit + '</span><span class="chip">Curve: ' + v.src + '</span>');
-    info.innerHTML = notes.join(' ');
-    // A curve that is not valid (e.g. R² below the minimum) is dashed
-    if (v.curve) traces.push({ x: v.curve.x, y: v.curve.y, mode: 'lines', hoverinfo: 'skip',
-      name: v.src === 'None' ? 'Calibration curve (not valid)' : 'Calibration curve',
-      line: { color: v.src === 'None' ? '#c23636' : 'cadetblue', width: 2.5, dash: v.src === 'None' ? 'dash' : 'solid' } });
-    // Calibration points: the zero calibrant (Cal0) in blue, the others used / not used for the curve
-    [['cal0', 'Cal0 (zero calibrant)', 'diamond', '#1A0DF2'], [1, 'Calibration points (used)', 'circle', '#333'],
-     [0, 'Calibration points (not used)', 'circle-open', '#888']].forEach(function (g) {
-      var k = v.cal.u.map(function (u, j) {
-        var isCal0 = v.cal.x[j] === 0;
-        return (g[0] === 'cal0' ? isCal0 : (!isCal0 && u === g[0])) ? j : -1;
-      }).filter(function (j) { return j >= 0; });
-      if (!k.length) return;
-      traces.push({ x: k.map(function (j) { return v.cal.x[j]; }), y: k.map(function (j) { return v.cal.y[j]; }),
-        mode: 'markers', type: 'scatter', name: g[1], marker: { symbol: g[2], color: g[3], size: g[0] === 'cal0' ? 10 : 8 },
-        text: k.map(function (j) { return who(v.cal.s[j]) + '<br>nominal ' + fmt(v.cal.x[j]) + ' ' + D.unit + ' · signal ' + fmt(v.cal.y[j]); }),
-        hovertemplate: '%{text}<extra></extra>' });
-    });
-    if (v.smp) {
-      var groups = {};
-      v.smp.s.forEach(function (s, j) { (groups[S.g[s]] = groups[S.g[s]] || []).push(j); });
-      Object.keys(groups).forEach(function (g) {
-        var k = groups[g];
-        traces.push({ x: k.map(function (j) { return v.smp.x[j]; }), y: k.map(function (j) { return v.smp.y[j]; }), mode: 'markers', type: 'scatter', name: g,
-          marker: { color: COL[g] || '#999', size: 7, opacity: .85, line: { width: .5, color: '#fff' } },
-          text: k.map(function (j) {
-            var hasU = v.uloq !== null && v.uloq !== undefined;
-            var x = v.smp.x[j], st = x < v.lod ? ' (< LOD)' : (x < v.lloq ? ' (< LLOQ)' :
-              (hasU && x > Math.max(v.uloq, v.top) ? ' (> ULOQ, extrapolated)' : (hasU && x > v.uloq ? ' (> ULOQ, within curve)' : '')));
-            return who(v.smp.s[j]) + '<br>conc. ' + fmt(x) + ' ' + D.unit + st + ' · signal ' + fmt(v.smp.y[j]);
-          }),
-          hovertemplate: '%{text}<extra></extra>' });
-      });
-    }
-    // Shapes are placed by the concentration also on log axes (plotly.js 2.11: log10 values are
-    // misplaced and stretch the axis)
-    var lx = function (x) { return x; };
-    if (v.lloq) {
-      var x0 = isLog ? Math.min.apply(null, v.cal.x.filter(function (x) { return x > 0; }).concat([v.lod || v.lloq])) / 3 : 0;
-      shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: x0, x1: lx(v.lloq), y0: 0, y1: 1, fillcolor: 'rgba(80,80,80,.12)', line: { width: 0 } });
-      if (v.lod) shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: x0, x1: lx(v.lod), y0: 0, y1: 1, fillcolor: 'rgba(80,80,80,.18)', line: { width: 0 } });
-    }
-    // Above the ULOQ (the top of the linear range): shaded in olive up to the highest value shown
-    if (v.uloq !== null && v.uloq !== undefined) {
-      var xmax = Math.max.apply(null, v.cal.x.concat(v.smp ? v.smp.x : [], v.curve ? v.curve.x : []).filter(function (x) { return x !== null; }));
-      if (xmax > v.uloq) shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: lx(v.uloq), x1: lx(xmax), y0: 0, y1: 1, fillcolor: 'rgba(153,153,51,.15)', line: { width: 0 } });
-      shapes.push({ type: 'line', xref: 'x', yref: 'paper', x0: lx(v.uloq), x1: lx(v.uloq), y0: 0, y1: 1, line: { color: '#999933', width: 1.5, dash: 'dash' } });
-    }
-    Plotly.react(root.querySelector('.plot'), traces, {
-      title: { text: c.name + ' — ' + vn, x: 0.02 }, shapes: shapes, hovermode: 'closest', font: font,
-      xaxis: { title: 'Concentration [' + D.unit + ']', type: isLog ? 'log' : 'linear', zeroline: false },
-      yaxis: { title: D.y_lab, type: isLog ? 'log' : 'linear', zeroline: false, exponentformat: 'E' },
-      legend: { orientation: 'v', x: 1.02, y: 1 }, margin: { t: 50, r: 20, b: 60, l: 80 }
-    }, { responsive: true, displaylogo: false });
-  });
 });
 </script>
 ```

@@ -50,7 +50,7 @@ concn <- batch$concn
 rd_q <- SumExp::row_df(concn)
 study <- util$extract_ctrl_smpl_cat(concn, "")
 sig <- study[[util$src_mat_id_for_conc(concn)]]
-detected <- rowSums(sig >= rd_q$lod_signal, na.rm = TRUE) > 0
+detected <- rowSums(util$is_detected(sig, rd_q$lod_signal), na.rm = TRUE) > 0
 detection <- dplyr::case_when(
   !(rd_q$has_proper_range %in% TRUE) ~ "",
   !detected ~ "Not detected in any study sample",
@@ -62,7 +62,7 @@ t42 <- tibble::tibble(
   Chemical = rd$feature_name,
   Calibration = dplyr::coalesce(rd$src_calcurve, "None"),
   LOD = rd$lod, LLOQ = rd$lloq,
-  `Maximum conc.` = ifelse(rd$has_proper_range %in% TRUE, rd$max_c_conc, NA),
+  `Highest cal. conc.` = ifelse(rd$has_proper_range %in% TRUE, rd$max_c_conc, NA),
   ULOQ = ifelse(rd$has_proper_range %in% TRUE, signif(rd$uloq, 4), NA),
   Notes = notes,
   state = dplyr::case_when(!(rd$has_proper_range %in% TRUE) ~ "bad", rd$kept_calcurve %in% TRUE ~ "kept",
@@ -88,17 +88,18 @@ DT::datatable(t42, rownames = FALSE, selection = "none", escape = setdiff(names(
 ```
 
 One row per targeted compound with its limits in the chosen batch. In the app, **select a row**
-(or step with the arrow keys ↑ / ↓) to show that compound in figures 4.4–4.7.
+(or step with the arrow keys ↑ / ↓) to show that compound in figures 4.4–4.6.
 
 **How to read it**
 
 - **Calibration**: the curve used for the compound in this batch: the batch's own (*Batch*), the
   curve of all batches together (*Global*, blue rows), or none (red rows).
 - **LOD and LLOQ** are calibration levels; values below them are replaced or reported as
-  *n.d.* / *n.q.* (see 4.6).
-- **Maximum conc.** is the highest level the curve is fitted on; the **ULOQ** is the top of its
+  *n.d.* / *n.q.* (see 4.5).
+- **Highest cal. conc.** is the highest level the curve is fitted on; the **ULOQ** is the top of its
   linear range. They differ when the top levels bend away from the line and the curve was not cut
-  there (option *Enforce linear range*). A quadratic curve has no ULOQ.
+  there (option *Enforce linear range*), or was cut but keeps the minimum number of calibration
+  levels. A quadratic curve has no ULOQ.
 - **Notes** show an icon per kind of note; **hover an icon** for the full text:
 
 ```{r}

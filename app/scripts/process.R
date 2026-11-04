@@ -34,8 +34,8 @@ option_list <- rlang::list2(
     type = "logical", default = FALSE,
     help = paste(
       "Keep the calibration curves of chemicals without a valid calibration range (e.g. too few",
-      "levels above the LLOQ), with a range from the LLOQ (or lowest level) to the highest level",
-      "[default: %default]"
+      "levels above the LLOQ), with a range from the LLOQ (or lowest level) to the highest level;",
+      "and export the chemicals with a curve also when no study sample is above the LLOQ [default: %default]"
     )
   ),
   optparse::make_option(
@@ -57,11 +57,11 @@ option_list <- rlang::list2(
     c("--enforce_linear_range"),
     type = "logical", default = FALSE,
     help = paste(
-      "Cut the calibration curves at their ULOQ, the top of their linear range, and refit them. The",
-      "ULOQ is located also without this option: for linear curves, the top levels whose",
-      "back-calculated mean deviates more than `--linear_range_tol` % from the nominal concentration",
-      "are left out (keeping at least `--min_cal_points` levels); with `--log_calibration`, by SCALiR",
-      "[default: %default]"
+      "Cut the calibration curves at their ULOQ, the top of their linear range, and refit them (keeping at",
+      "least `--min_cal_points` levels, so a curve can end above its ULOQ). The ULOQ is located also",
+      "without this option: for linear curves, the top levels whose back-calculated mean deviates more",
+      "than `--linear_range_tol` % from the nominal concentration are left out (down to 3 levels); with",
+      "`--log_calibration`, by SCALiR [default: %default]"
     )
   ),
   optparse::make_option(
@@ -82,9 +82,10 @@ option_list <- rlang::list2(
     c("--average_cal_reps"),
     type = "logical", default = FALSE,
     help = paste(
-      "Average the calibration point replicates within each batch; the global curve of all batches,",
-      "fitted on these averages, is used for every batch. Needs `--use_rsd20=FALSE` and",
-      "`--llox_method=pt_signal_mean` (set so) [default: %default]"
+      "Average the calibration point replicates within each batch of the data file (one point per level",
+      "and batch). Processed per batch (`--per_batch` of read-msdial.R), each batch is calibrated with its",
+      "own averaged points; otherwise the curve of all samples has one point per level and batch. Needs",
+      "`--use_rsd20=FALSE` and `--llox_method=pt_signal_mean` (set so) [default: %default]"
     )
   ),
   optparse::make_option(
@@ -128,6 +129,14 @@ option_list <- rlang::list2(
     c("--blank_filter_factor"),
     type = "double", default = 5,
     help = "Blank filtering factor [default: %default]"
+  ),
+  optparse::make_option(
+    c("--blank_filter_stat"),
+    type = "character", default = "max",
+    help = paste(
+      "Blank filtering: a feature is kept when this statistic of the study samples (not QCs or calibration",
+      "standards) is above the factor times the blank mean. Possible values are: `max`, `mean`. [default: %default]"
+    )
   ),
   optparse::make_option(
     c("--rsd_filter"),
@@ -182,7 +191,7 @@ if (isTRUE(params$average_cal_reps)) {
 cat(
   "\nProcessing parameters:\n",
   "  - vIS pre-normalization: ", isTRUE(params$vis_prenorm), "\n",
-  "  - Average calibration replicates per batch (global curve): ", isTRUE(params$average_cal_reps), "\n",
+  "  - Average calibration replicates per batch: ", isTRUE(params$average_cal_reps), "\n",
   "  - Optimize cal points: ", params$optimize_cal_points, "\n",
   "  - Minimum number of cal points: ", params$min_cal_points, "\n",
   "  - Keep all calibration curves: ", params$keep_all_calcurves, "\n",
@@ -201,7 +210,7 @@ cat(
   "  - Values below the LOD/LLOQ: ",
   if (!isFALSE(params$impute_llox)) "replaced (LLOQ/4, LLOQ/2)" else "n.d. / n.q. (no value)", "\n",
   "  - Blank filtering: ", params$blank_filter, "\n",
-  "  - Blank filtering factor: ", params$blank_filter_factor, "\n",
+  "  - Blank filtering factor: ", paste0(params$blank_filter_factor, " (", params$blank_filter_stat, " of the study samples)"), "\n",
   "  - QC RSD% filtering: ", params$rsd_filter,
   if (isTRUE(params$rsd_filter)) {
     paste0(" (max. ", paste(c(
@@ -213,6 +222,7 @@ cat(
 stopifnot(
   "`--rsd_filter_scope` must be `both`, `targeted` or `nontargeted`." =
     params$rsd_filter_scope %in% c("both", "targeted", "nontargeted"),
+  "`--blank_filter_stat` must be `max` or `mean`." = params$blank_filter_stat %in% c("max", "mean"),
   "The minimum R2 must be between 0 and 1." =
     !isTRUE(params$r2_filter) || (params$min_r2 >= 0 && params$min_r2 <= 1),
   "The maximum QC RSD% must be between 0 and 80." =
@@ -586,22 +596,28 @@ removed_tbl <- function(mat_id, is_removed, reason, qc_rsd = NA_real_) {
 }
 
 if (params$blank_filter) {
+  ctrl_cat <- util$ctrl_smpl_cat(proc_sumexp)
+  # Skipped by `proc$filter_by_blank()` (blanks are required to read the data, but all of them can
+  # be removed as outliers)
+  if (!any(ctrl_cat %in% "Blank")) {
+    log_event("Blank filter", "run", "Blank filter", "Not done",
+              "No blank samples left (all removed as outliers)", "fallback")
+  } else if (!any(is.na(ctrl_cat) | ctrl_cat == "")) {
+    log_event("Blank filter", "run", "Blank filter", "Not done",
+              "No study samples to compare with the blanks (QCs and calibration standards do not count)", "fallback")
+  }
   for (mat_id in to_blk_subt) {
     cat("Performing blank filtering for matrix:", mat_id, "\n")
     na_before <- is_all_na_row(proc_sumexp[[mat_id]])
     std_values <- proc_sumexp[[mat_id]][is_std, , drop = FALSE]
-    # The ratio that decided (as in `proc$filter_by_blank()`: the maximum in the other samples
-    # over the blank mean), for the event log
-    blank_ratio <- local({
-      m <- proc_sumexp[[mat_id]]
-      is_blank <- util$ctrl_smpl_cat(proc_sumexp) == "Blank"
-      blank_avg <- rowMeans(m[, is_blank, drop = FALSE], na.rm = TRUE)
-      suppressWarnings(apply(m[, !is_blank, drop = FALSE], 1, max, na.rm = TRUE)) / blank_avg
-    })
+    # The ratio that decided (the maximum or mean of the study samples over the blank mean), for
+    # the event log
+    blank_ratio <- proc$blank_ratio(proc_sumexp, mat_id, params$blank_filter_stat)
     proc_sumexp <- proc$filter_by_blank(
       proc_sumexp,
       mat_id = mat_id,
-      factor = params$blank_filter_factor
+      factor = params$blank_filter_factor,
+      stat = params$blank_filter_stat
     )
     proc_sumexp[[mat_id]][is_std, ] <- std_values   # Kept (see `is_std`)
     SumExp::row_df(proc_sumexp)$blank_filtered[is_std] <- TRUE
@@ -610,7 +626,8 @@ if (params$blank_filter) {
     r <- blank_ratio[is_removed]
     log_event("Blank filter", "feature", rownames(proc_sumexp)[is_removed], "Removed",
               ifelse(is.finite(r),
-                     sprintf("Sample maximum %.2f × the blank mean (needed: more than %g ×)", r, params$blank_filter_factor),
+                     sprintf("Study sample %s %.2f × the blank mean (needed: more than %g ×)",
+                             if (params$blank_filter_stat == "max") "maximum" else "mean", r, params$blank_filter_factor),
                      "The ratio to the blank mean could not be computed (no value)"),
               "removed", mat_id = mat_id)
   }
@@ -647,7 +664,7 @@ if (length(batches_without_blank) > 0) {
 log_event("Blank subtraction", "batch", batches_without_blank, "Blank of all batches subtracted",
           "No blank samples in the batch", "fallback", batch_id = batches_without_blank)
 if (!any(util$ctrl_smpl_cat(proc_sumexp) == "Blank")) {
-  log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "No blank samples in the data", "fallback")
+  log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "No blank samples left (all removed as outliers)", "fallback")
 }
 # Which blank average is subtracted from each sample (shown in the exported tables)
 SumExp::col_df(proc_sumexp)[["blank_source"]] <- ifelse(
@@ -821,7 +838,7 @@ if (params$log_calibration) cat("Log scale for calibration curve fitting is appl
 if (has_multiple_batches) {
   cat("Processing calibration per batch.\n")
 } else {
-  cat("Processing calibration for a single batch.")
+  cat("Processing calibration for a single batch.\n")
 }
 
 ##  CALIBRATION FUNCTION  ----------------------------------
@@ -841,7 +858,7 @@ quantify_conc <- function(se, mat_id, in_log) {
   # The LOD / LLOQ rules, each value decided once from its signal (and concentration): below the
   # LOD signal LLOQ/4, below the average signal of the LLOQ level LLOQ/2, above it but below the
   # LLOQ the LLOQ (see `proc$apply_llox_rules()`); rows are kept intact
-  se <- proc$apply_llox_rules(se, conc_mat_id = "conc")
+  se <- proc$apply_llox_rules(se, conc_mat_id = "conc", log_scale = in_log)
   # Curves kept although not valid can lack an LLOQ (no replacements then): no negative values
   neg <- se[["conc"]] < 0 & SumExp::row_df(se)$kept_calcurve
   neg[is.na(neg)] <- FALSE
@@ -905,10 +922,10 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   # Preserve the signal matrix label; `log1p()` below may strip the label
   signal_mat_label <- labelled::get_label_attribute(qt_se[[mat_id_to_calib]])
   
-  # If calibration curve is fitted in log scale, transform the signal
-  if (in_log) qt_se[[mat_id_to_calib]] <- log1p(qt_se[[mat_id_to_calib]]) # log1p(x) = log(x + 1)
-  
-  # Determine the valid calibration range endpoints and LOD/LLOQ thresholds
+  # Determine the valid calibration range endpoints and LOD/LLOQ thresholds, always from the
+  # signal in the original scale (also with log-scale fitting: "3 x the Cal0 mean" of log values
+  # would be the Cal0 signal cubed). The signals of the limits (`lod_signal`, `lloq_signal`,
+  # `avg_signal_at_lloq`) stay in the original scale.
   fun <- switch(params$llox_method,
                 "pt_signal_mean" = proc$compute_llox_signal_using_mean_times,
                 "pt_signal_mean_plus_sd" = proc$compute_llox_signal_using_mean_plus_sd_times
@@ -918,7 +935,10 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     min_n = params$min_cal_points,
     enough_n = if (params$optimize_cal_points) 3 else Inf
   )
-  
+
+  # If calibration curve is fitted in log scale, transform the signal
+  if (in_log) qt_se[[mat_id_to_calib]] <- log1p(qt_se[[mat_id_to_calib]]) # log1p(x) = log(x + 1)
+
   # Exclude chemicals without a valid calibration range; return early if none qualify.
   # `range_issue` tells why a range is not valid. With `--keep_all_calcurves`, those chemicals keep
   # a curve (`kept_calcurve`) over a forced range, and count as having a proper range below.
@@ -983,10 +1003,12 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   })
   # Upper limit of quantification (ULOQ): the top of the linear range of each curve, located by
   # back-calculating the levels of linear curves, or by SCALiR with log calibration; quadratic
-  # curves (without log calibration) have none. With --enforce_linear_range the curve is cut at
-  # the ULOQ and refitted: the ULOQ is then the top of the curve (`max_c_conc`) and the levels above
-  # it are out of range. Otherwise the curve keeps its range and the concentrations between the
-  # ULOQ and its top are above the linear range. Higher ones are extrapolated.
+  # curves (without log calibration) have none. The ULOQ is always the actual top of the linear
+  # range, whatever the options. With --enforce_linear_range the curve is cut and refitted: at the
+  # ULOQ, or higher to keep the minimum number of levels (`lr$top`, then `max_c_conc`); the levels
+  # above it are out of range. Otherwise the curve keeps its range. Either way, the concentrations
+  # between the ULOQ and the top of the curve are above the linear range; higher ones are
+  # extrapolated.
   enforce <- isTRUE(params$enforce_linear_range)
   c_concs <- util$spiked_conc_pts(calcurve_se)
   cc_mat <- calcurve_se[[mat_id]]
@@ -1016,7 +1038,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     if (enforce && length(lr$dropped) > 0) {
       calcurve_models[[ii]] <- lr$model
       cc_mat[ii, ] <- lr$signal
-      max_c[ii] <- lr$uloq
+      max_c[ii] <- lr$top
     }
   }
   if (enforce) {
@@ -1025,7 +1047,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     SumExp::row_df(calcurve_se)$max_c_conc <- max_c
   }
   cat("  ", sum(!is.na(uloq) & uloq < top0), "calibration curve(s) with a linear range below their highest level",
-      if (enforce) "(cut at the ULOQ).\n" else "(not cut).\n")
+      if (enforce) "(cut at the ULOQ, or above it to keep the minimum number of levels).\n" else "(not cut).\n")
   SumExp::row_df(concn_se)$uloq <- uloq
   SumExp::row_df(calcurve_se)$uloq <- uloq
   SumExp::row_df(concn_se)$linear_range_note <- linear_range_note
@@ -1075,14 +1097,24 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
 
   # Flag chemicals where no study sample exceeded the LLOQ; these are excluded from exports.
   # Curves kept by `--keep_all_calcurves` without an LLOQ are exported when they have a model.
+  # With `--keep_all_calcurves`, a chemical with a curve is also exported without a study sample
+  # above the LLOQ (`exported_kept`), e.g. for data with QCs only
   non_qc_conc <- util$exclude_ctrl_smpl_cat(concn_se, "QC")[["conc"]]
   any_above_lloq <- non_qc_conc > SumExp::row_df(concn_se)[, "lloq"]
   has_ex <- rowSums(any_above_lloq) > 0
   has_ex[is.na(has_ex)] <- FALSE
   kept_no_lloq <- SumExp::row_df(concn_se)$kept_calcurve & is.na(SumExp::row_df(concn_se)$lloq)
   has_ex[kept_no_lloq] <- !is.na(calcurve_models[kept_no_lloq])
+  exported_kept <- rep(FALSE, length(has_ex))
+  if (isTRUE(params$keep_all_calcurves)) {
+    has_curve <- SumExp::row_df(concn_se)$has_proper_range %in% TRUE & vapply(calcurve_models, is.list, logical(1))
+    exported_kept <- has_curve & !has_ex
+    has_ex <- has_ex | has_curve
+  }
   has_ex[r2_failed] <- FALSE   # Below the minimum R2: no concentrations
+  exported_kept[r2_failed] <- FALSE
   SumExp::row_df(concn_se)[["to_export"]] <- has_ex
+  SumExp::row_df(concn_se)[["exported_kept"]] <- exported_kept
   # Set concentrations of non-exported chemicals to NA
   unit <- SumExp::metadata(concn_se)$concentration_unit
   concn_se[["conc"]] <- util$extract_with_na(concn_se[["conc"]], i = has_ex, j = TRUE) |>
@@ -1175,6 +1207,12 @@ compact_global_calibration <- function(cal, mat_id_to_calib) {
     cal_used = !is.na(cal$calcurve[[mat_id]]),   # Points within the calibration range
     cal_conc = stats::setNames(SumExp::col_df(cal$calcurve)$c_conc, colnames(cal$calcurve)),
     conc0 = cal$concn[["conc0"]],
+    # Reported concentrations (after the LOD/LLOQ rules; without `--impute_llox`, no value where
+    # "n.d." / "n.q.", as `censor_llox()` does later) and the flags, for the calibration viewer
+    conc = if (isFALSE(params$impute_llox) && "conc_flag" %in% names(cal$concn)) {
+      ifelse(is.na(cal$concn[["conc_flag"]]), cal$concn[["conc"]], NA_real_)
+    } else cal$concn[["conc"]],
+    conc_flag = if ("conc_flag" %in% names(cal$concn)) cal$concn[["conc_flag"]],
     signal = cal$concn[[mat_id]]
   )
 }
@@ -1188,15 +1226,15 @@ to_report[["global calibration"]] <- list()
 # - "concn" is a SumExp object having calibrated concentrations
 lst_proc <- list()
 
-# `--average_cal_reps`: the calibration replicates of each batch are averaged (one point per level
-# and batch) and the global curve fitted on these averages is used for every batch
+# `--average_cal_reps`: the calibration replicates of each batch (of the data file) are averaged,
+# one point per level and batch. Processed per batch, each batch is calibrated with its own
+# averaged points (the global curve, on the averaged points of all batches, as the fallback, as
+# without the option); otherwise the curve of all samples has one point per level and batch.
 AVERAGE_CAL <- isTRUE(params$average_cal_reps)
-AVERAGE_CAL_NOTE <- "calibration replicates averaged per batch (option): the global curve of all batches is used"
 cal_input_se <- if (AVERAGE_CAL) proc$average_calcurve_replicates(proc_sumexp) else proc_sumexp
 if (AVERAGE_CAL) {
   cat("Calibration replicates averaged per batch:", sum(util$ctrl_smpl_cat(proc_sumexp) == "CalCurve"),
-      "calibration samples ->", sum(util$ctrl_smpl_cat(cal_input_se) == "CalCurve"), "averaged points.",
-      "The global curve is used for every batch.\n")
+      "calibration samples ->", sum(util$ctrl_smpl_cat(cal_input_se) == "CalCurve"), "averaged points.\n")
 }
 
 # Per normalization method, then per batch
@@ -1231,7 +1269,8 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
     
     # Batch-wise calibration, if the batch has enough calibration curve replicates
     batch_se <- per_batch_proc_se_lst[[batch_id]]
-    issue <- if (AVERAGE_CAL) AVERAGE_CAL_NOTE else calcurve_replicate_issue(batch_se, params)
+    if (AVERAGE_CAL) batch_se <- proc$average_calcurve_replicates(batch_se)
+    issue <- calcurve_replicate_issue(batch_se, params)
     cal_batch <- if (is.null(issue)) {
       try_quantify_using_calcurve(batch_se, mat_id_to_calib, params, glue::glue("batch `{batch_id}`"))
     } else {
@@ -1394,6 +1433,9 @@ local({
     log_event("Calibration", "feature", id[not_exp], "Not exported",
               dplyr::coalesce(rd$range_issue[not_exp], "No study sample above the LLOQ"), "removed",
               mat_id = m, batch_id = b)
+    exp_kept <- !no_range & flag(rd$exported_kept)
+    log_event("Calibration", "feature", id[exp_kept], "Exported although no study sample above the LLOQ",
+              "Keep all calibration curves", "fallback", mat_id = m, batch_id = b)
   }
 })
 # Values below the LOD / LLOQ: replaced, or without a value ("n.d." / "n.q.") without --impute_llox

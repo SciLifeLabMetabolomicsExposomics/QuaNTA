@@ -153,11 +153,28 @@ a:hover { color: var(--q-blue-hover); }
 .q-group-body { padding: 0 6px; }
 .q-group-body .shiny-input-container { margin-bottom: 6px; }
 .q-group-body .checkbox, .q-group-body .form-check { margin-top: 2px; margin-bottom: 2px; }
+/* A setting with its suboptions (`option_group()`): a very light neutral grey with a faint grey
+   outline, so that only the group headings (.q-group-head) are blue */
+.q-option-group {
+  background: rgba(16, 24, 40, .025); border: 1px solid rgba(16, 24, 40, .08);
+  border-radius: 10px; padding: 6px 10px 0; margin: 6px -10px;
+}
+/* Settings on one theme within a group (`settings_subhead()`), and a note under a setting (`settings_hint()`) */
+.q-subhead {
+  color: var(--q-muted); font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  margin: 14px 0 4px;
+}
+.q-group-body > .q-subhead:first-child { margin-top: 2px; }
+.q-hint { color: var(--q-muted); font-size: .85rem; margin: -4px 0 6px; }
+.q-hint .fa, .q-hint svg { margin-right: 5px; }
 .q-divider { border: 0; border-top: 1px solid var(--q-border); margin: 14px 0; opacity: 1; }
 
 /* Info icons with tooltips */
 .q-info { color: #98A2B3; margin-left: 6px; cursor: help; font-size: .9em; }
 .q-info:hover { color: var(--q-blue); }
+/* The tooltips: wider than Bootstrap's 200px and not see-through (default opacity .9) */
+.tooltip { --bs-tooltip-max-width: 360px; --bs-tooltip-opacity: 1; }
+.tooltip .tooltip-inner { text-align: left; }
 
 /* ---------- Controls ---------- */
 .form-control, .selectize-input, .form-select {

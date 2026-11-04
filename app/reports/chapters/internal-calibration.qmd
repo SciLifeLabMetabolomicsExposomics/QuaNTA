@@ -104,7 +104,7 @@ cal_data <- lapply(seq_len(nrow(tcomps)), function(k) {
 })
 ```
 
-`r if (AVERAGE_CAL) '<div class="callout-q">The calibration replicates were averaged within each batch (one point per concentration level and batch, named "CalAvg_B&lt;batch&gt;_&lt;concentration&gt;"), and every batch uses the <b>global curve</b> fitted on these averages. The RSD% 20% threshold and the SD of the zero calibrant are not used.</div>' else ""`
+`r if (AVERAGE_CAL) paste0('<div class="callout-q">The calibration replicates were averaged within each batch (one point per concentration level and batch, named "CalAvg_B&lt;batch&gt;_&lt;concentration&gt;"). ', if (length(batch_ids) > 1) 'Each batch is calibrated with its own averaged points (the global curve, on the averaged points of all batches, where a batch curve is not valid).' else 'The curve of all samples has one point per concentration level and batch.', ' The RSD% 20% threshold and the SD of the zero calibrant are not used.</div>') else ""`
 
 ## 4.1 Calibration curve samples
 
@@ -218,33 +218,50 @@ tibble(Batch = batch_label(batch_ids),
 
 ## 4.4 Calibration curves per chemical
 
-One interactive plot for all targeted compounds, also those without a valid calibration or removed
-by a filter. Choose the compound and the curve`r if (multi_batch) ": **Global** (all batches) or a batch. A batch view shows the curve used for that batch (its own, or the global one if the batch fell back to it), its calibration points and its samples" else ""`. Click legend entries to hide or show groups;
-hover over a point for its details. When no sample or QC is at or above the LLOQ, the curve covers
-the full calibration range (from the LLOQ to the highest level), to show where the compound could have
-been quantified; a note says so. The zero calibrant (Cal0) is shown as blue diamonds (linear axes only:
-a concentration of 0 has no place on a log axis).
+The calibration curve of each targeted compound, also those without a valid calibration or removed
+by a filter, as in the app (4.4), in two modes: **Calibration inspection** shows all calibration
+points coloured by their role (within the calibration range, above the ULOQ, at the LOD, Cal0, out of
+range), one symbol per batch; **Final calibration model** shows the fitted curve, the calibration
+points it was fitted on, and the QCs (blue; the QC group in the hover text) and study samples (by
+class) at their concentration, values replaced by the LOD/LLOQ rules as open circles. Grey areas are
+below the LOD and the LLOQ, the olive area above the ULOQ; the parameters of the curve are shown
+above the plot. `r if (multi_batch) "Choose the curve: **Global** (all batches) or a batch, which shows the curve used for that batch (its own, or the global one if the batch fell back to it) with its calibration points and samples. " else ""`Search a compound by
+name; the arrow keys up / down go to the previous / next compound, left / right switch between the
+modes. Click legend entries to hide or show groups; hover over a point for its details. On log axes,
+the zero calibrant (Cal0) is drawn as a short line at the left edge.
 
 ```{r}
-#| results: asis
-cat('<div class="viewer" id="cv">',
-    '<div class="controls"><input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
-    '<button type="button" class="next">&#9654;</button>',
-    '<label>Curve <select class="view"></select></label>',
-    '<label><input type="checkbox" class="log"> Log axes</label></div>',
-    '<div class="info"></div><div class="plot" style="height:560px;"></div></div>',
-    '<script>window.CALVIEW = ',
-    to_json(list(views = I(view_names),   # I(): an array also for a single batch
-                 # Without the notes by category (only for table 4.2)
-                 comps = lapply(cal_data, function(cd) {
-                   cd$v <- lapply(cd$v, function(v) { if (!is.null(v)) v$notes <- NULL; v })
-                   cd
-                 }), unit = unit,
-                 y_lab = "Normalized, blank-subtracted signal")),
-    ';</script>', sep = "")
+#| label: calcurve-viewer
+# The viewer of the app (app/www/calcurve_viewer.js), with the data of the global curve and of each
+# batch; the compounds removed before calibration with their calibration points only
+samples_info <- as.data.frame(smp)
+rownames(samples_info) <- samples_info$sample_id
+if (!is.null(cal_avg) && nrow(cal_avg) > 0) {   # Averaged calibration points (option)
+  ca <- as.data.frame(cal_avg)
+  rownames(ca) <- ca$sample_id
+  ca$.ctrl_cat <- "CalCurve"
+  samples_info <- dplyr::bind_rows(samples_info, ca[, intersect(names(ca), names(samples_info))])
+  rownames(samples_info) <- c(smp$sample_id, ca$sample_id)
+}
+removed_why <- stats::setNames(dplyr::coalesce(as.character(removed_tgt$reason), "no signal"), removed_tgt$feature_id)
+removed_part <- function(batch = NULL) {
+  if (nrow(removed_tgt) == 0) return(NULL)
+  show$calib_view_removed(norm_all, MAT, removed_tgt$feature_id, removed_why, batch = batch)
+}
+cv_views <- list()
+if (multi_batch) cv_views[["Global"]] <- list(parts = list(show$calib_view_of_global(gcal, samples_info), removed_part()))
+for (b in batch_ids) {
+  cv_views[[batch_label(b)]] <- list(parts = list(show$calib_view_of_batch(lst[[b]], BLK), removed_part(b)))
+}
+cv_data <- show$calib_viewer_data(
+  compounds = data.frame(id = tcomps$feature_id, name = tcomps$feature_name),
+  views = cv_views, log_scale = in_log, unit = unit,
+  y_title = "Normalized, blank-subtracted signal", class_colors = class_colors
+)
+show$calib_viewer_html("calcurve-viewer", cv_data, script = file.path(app_root, "www", "calcurve_viewer.js"))
 ```
 
-## 4.6 Concentration
+## 4.5 Concentration
 
 The concentrations of each compound in all samples of all batches, per class: a box per class and
 the samples as points. `r if (LLOX_IMPUTED) "Points of values replaced by the LOD/LLOQ rules are coloured as in the exported tables (red: not detected, LLOQ/4; yellow: detected but not quantified, LLOQ/2; blue: set to the LLOQ)." else paste0("Values below the LOD (n.d.) and the LLOQ (n.q.) have no value and are not shown (", sum(conc_long$conc_flag %in% 'n.d.' & is.na(conc_long$conc)), " n.d. and ", sum(conc_long$conc_flag %in% 'n.q.' & is.na(conc_long$conc)), " n.q. values of samples and QCs); blue points were set to the LLOQ.")`
@@ -274,7 +291,7 @@ cat('<div class="viewer" id="concv">',
     ';</script>', sep = "")
 ```
 
-### 4.6.1 Average and median per compound
+### 4.5.1 Average and median per compound
 
 Statistics of the study samples only (no QCs), from the measured values at or above the LLOQ: values
 `r if (LLOX_IMPUTED) "replaced by the LOD/LLOQ rules" else "below the LOD / LLOQ (n.d. / n.q.) or set to the LLOQ"` are left out, as in the exported tables. *All batches* pools the measured
@@ -302,7 +319,7 @@ if (nrow(stats_tbl) == 0) note("No measured concentrations at or above the LLOQ 
 
 
 
-## 4.7 QC samples in acquisition order
+## 4.6 QC samples in acquisition order
 
 One compound at a time: its concentration in each QC sample of all batches (each batch with its own
 calibration) along the injection order, a line per QC group; the values should be stable over the run.

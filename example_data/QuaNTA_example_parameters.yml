@@ -23,6 +23,7 @@ processing:
   log_calibration: no
   blank_filter: yes
   blank_filter_factor: 5
+  blank_filter_stat: max
   rsd_filter: yes
   rsd_filter_scope: nontargeted
   rsd_max_targeted: 30

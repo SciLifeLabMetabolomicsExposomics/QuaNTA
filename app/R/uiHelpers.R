@@ -42,6 +42,24 @@ settings_group <- function(title, icon_name, ...) {
   )
 }
 
+#' A small heading of settings on one theme within a [settings_group()] (style `.q-subhead`)
+#'
+#' @param title The heading.
+#' @export
+settings_subhead <- function(title) shiny::div(class = "q-subhead", title)
+
+#' A short note under a setting, e.g. why it is greyed out (style `.q-hint`)
+#'
+#' @param text The note.
+#' @export
+settings_hint <- function(text) shiny::div(class = "q-hint", shiny::icon("circle-info"), text)
+
+#' A setting with its suboptions in a lightly tinted box (style `.q-option-group`)
+#'
+#' @param ... The setting (e.g. a checkbox) and its suboptions (e.g. a `conditionalPanel()`).
+#' @export
+option_group <- function(...) shiny::div(class = "q-option-group", ...)
+
 #' An info icon that shows a short explanation on hover
 #'
 #' @param text The explanation.

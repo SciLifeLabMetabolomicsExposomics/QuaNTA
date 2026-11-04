@@ -580,7 +580,7 @@ tbl_chemical_summary <- function(sumexp) {
   # Summary about the concentration ranges
   conc_summary <- chemicals |>
     dplyr::mutate(
-      n_det = rowSums(mat_signal >= lod_signal, na.rm = TRUE),
+      n_det = rowSums(util$is_detected(mat_signal, lod_signal), na.rm = TRUE),
       n_quant = rowSums(mat >= lloq, na.rm = TRUE),
       n_samples = rowSums(has_result),
     ) |>
@@ -625,7 +625,7 @@ tbl_chemical_summary <- function(sumexp) {
     out
   }) |>
     dplyr::bind_rows()
-  
+
   cbind(conc_summary, m_sum) |>
     dplyr::select(-calcurve_model) |>
     dplyr::mutate(
@@ -918,7 +918,7 @@ measured_conc <- function(sumexp) {
     "Blank samples: concentrations of their normalized data WITHOUT blank subtraction (\"Blank subtracted\" row: Not subtracted).",
     paste("ULOQ: the top of the linear range of a linear curve (back-calculated levels within the tolerance), or",
           "with log calibration by SCALiR; empty for a quadratic curve (no ULOQ). With 'Enforce linear range',",
-          "the curves were cut at the ULOQ."),
+          "the curves were cut at the ULOQ, or above it to keep the minimum number of calibration levels."),
     if (with_calibrants) {
       "All samples, including the calibration samples, by batch and injection order."
     } else {

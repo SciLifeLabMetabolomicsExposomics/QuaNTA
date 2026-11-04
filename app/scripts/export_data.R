@@ -134,6 +134,14 @@ if (IS_TARGET_MODE) {
   proc_se_lst <- readRDS(FILE$i$proc)
   # Concentration has been computed on the blank subtracted data
   lst_proc <- lapply(proc_se_lst[[blk_mat_id]], \(ea) ea[["concn"]])
+  # No chemical exported in any batch (e.g. no study sample above any LLOQ): no concentration tables
+  if (!any(unlist(lapply(lst_proc, \(se) SumExp::row_df(se)$to_export)) %in% TRUE)) {
+    cat("No chemical is exported (none has a study sample above its LLOQ; see the processing history):",
+        "the concentration tables are not written.\n")
+    IS_TARGET_MODE <- FALSE
+  }
+}
+if (IS_TARGET_MODE) {
   # Blank samples, quantified without blank subtraction (NULL for a batch without blanks, and
   # for data processed by older versions)
   blank_lst <- lapply(proc_se_lst[[blk_mat_id]], \(ea) ea[["blank"]])

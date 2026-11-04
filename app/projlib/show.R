@@ -350,173 +350,332 @@ calcurve_line_df <- function(lim_df, log_scale = FALSE) {
   dplyr::arrange(ccline_df, feature_id, conc)      # To make sure
 }
 
-#' Title of a single-chemical plotly plot as a coloured band over the plot (the colour tells the
-#' state of its calibration curve, as the facet strips of the ggplot versions)
-.title_band <- function(title, fill) {
+#  -----  CALIBRATION CURVE VIEWER  ----------------------------------------------
+# The calibration curve of one compound (app 4.4, internal report 4.4, tutorial) is drawn in the
+# browser by `www/calcurve_viewer.js`, from the data prepared here: one "view" per curve (a batch,
+# the global curve, or the calibration points of all batches), each with the calibration points and
+# the samples of all compounds, so that switching compounds, curves and modes needs no server.
+
+#' The model of calibration curves as text, e.g. "linear-1_div_x2" -> "Linear, weight 1/x²"
+#'
+#' @param name Model names (`best_model_name` of the fitted curves; `NA`: none)
+#' @returns A character vector
+#' @export
+calib_model_label <- function(name) {
+  vapply(name, function(m) {
+    if (is.na(m)) return(NA_character_)
+    p <- strsplit(sub("_div_", "/", m), "-", fixed = TRUE)[[1]]
+    w <- if (length(p) > 1) sub("x2$", "x²", p[2]) else NA_character_
+    paste0(toupper(substr(p[1], 1, 1)), substring(p[1], 2), if (!is.na(w)) paste0(", weight ", w) else "")
+  }, "", USE.NAMES = FALSE)
+}
+
+#' The roles of the calibration points (inspection mode of the viewer) and the kinds of the sample
+#' concentrations (as [imputed_kind()], and without a value), in the order of the viewer (a
+#' function: `imputed_colors` is defined further down)
+.calib_point_types <- c("Within limits", "Above the ULOQ", "LOD = LLOQ", "Out-of-range", "Cal0", "LOD")
+.calib_conc_kinds <- function() c(names(imputed_colors), "n.d. (no value)", "n.q. (no value)")
+
+#' The compounds of a view: limits, model and notes, one row per compound (see [calib_view()])
+#'
+#' @param rd A `row_df` of calibrated data (`calcurve_model`, limits, `src_calcurve`, ...)
+#' @param batch_view As in [calib_issue_text()]: the rows of a batch (blue title when the batch
+#'   uses the global curve) or of the global curve itself
+#' @noRd
+.calib_view_rd <- function(rd, batch_view = TRUE) {
+  n <- nrow(rd)
+  col <- function(nm, default = NA) if (is.null(rd[[nm]])) rep(default, n) else rd[[nm]]
+  models <- col("calcurve_model", list(NULL))
+  has_m <- vapply(models, function(m) is.list(m) && !is.null(m$best_model_name), logical(1))
+  valid <- col("has_proper_range", FALSE) %in% TRUE
+  kept <- col("kept_calcurve", FALSE) %in% TRUE
+  src <- as.character(col("src_calcurve", NA))
+  data.frame(
+    feature_id = rownames(rd), lod = col("lod"), lloq = col("lloq"),
+    uloq = ifelse(valid, col("uloq"), NA), min_c_conc = col("min_c_conc"), max_c_conc = col("max_c_conc"),
+    valid = valid, kept = kept, src = src,
+    model = ifelse(has_m, calib_model_label(vapply(models, \(m) if (is.list(m)) m$best_model_name %||% NA_character_ else NA_character_, "")), NA),
+    r2 = vapply(models, \(m) if (is.list(m) && !is.null(m$best_model_name)) unname(m$R2s[[m$best_model_name]]) else NA_real_, 0),
+    coef = I(lapply(models, \(m) if (is.list(m) && !is.null(m$inv_model)) unname(stats::coef(m$inv_model)) else NULL)),
+    why = sub("^Not valid: ", "", calib_issue_text(rd, batch_view = batch_view)),
+    nq = calib_range_note(rd),
+    fill = dplyr::case_when(!valid ~ "lightcoral", kept ~ "#FFD9A0", batch_view & src %in% "Global" ~ "lightblue",
+                            TRUE ~ "lightgray"),
+    stringsAsFactors = FALSE
+  )
+}
+
+#' The information of samples for the viewer (hover texts, colours by class or QC)
+#' @noRd
+.calib_sample_info <- function(col_df, is_qc) {
+  data.frame(name = col_df$sample_name, cls = as.character(col_df$Class), qc = is_qc,
+             batch = as.character(col_df$batch_id), inj = col_df$injection_order, stringsAsFactors = FALSE)
+}
+
+#' One curve of the calibration curve viewer (a view): its compounds, calibration points and samples
+#'
+#' Made by [calib_view_of_batch()], [calib_view_all_batches()], [calib_view_of_global()] or
+#' [calib_view_removed()]; given to [calib_viewer_data()].
+#'
+#' @param rd The compounds, one row each (see `.calib_view_rd()`)
+#' @param cal The calibration points: `sig` (a matrix, compounds x points), `used` (a logical
+#'   matrix: in the curve), `conc` (the spiked concentrations) and `info` (a data frame per point:
+#'   `name`, `batch`, `inj`)
+#' @param smp The QCs and study samples, or `NULL`: `conc` (reported), `conc0` (calculated), `flag`
+#'   ("n.d." / "n.q.", or `NA`) and `sig` (matrices, compounds x samples), and `info` (a data frame
+#'   per sample: `name`, `cls`, `qc`, `batch`, `inj`)
+#' @returns A list of `rd`, `cal` and `smp`
+#' @export
+calib_view <- function(rd, cal, smp = NULL) {
+  stopifnot(nrow(cal$sig) == nrow(rd), ncol(cal$sig) == length(cal$conc), is.null(smp) || nrow(smp$sig) == nrow(rd))
+  list(rd = rd, cal = cal, smp = smp)
+}
+
+#' The view of one batch: the curve each compound uses there (the batch's own or the global one),
+#' the batch's calibration points, and its QCs and study samples
+#'
+#' @param x The calibration of the batch: a list of `calcurve` and `concn` ([`SumExp::SumExp`]
+#'   objects, as in the processed data `proc.rds`)
+#' @param mat_blk The ID of the blank-subtracted matrix calibrated (e.g. "loess_norm_blk")
+#' @returns A view ([calib_view()])
+#' @export
+calib_view_of_batch <- function(x, mat_blk) {
+  mat_cal <- util$mat_id_in_calibration(mat_blk)
+  cs <- x$concn
+  cc <- x$calcurve[rownames(cs), ]
+  ccd <- SumExp::col_df(cc)
+  calib_view(
+    rd = .calib_view_rd(SumExp::row_df(cs)),
+    cal = list(sig = cc[[mat_blk]], used = !is.na(cc[[mat_cal]]), conc = util$spiked_conc_pts(cc),
+               info = data.frame(name = ccd$sample_name, batch = as.character(ccd$batch_id), inj = ccd$injection_order)),
+    smp = list(conc = cs[["conc"]], conc0 = cs[["conc0"]],
+               flag = if ("conc_flag" %in% names(cs)) cs[["conc_flag"]] else NULL, sig = cs[[mat_cal]],
+               info = .calib_sample_info(SumExp::col_df(cs), util$ctrl_smpl_cat(cs) == "QC"))
+  )
+}
+
+#' The view of the calibration points of all batches, for the compounds of a batch that use the
+#' global curve (fitted on all of them): the global limits, model and samples of the batch
+#'
+#' @param lst The calibration of all batches (a list per batch, as `x` of [calib_view_of_batch()])
+#' @param batch The batch
+#' @inheritParams calib_view_of_batch
+#' @returns A view ([calib_view()]), `NULL` when no compound of the batch uses the global curve
+#' @export
+calib_view_all_batches <- function(lst, batch, mat_blk) {
+  v <- calib_view_of_batch(lst[[batch]], mat_blk)
+  keep <- v$rd$src %in% "Global"
+  if (!any(keep) || length(lst) < 2) return(NULL)
+  ids <- v$rd$feature_id
+  # The calibration samples of all batches, each once (a batch without its own holds the global ones)
+  seen <- character(0)
+  parts <- list()
+  for (b in names(lst)) {
+    cc <- lst[[b]]$calcurve
+    new <- !colnames(cc) %in% seen
+    if (!any(new)) next
+    seen <- c(seen, colnames(cc)[new])
+    ccd <- SumExp::col_df(cc)[new, , drop = FALSE]
+    sig <- cc[[mat_blk]][match(ids, rownames(cc)), new, drop = FALSE]
+    parts[[b]] <- list(sig = sig, conc = util$spiked_conc_pts(cc)[new],
+                       info = data.frame(name = ccd$sample_name, batch = as.character(ccd$batch_id), inj = ccd$injection_order))
+  }
+  sig <- do.call(cbind, lapply(parts, `[[`, "sig"))
+  conc <- unlist(lapply(parts, `[[`, "conc"), use.names = FALSE)
+  # In the curve: within the range of the global curve (as the fit of processing)
+  used <- !is.na(sig) & outer(v$rd$min_c_conc, conc, `<=`) & outer(v$rd$max_c_conc, conc, `>=`)
+  used[is.na(used)] <- FALSE
+  v$cal <- list(sig = sig, used = used, conc = conc, info = do.call(rbind, lapply(parts, `[[`, "info")))
+  sub_rows <- function(l) lapply(l, function(m) if (is.matrix(m)) m[keep, , drop = FALSE] else m)
+  calib_view(v$rd[keep, , drop = FALSE], sub_rows(v$cal), sub_rows(v$smp))
+}
+
+#' The view of the global curve (all batches together), from its compact copy in the processed
+#' data (`to_report[["global calibration"]][[mat_blk]]`, see `compact_global_calibration()` in
+#' process.R)
+#'
+#' @param gcal The compact global calibration
+#' @param samples A data frame of all samples, row names = sample IDs (`sample_name`, `Class`,
+#'   `batch_id`, `injection_order`, and `.ctrl_cat`)
+#' @returns A view ([calib_view()])
+#' @export
+calib_view_of_global <- function(gcal, samples) {
+  L <- as.data.frame(gcal$limits)
+  rownames(L) <- L$feature_id
+  ids <- L$feature_id
+  # The fitted curve as in a `row_df` (model name, R², coefficients)
+  rd <- L
+  rd$calcurve_model <- lapply(seq_len(nrow(L)), function(i) {
+    if (is.na(L$model[i])) return(NA)
+    list(best_model_name = L$model[i], R2s = stats::setNames(L$r2[i], L$model[i]),
+         inv_model = structure(list(coefficients = L$coef[[i]]), class = "lm"))
+  })
+  rd$min_c_conc <- L$lloq   # The curve starts at the LLOQ
+  rd$src_calcurve <- ifelse(L$has_proper_range %in% TRUE, "Global", NA)
+  pts <- colnames(gcal$cal_signal)
+  sm <- colnames(gcal$conc0)
+  info <- function(id) samples[id, , drop = FALSE]
+  si <- info(sm)
+  calib_view(
+    rd = .calib_view_rd(rd, batch_view = FALSE),
+    cal = list(sig = gcal$cal_signal[ids, , drop = FALSE], used = gcal$cal_used[ids, , drop = FALSE],
+               conc = unname(gcal$cal_conc[pts]),
+               info = data.frame(name = info(pts)$sample_name, batch = as.character(info(pts)$batch_id),
+                                 inj = info(pts)$injection_order)),
+    smp = list(conc = (gcal$conc %||% gcal$conc0)[ids, , drop = FALSE], conc0 = gcal$conc0[ids, , drop = FALSE],
+               flag = if (is.null(gcal$conc_flag)) NULL else gcal$conc_flag[ids, , drop = FALSE],
+               sig = gcal$signal[ids, , drop = FALSE], info = .calib_sample_info(si, si$.ctrl_cat %in% "QC"))
+  )
+}
+
+#' The view of compounds removed before calibration (blank filter, QC RSD% filter): their
+#' calibration points only, without a curve
+#'
+#' @param se The normalized data with the calibration samples (`to_report[["normalized"]]`)
+#' @param mat_id The matrix of the signal (e.g. "loess_norm")
+#' @param ids,reasons The compounds and why they were removed
+#' @param batch The batch of the calibration points (`NULL`: all batches)
+#' @returns A view ([calib_view()]), `NULL` without compounds
+#' @export
+calib_view_removed <- function(se, mat_id, ids, reasons, batch = NULL) {
+  ids <- intersect(ids, rownames(se))
+  if (length(ids) == 0) return(NULL)
+  cd <- SumExp::col_df(se)
+  keep <- util$ctrl_smpl_cat(se) == "CalCurve"
+  if (!is.null(batch)) keep <- keep & as.character(cd$batch_id) == batch
+  sig <- se[[mat_id]][ids, keep, drop = FALSE]
+  rd <- data.frame(row.names = ids, has_proper_range = rep(FALSE, length(ids)))
+  v <- .calib_view_rd(rd)
+  v$why <- paste("Removed before calibration:", reasons[match(ids, names(reasons))])
+  v$fill <- "#D9D9D9"   # Grey, as their rows in table 4.2
+  calib_view(v, list(sig = sig, used = matrix(FALSE, nrow(sig), ncol(sig)), conc = util$spiked_conc_pts(se)[keep],
+                     info = data.frame(name = cd$sample_name[keep], batch = as.character(cd$batch_id[keep]),
+                                       inj = cd$injection_order[keep])))
+}
+
+#' The data of the calibration curve viewer (`www/calcurve_viewer.js`)
+#'
+#' @param compounds A data frame of the compounds, in the order of the viewer (`id`, `name`)
+#' @param views A named list of views (the names are shown in the viewer's "Curve" choice), each
+#'   a list of `parts` ([calib_view()] objects, e.g. a batch and the compounds removed before
+#'   calibration) and optionally `info` (a note shown with the compounds that use the global curve;
+#'   red with `info_warn = TRUE`)
+#' @param log_scale Whether the curves were fitted in log scale (log axes at the start)
+#' @param unit The concentration unit
+#' @param y_title The title of the y axis
+#' @param class_colors The colours of the classes of the study samples (named); the QCs are blue
+#' @returns A list, for [calib_viewer_json()]
+#' @export
+calib_viewer_data <- function(compounds, views, log_scale, unit, y_title, class_colors) {
+  r6 <- function(x) { x <- as.numeric(x); x[!is.finite(x)] <- NA; signif(x, 6) }
+  part_data <- function(v) {
+    rd <- v$rd
+    conc <- v$cal$conc
+    entries <- lapply(seq_len(nrow(rd)), function(i) {
+      r <- rd[i, ]
+      within <- conc >= r$min_c_conc & conc <= r$max_c_conc
+      type <- dplyr::case_when(
+        conc == r$lod & conc == r$lloq & within ~ "LOD = LLOQ",
+        within & conc > dplyr::coalesce(r$uloq, Inf) ~ "Above the ULOQ",
+        within ~ "Within limits",
+        conc == r$lod ~ "LOD",
+        conc == 0 ~ "Cal0",
+        TRUE ~ "Out-of-range"
+      )
+      e <- list(fill = r$fill, valid = r$valid, kept = r$kept, src = r$src, why = r$why, nq = r$nq,
+                lod = r6(r$lod), lloq = r6(r$lloq), uloq = r6(r$uloq), min = r6(r$min_c_conc), top = r6(r$max_c_conc),
+                model = r$model, r2 = r6(r$r2), coef = I(r6(r$coef[[1]])),
+                cal = list(y = I(r6(v$cal$sig[i, ])), type = I(match(type, .calib_point_types) - 1L),
+                           used = I(as.integer(v$cal$used[i, ] %in% TRUE))))
+      if (!is.null(v$smp)) {
+        # Reported concentrations; the values replaced by the LOD/LLOQ rules marked (`kind`, with
+        # the calculated value `x0`); values without one (n.d. / n.q.) at the calculated value
+        x <- v$smp$conc[i, ]
+        x0 <- v$smp$conc0[i, ]
+        flag <- if (is.null(v$smp$flag)) rep(NA_character_, length(x)) else v$smp$flag[i, ]
+        kind <- match(as.character(imputed_kind(x, r$lloq)), .calib_conc_kinds()) - 1L
+        cens <- is.na(x) & !is.na(flag)
+        kind[cens] <- match(paste0(flag[cens], " (no value)"), .calib_conc_kinds()) - 1L
+        x[cens] <- x0[cens]
+        e$smp <- list(x = I(r6(x)), y = I(r6(v$smp$sig[i, ])), kind = I(kind), x0 = I(ifelse(kind > 0, r6(x0), NA)))
+      }
+      e
+    })
+    names(entries) <- rd$feature_id
+    si <- v$smp$info
+    list(cal_info = list(x = I(r6(conc)), name = I(v$cal$info$name), batch = I(v$cal$info$batch), inj = I(v$cal$info$inj)),
+         smp_info = if (!is.null(si)) list(name = I(si$name), cls = I(si$cls),
+                                           grp = I(ifelse(si$qc, "QC", si$cls)), batch = I(si$batch), inj = I(si$inj)),
+         c = entries)
+  }
   list(
-    shapes = list(list(type = "rect", xref = "paper", yref = "paper", x0 = 0, x1 = 1, y0 = 1.01, y1 = 1.09,
-                       fillcolor = fill, line = list(width = 0))),
-    annotations = list(list(text = title, xref = "paper", yref = "paper", x = 0.5, y = 1.05,
-                            xanchor = "center", yanchor = "middle", showarrow = FALSE,
-                            font = list(size = 14)))
+    log_scale = isTRUE(log_scale), unit = unit %||% "", y_title = y_title,
+    group_colors = as.list(c(class_colors, QC = okabe_ito[["blue"]])),
+    types = I(.calib_point_types), kinds = I(.calib_conc_kinds()),
+    compounds = lapply(seq_len(nrow(compounds)), \(k) list(id = compounds$id[k], name = compounds$name[k])),
+    views = unname(lapply(names(views), function(nm) {
+      v <- views[[nm]]
+      list(label = nm, info = v$info %||% "", info_warn = isTRUE(v$info_warn),
+           parts = unname(lapply(Filter(Negate(is.null), v$parts), part_data)))
+    }))
   )
 }
 
-#' Plotly shapes of the regions below the LLOQ and below the LOD (grey, the latter darker)
+#' The concentration unit of calibrated data: from its metadata, or from the label of the
+#' concentrations ("Concentration [ng/mL]")
 #'
-#' @param lod,lloq The LOD and the LLOQ (`NA` or `NULL`: none)
-#' @param xs The concentrations shown (on a log axis, the regions start a decade below the lowest)
-#' @param log_scale Whether the x axis is in log scale. The shapes are placed by the concentration
-#'   also then (plotly.js 2.11 of the app and the reports; log10 values are misplaced there and
-#'   stretch the axis)
-#' @returns A list of plotly shapes
+#' @param concn A [`SumExp::SumExp`] object of calibrated samples (`concn` of the processed data)
+#' @returns A character string, `""` when unknown
 #' @export
-llox_shapes <- function(lod, lloq, xs, log_scale = FALSE) {
-  lim <- c(lod[1], lloq[1])
-  x_from <- if (log_scale) suppressWarnings(min(xs[xs > 0], lim, na.rm = TRUE)) / 10 else 0
-  shade <- function(x1) {
-    if (length(x1) == 0 || !is.finite(x1) || !is.finite(x_from)) return(NULL)
-    list(type = "rect", xref = "x", yref = "paper", x0 = x_from, x1 = x1, y0 = 0, y1 = 1, layer = "below",
-         fillcolor = "rgba(64,64,64,0.25)", line = list(width = 0))
-  }
-  Filter(Negate(is.null), list(shade(lloq[1]), shade(lod[1])))
+conc_unit <- function(concn) {
+  u <- SumExp::metadata(concn)$concentration_unit
+  if (length(u) == 1 && !is.na(u) && nzchar(u)) return(u)
+  lab <- if ("conc" %in% names(concn)) labelled::get_label_attribute(concn[["conc"]]) else NULL
+  if (length(lab) == 1 && grepl("\\[.+\\]", lab)) sub(".*\\[(.+)\\].*", "\\1", lab) else ""
 }
 
-#' Plotly shapes of the ULOQ: the region above it (olive) and a dashed line at it
+#' The data of the calibration curve viewer as JSON (for `QuantaCalViewer()` in the browser)
 #'
-#' @param uloq The ULOQ (`NA` or `NULL`: none, e.g. a quadratic curve)
-#' @param xs The concentrations shown (the region ends at the highest)
-#' @param log_scale Not used: the shapes are placed by the concentration also on a log axis (see
-#'   [llox_shapes()])
-#' @returns A list of plotly shapes
+#' @param data The output of [calib_viewer_data()]
+#' @returns A JSON string
 #' @export
-uloq_shapes <- function(uloq, xs, log_scale = FALSE) {
-  if (length(uloq) == 0 || !is.finite(uloq)) return(list())
-  x_max <- suppressWarnings(max(xs, na.rm = TRUE))
-  c(
-    if (is.finite(x_max) && x_max > uloq) {
-      list(list(type = "rect", xref = "x", yref = "paper", x0 = uloq, x1 = x_max, y0 = 0, y1 = 1,
-                layer = "below", fillcolor = "rgba(153,153,51,0.15)", line = list(width = 0)))
-    },
-    list(list(type = "line", xref = "x", yref = "paper", x0 = uloq, x1 = uloq, y0 = 0, y1 = 1,
-              line = list(color = "#999933", width = 1.5, dash = "dash")))
-  )
+calib_viewer_json <- function(data) {
+  as.character(jsonlite::toJSON(data, auto_unbox = TRUE, na = "null", null = "null", digits = NA))
 }
 
-#' Interactive plot of the calibration points of one chemical (app 4.4), drawn with plotly
-#' directly (faster than converting a ggplot)
+#' The calibration curve viewer as HTML for a page (internal report, tutorial): the script
+#' (`www/calcurve_viewer.js`, given or linked), plotly.js and the data
 #'
-#' @param d A data frame of the calibration points: `.cc_pt` (concentration), the column `y`,
-#'   `c_type` (place of the point, e.g. "Within limits"), `Batch`, `injection_order`, `sample_name`
-#' @param y The name of the signal column
-#' @param title The name of the chemical
-#' @param title_fill The colour of the title band
-#' @param log_scale Whether the curve is fitted in log scale (log axes)
-#' @param x_title,y_title The titles of the axes
-#' @param height Height of the plot in pixels
-#' @param lod,lloq,uloq The limits of the curve, shown as regions as in [plotly_calcurve_samples()]
-#'   (`NA`: none)
-#' @returns A plotly object
+#' @param id The ID of the element
+#' @param data The output of [calib_viewer_data()]
+#' @param script The path of `calcurve_viewer.js` to include in the page (`NULL`: linked by
+#'   `script_src` instead)
+#' @param script_src The address of the script when it is not included
+#' @param height The height of the plot in pixels
+#' @returns An HTML tag list (with plotly.js as a dependency)
 #' @export
-plotly_calcurve_points <- function(d, y, title, title_fill = "lightgray", log_scale = FALSE,
-                                   x_title = "Calibrant Concentration", y_title = "Signal", height = 400,
-                                   lod = NA, lloq = NA, uloq = NA) {
-  type_cols <- c("Within limits" = okabe_ito[["green"]], "Above the ULOQ" = "#999933", "LOD = LLOQ" = okabe_ito[["orange"]],
-                 "Out-of-range" = "gray", "Cal0" = okabe_ito[["vermillion"]], "LOD" = okabe_ito[["blue"]])
-  batches <- stringr::str_sort(unique(as.character(d$Batch)), numeric = TRUE)
-  symbols <- c("circle", "triangle-up", "square", "diamond", "star", "cross", "x", "hexagon",
-               "triangle-down", "pentagon", "hourglass", "bowtie")
-  sym <- stats::setNames(rep_len(symbols, length(batches)), batches)
-  txt <- paste0("Batch: ", d$Batch, "<br>inj: ", d$injection_order, ", conc: ", d$.cc_pt,
-                "<br>Name: ", d$sample_name, "<br>int: ", num_txt(d[[y]]))
-  p <- plotly::plot_ly(height = height)
-  for (ty in intersect(names(type_cols), unique(d$c_type))) {
-    k <- d$c_type == ty
-    p <- plotly::add_markers(p, x = d$.cc_pt[k], y = d[[y]][k], name = ty, legendgroup = ty,
-                             marker = list(color = type_cols[[ty]], size = 8,
-                                           symbol = unname(sym[as.character(d$Batch[k])])),
-                             text = txt[k], hoverinfo = "text")
-  }
-  # The batches (shapes) in the legend, without points of their own
-  if (length(batches) > 1) {
-    for (b in batches) {
-      p <- plotly::add_markers(p, x = NA_real_, y = NA_real_, name = paste("Batch", b), legendgroup = "batch",
-                               marker = list(color = "black", size = 8, symbol = sym[[b]]), hoverinfo = "skip")
-    }
-  }
-  band <- .title_band(title, title_fill)
-  plotly::layout(
-    p, font = list(family = "Lato"), hovermode = "closest", annotations = band$annotations,
-    shapes = c(llox_shapes(lod, lloq, d$.cc_pt, log_scale), uloq_shapes(uloq, d$.cc_pt, log_scale), band$shapes),
-    xaxis = list(title = x_title, type = if (log_scale) "log" else "linear", exponentformat = "E"),
-    yaxis = list(title = y_title, type = if (log_scale) "log" else "linear", exponentformat = "E"),
-    legend = list(orientation = "v", x = 1.02, y = 1, xanchor = "left", tracegroupgap = 10),
-    margin = list(t = 60, b = 60, l = 70, r = 150)
-  )
+calib_viewer_html <- function(id, data, script = NULL, script_src = NULL, height = 520) {
+  js <- if (!is.null(script)) htmltools::tags$script(htmltools::HTML(paste(readLines(script, warn = FALSE, encoding = "UTF-8"), collapse = "\n")))
+        else htmltools::tags$script(src = script_src)
+  htmltools::attachDependencies(htmltools::tagList(
+    js,
+    htmltools::div(id = id),
+    htmltools::tags$script(htmltools::HTML(sprintf(
+      "(function () { var d = %s; function go() { QuantaCalViewer(document.getElementById('%s'), d, { nav: true, keys: true, height: %d }); }
+       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go(); })();",
+      calib_viewer_json(data), id, as.integer(height))))
+  ), plotly_js_dependency())
 }
 
-#' Interactive plot of the samples of one chemical on its calibration curve (app 4.5), drawn with
-#' plotly directly: the curve, the calibration points, the samples by class and the regions below
-#' the LOD and the LLOQ (shaded)
+#' plotly.js of the R package plotly (the version of all plots of the app and the reports), for a
+#' page with plots drawn without a plotly widget (the calibration curve viewer)
 #'
-#' @inheritParams ggplot_calcurve_samples
-#' @param title_fill The colour of the title band
-#' @param height Height of the plot in pixels
-#' @returns A plotly object
+#' @returns A list of HTML dependencies
 #' @export
-plotly_calcurve_samples <- function(x_se, cc_se, mat_id, colors_of_classes, log_scale = FALSE,
-                                    title_fill = "lightgray", height = 400) {
-  .chq_if_a_single_char(mat_id)
-  fid <- rownames(x_se)[1]
-  x_se <- x_se[fid, ]
-  cc_df <- SumExp::as_tibble(cc_se[fid, ]) |> tidyr::drop_na(tidyselect::all_of(unname(mat_id)))
-  rd <- SumExp::row_df(x_se)
-  lim_df <- rd |> dplyr::select(feature_name, lloq, lod, min_c_conc, max_c_conc, calcurve_model) |>
-    tibble::rownames_to_column("feature_id")
-  x_df <- SumExp::as_tibble(x_se)
-  # Values below the LOD / LLOQ without a value ("n.d." / "n.q."): at their calculated
-  # concentration (before the LOD/LLOQ rules), i.e. on the curve
-  x_df$.flag <- ""
-  if (all(c("conc_flag", "conc0") %in% names(x_df))) {
-    cens <- is.na(x_df$conc) & !is.na(x_df$conc_flag)
-    x_df$conc[cens] <- x_df$conc0[cens]
-    x_df$.flag[cens] <- paste0(" (", x_df$conc_flag[cens], ")")
-  }
-  x_df <- x_df[!is.na(x_df$conc), ]
-  hover <- function(df, conc) paste0("batch: ", df$batch_id, "<br>inj: ", df$injection_order, ", conc: ", conc,
-                                     "<br>name: ", df$sample_name, "<br>int: ", num_txt(df[[mat_id]]))
-  p <- plotly::plot_ly(height = height)
-  line <- calcurve_line_df(lim_df, log_scale)
-  if (nrow(line) > 0) {
-    p <- plotly::add_lines(p, x = line$conc, y = line$.y_value, name = "Calibration curve", hoverinfo = "skip",
-                           line = list(color = "rgba(95,158,160,0.8)", width = 2))
-  }
-  p <- plotly::add_markers(p, x = cc_df$c_conc, y = cc_df[[mat_id]], name = "Calibration points",
-                           marker = list(color = "black", size = 6), text = hover(cc_df, cc_df$c_conc),
-                           hoverinfo = "text")
-  classes <- unique(as.character(x_df$Class))
-  classes <- c(intersect(names(colors_of_classes), classes), setdiff(classes, names(colors_of_classes)))
-  for (cl in classes) {
-    k <- as.character(x_df$Class) == cl
-    p <- plotly::add_markers(p, x = x_df$conc[k], y = x_df[[mat_id]][k], name = cl,
-                             marker = list(color = if (cl %in% names(colors_of_classes)) colors_of_classes[[cl]] else "grey50",
-                                           size = 7, opacity = 0.85),
-                             text = hover(x_df[k, ], paste0(signif(x_df$conc[k], 4), x_df$.flag[k])), hoverinfo = "text")
-  }
-  # Regions below the LLOQ and below the LOD (darker), and above the ULOQ, as in the reports
-  xs <- c(x_df$conc, cc_df$c_conc)
-  band <- .title_band(rd$feature_name[1], title_fill)
-  shapes <- c(llox_shapes(rd$lod[1], rd$lloq[1], xs, log_scale),
-              uloq_shapes(rd$uloq[1], c(xs, line$conc), log_scale), band$shapes)
-  plotly::layout(
-    p, font = list(family = "Lato"), hovermode = "closest", shapes = shapes, annotations = band$annotations,
-    xaxis = list(title = label_if_has(x_df$conc, "Concentration"), type = if (log_scale) "log" else "linear",
-                 exponentformat = "E"),
-    yaxis = list(title = label_if_has(x_se[[mat_id]], mat_id), type = if (log_scale) "log" else "linear",
-                 exponentformat = "E"),
-    legend = list(orientation = "v", x = 1.02, y = 1, xanchor = "left"),
-    margin = list(t = 60, b = 60, l = 70, r = 150)
-  )
+plotly_js_dependency <- function() {
+  # The package adds plotly.js to a plot when it builds it (not to its widget dependencies)
+  deps <- plotly::plotly_build(plotly::plot_ly(type = "scatter", mode = "markers"))$dependencies
+  Filter(function(d) d$name %in% c("typedarray", "plotly-main"), deps)
 }
 
 #' Plot the calibration curve with the samples

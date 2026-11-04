@@ -424,31 +424,59 @@ select_best_normalization <- function(median_rsd, candidates, fallback = "loess_
 
 #  -----  BLANK FILTERING  -----------------------------------------------------
 
+#' The ratio of the blank filter: the maximum or the mean of each feature in the study samples
+#' over its mean in the blanks
+#'
+#' Only the study samples count: not the QCs, calibration standards or blanks (their injection
+#' type, `.ctrl_cat`, is empty).
+#'
+#' @param sumexp A [`SumExp::SumExp`] object
+#' @param mat_id The name of a matrix in `sumexp`
+#' @param stat "max" or "mean": the statistic of the study samples
+#' @returns A named numeric vector (one per feature); `NA` (or `Inf`, `NaN`) when it cannot be
+#'   computed, e.g. no study samples, no blanks or no values
+#' @export
+blank_ratio <- function(sumexp, mat_id, stat = c("max", "mean")) {
+  stat <- match.arg(stat)
+  cat_ <- util$ctrl_smpl_cat(sumexp)
+  m <- sumexp[[mat_id]]
+  is_blank <- cat_ %in% "Blank"
+  is_study <- is.na(cat_) | cat_ == ""
+  blank_avg <- rowMeans(m[, is_blank, drop = FALSE], na.rm = TRUE)
+  s <- m[, is_study, drop = FALSE]
+  sample_stat <- if (stat == "max") {
+    suppressWarnings(apply(s, 1, max, na.rm = TRUE))   # -Inf without values
+  } else {
+    rowMeans(s, na.rm = TRUE)
+  }
+  stats::setNames(sample_stat / blank_avg, rownames(m))
+}
+
 #' Filter features based on blank samples
 #'
-#' Criteria: Keep feature if max(sample) > [`factor`] * avg(blank) OR avg(sample) > [`factor`] * avg(blank)
+#' Criteria: Keep a feature if [`stat`] (maximum or mean) of the study samples > [`factor`] *
+#' mean of the blanks (QCs and calibration standards do not count; see [blank_ratio()])
 #'
 #' @param se A [`SumExp::SumExp`] object
 #' @param mat_id The name of a matrix in `se`
 #' @param factor A numeric value for the filtering factor.
+#' @param stat "max" or "mean": the statistic of the study samples compared with the blanks
 #' @returns A [`SumExp::SumExp`] object with the features filtered
 #' @export
-filter_by_blank <- function(sumexp, mat_id, factor = 5) {
-  g <- ifelse(util$ctrl_smpl_cat(sumexp) == "Blank", "Blank", "Other")
-  se_lst <- SumExp::split_columns(sumexp, g)
-
-  if (ncol(se_lst[["Blank"]]) == 0) {
+filter_by_blank <- function(sumexp, mat_id, factor = 5, stat = c("max", "mean")) {
+  stat <- match.arg(stat)
+  cat_ <- util$ctrl_smpl_cat(sumexp)
+  if (!any(cat_ %in% "Blank")) {
     warning("No blank samples found. Skipping blank filtering.")
     return(sumexp)
   }
-  blank_mat <- se_lst[["Blank"]][[mat_id]]
-  sample_mat <- se_lst[["Other"]][[mat_id]]
+  if (!any(is.na(cat_) | cat_ == "")) {
+    warning("No study samples found. Skipping blank filtering.")
+    return(sumexp)
+  }
 
-  blank_avg <- rowMeans(blank_mat, na.rm = TRUE)
-  sample_max <- apply(sample_mat, 1, max, na.rm = TRUE)
-  sample_avg <- rowMeans(sample_mat, na.rm = TRUE)
-
-  to_keep <- (sample_max > factor * blank_avg) | (sample_avg > factor * blank_avg)
+  # A blank mean of 0 gives Inf (kept) or, without a signal in the samples either, NaN (removed)
+  to_keep <- blank_ratio(sumexp, mat_id, stat) > factor
   to_keep[is.na(to_keep)] <- FALSE
 
   cat("Blank filtering: ", sum(!to_keep), " features removed (", sum(to_keep), " remain).\n", sep = "")
@@ -1000,6 +1028,8 @@ force_calibration_range <- function(sumexp, rows, min_n) {
 #'
 #' The calibration curve samples of each batch and concentration level are replaced by one sample
 #' with their average (of every matrix; `NA` values left out). The other samples are unchanged.
+#' The batches are those of the data file: without processing per batch (all samples in one batch,
+#' `all`), its batch ID (`org_batch_id`), so that every batch still gives one point per level.
 #' The averaged samples are named "CalAvg_B<batch>_<concentration>" (sample ID and name) and keep
 #' the sample information of the first replicate; `n_averaged` is the number of replicates.
 #'
@@ -1011,10 +1041,12 @@ average_calcurve_replicates <- function(se) {
   is_cc <- util$ctrl_smpl_cat(se) == "CalCurve"
   if (!any(is_cc)) return(se)
   conc <- util$spiked_conc_pts(se)
-  key <- ifelse(is_cc, paste(as.character(cd$batch_id), conc, sep = "|"), NA_character_)
+  batch <- as.character(cd$batch_id)
+  if ("org_batch_id" %in% names(cd)) batch <- dplyr::coalesce(as.character(cd$org_batch_id), batch)
+  key <- ifelse(is_cc, paste(batch, conc, sep = "|"), NA_character_)
   keys <- unique(key[is_cc])
   first <- match(keys, key)
-  ids <- paste0("CalAvg_B", as.character(cd$batch_id)[first], "_",
+  ids <- paste0("CalAvg_B", batch[first], "_",
                 format(conc[first], scientific = FALSE, drop0trailing = TRUE, trim = TRUE))
   average <- function(m) {
     avg <- vapply(keys, function(k) {
@@ -1080,8 +1112,10 @@ replace_outside_concentration_range_with_na.SumExp <- function(x, mat_id) {
 
 #' Upper limit of quantification (ULOQ): the top of the linear range of a calibration curve
 #'
-#' The ULOQ is located the same way whether the curve is cut at it (`--enforce_linear_range`) or
-#' not; only `cut` decides whether the returned model and signal are the cut ones.
+#' The ULOQ is located the same way whether the curve is cut (`--enforce_linear_range`) or not,
+#' and regardless of the minimum number of calibration levels: it is always the actual top of the
+#' linear range. A cut curve keeps at least the minimum number of levels, so it can end above the
+#' ULOQ (`top`); only `cut` decides whether the returned model and signal are the cut ones.
 #'
 #' - Linear models ([trim_to_linear_range()]): back-calculation of the calibration levels.
 #' - Log calibration, any model ([linear_range_of_log_curve()]): the SCALiR algorithm.
@@ -1092,12 +1126,42 @@ replace_outside_concentration_range_with_na.SumExp <- function(x, mat_id) {
 #' @name uloq
 NULL
 
+# Levels below which the linear range is not looked for: a line through two levels fits them exactly
+.uloq_min_levels <- 3
+
+#' The note of the linear range of a curve: the levels above the ULOQ, and where the curve ends
+#'
+#' @param label "Linear range" or "Linear range (SCALiR)"
+#' @param uloq,top The ULOQ and the top of the (cut) curve
+#' @param above The levels above the ULOQ (highest first)
+#' @param dev Their back-calculated deviations (`NULL`: not shown)
+#' @param cut,min_n As in [trim_to_linear_range()]
+#' @param extra Further notes
+#' @noRd
+.linear_range_note <- function(label, uloq, top, above, dev = NULL, cut, min_n, extra = NULL) {
+  pct <- function(x) sprintf("%.1f%%", 100 * x)
+  num <- function(x) as.character(signif(x, 4))
+  kept <- above[above <= top]   # In the cut curve although above the ULOQ (minimum of levels)
+  note <- c(
+    if (length(above) > 0) {
+      sprintf("%s up to %s: level(s) %s above it%s; %s", label, num(uloq), paste(num(above), collapse = ", "),
+              if (length(dev) > 0) paste0(" (back-calculated deviation ", paste(pct(dev), collapse = ", "), ")") else "",
+              if (!cut) "not cut" else if (length(kept) == 0) "dropped" else
+                sprintf("level(s) %s kept in the curve (minimum of %d levels), the others dropped",
+                        paste(num(kept), collapse = ", "), min_n))
+    },
+    extra
+  )
+  if (length(note) == 0) NA_character_ else paste(note, collapse = "; ")
+}
+
 #' Trim a linear calibration curve to its linear range
 #'
 #' The mean signal of each calibration level of the curve is back-calculated with the linear
 #' model. While the top level deviates from its nominal concentration by more than `max_dev` and
-#' more than `min_n` levels are left, the top level is left out and the linear model refitted
-#' (with the same weighting method, linear models only). The highest level left is the ULOQ.
+#' more than 3 levels are left, the top level is left out and the linear model refitted (with the
+#' same weighting method, linear models only). The highest level left is the ULOQ. The curve keeps
+#' at least `min_n` levels: when cut, it ends at the ULOQ or at its `min_n`-th level (`top`).
 #'
 #' @param conc Spiked concentration of each calibration sample
 #' @param signal Signal of the calibration samples of one chemical (`NA`: not in the curve)
@@ -1105,41 +1169,36 @@ NULL
 #' @param max_dev The maximum relative deviation of the top level (e.g. 0.15 for 15%)
 #' @param min_n The minimum number of calibration levels
 #' @param weight_method As in [fit_and_test_calcurve_model()]
-#' @param cut Whether the curve is cut at the ULOQ (`--enforce_linear_range`); only changes the note
-#' @returns A list of `uloq`, `model` (refitted on the levels up to the ULOQ), `signal` (with the
-#'   levels above the ULOQ `NA`), `dropped` (the levels above the ULOQ) and `note` (`NA` when the
-#'   curve is linear over its whole range)
+#' @param cut Whether the curve is cut (`--enforce_linear_range`); only changes the note
+#' @returns A list of `uloq`, `top` (the top of the cut curve: the ULOQ, or higher to keep `min_n`
+#'   levels), `model` (refitted on the levels up to `top`), `signal` (with the levels above `top`
+#'   `NA`), `dropped` (the levels above `top`) and `note` (`NA` when the curve is linear over its
+#'   whole range)
 #' @seealso [uloq]
 #' @export
 trim_to_linear_range <- function(conc, signal, model, max_dev, min_n, weight_method, cut = TRUE) {
-  dropped <- numeric()
+  above <- numeric()
   dev <- numeric()
+  curve <- NULL   # The cut curve: where `min_n` levels are left (NULL: at the ULOQ)
   repeat {
     levels <- sort(unique(conc[!is.na(signal)]))
     top <- levels[length(levels)]
+    if (is.null(curve) && length(levels) <= min_n) curve <- list(top = top, model = model, signal = signal)
     top_mean <- mean(signal[!is.na(signal) & conc == top])
     top_dev <- abs(model$best_model(top_mean) - top) / top
-    if (!is.finite(top_dev) || top_dev <= max_dev || length(levels) <= min_n) break
-    dropped <- c(dropped, top)
+    if (!is.finite(top_dev) || top_dev <= max_dev || length(levels) <= .uloq_min_levels) break
+    above <- c(above, top)
     dev <- c(dev, top_dev)
     signal[conc == top] <- NA
     model <- fit_and_test_calcurve_model(conc, signal, weight_method = weight_method, linear_only = TRUE)
   }
-  pct <- function(x) sprintf("%.1f%%", 100 * x)
-  num <- function(x) as.character(signif(x, 4))
-  note <- c(
-    if (length(dropped) > 0) {
-      sprintf("Linear range up to %s: level(s) %s %s (back-calculated deviation %s)", num(top),
-              paste(num(dropped), collapse = ", "), if (cut) "dropped" else "above it, not cut",
-              paste(pct(dev), collapse = ", "))
-    },
-    if (is.finite(top_dev) && top_dev > max_dev) {
-      sprintf("%s level %s still deviates %s (minimum of %d levels reached)",
-              if (length(dropped) > 0) "its top" else "Linear range: the top", num(top), pct(top_dev), length(levels))
-    }
-  )
-  list(uloq = top, model = model, signal = signal, dropped = dropped,
-       note = if (length(note) == 0) NA_character_ else paste(note, collapse = "; "))
+  if (is.null(curve) || curve$top <= top) curve <- list(top = top, model = model, signal = signal)
+  still <- if (is.finite(top_dev) && top_dev > max_dev) {
+    sprintf("%s level %s still deviates %.1f%% (%d levels left)",
+            if (length(above) > 0) "its top" else "Linear range: the top", signif(top, 4), 100 * top_dev, length(levels))
+  }
+  list(uloq = top, top = curve$top, model = curve$model, signal = curve$signal, dropped = above[above > curve$top],
+       note = .linear_range_note("Linear range", top, curve$top, above, dev, cut, min_n, still))
 }
 
 #' The top of the linear range by the SCALiR algorithm
@@ -1171,9 +1230,10 @@ scalir_top <- function(conc, signal, max_resid = 0.01, min_n = 3) {
 #' The linear range of a calibration curve fitted in log scale (`--log_calibration`)
 #'
 #' The ULOQ is the top of the linear range by SCALiR ([scalir_top()]) among the points of the
-#' curve, but at least the `min_n`-th level. When the curve is cut at it, the points removed by
-#' SCALiR below the ULOQ are in the curve again, so SCALiR is run again on the points up to the
-#' ULOQ, until the ULOQ does not change. The model is refitted on the points up to the ULOQ.
+#' curve. Without the points above it, the points SCALiR removed below it count again, so SCALiR
+#' is run again on the points up to the ULOQ, until the ULOQ does not change. The curve keeps at
+#' least `min_n` levels: when cut, it ends at the ULOQ or at its `min_n`-th level (`top`), and the
+#' model is refitted on the points up to there.
 #'
 #' @param conc Spiked concentration of each calibration sample
 #' @param signal Signal of the calibration samples of one chemical, in the original scale
@@ -1181,42 +1241,35 @@ scalir_top <- function(conc, signal, max_resid = 0.01, min_n = 3) {
 #' @param model The fitted model of [fit_and_test_calcurve_model()]
 #' @param min_n The minimum number of calibration levels
 #' @param refit A function of `signal_fit` that refits the model
-#' @param cut Whether the curve is cut at the ULOQ (`--enforce_linear_range`); only changes the note
+#' @param cut Whether the curve is cut (`--enforce_linear_range`); only changes the note
 #' @returns A list as [trim_to_linear_range()]
 #' @seealso [uloq]
 #' @export
 linear_range_of_log_curve <- function(conc, signal, signal_fit, model, min_n, refit, cut = TRUE) {
-  dropped <- numeric()
-  floor_note <- NULL
   levels <- sort(unique(conc[!is.na(signal_fit)]))
+  sig <- ifelse(is.na(signal_fit), NA, signal)
+  uloq <- NA_real_
   repeat {
-    top <- levels[length(levels)]
-    u <- scalir_top(conc, ifelse(is.na(signal_fit), NA, signal))
-    if (is.na(u)) break
-    u_min <- levels[min(min_n, length(levels))]
-    if (u < u_min) floor_note <- sprintf("SCALiR range ends at %s, the minimum of %d levels is kept", signif(u, 4), min_n)
-    u <- max(u, u_min)
-    if (u >= top) break
-    out <- !is.na(signal_fit) & conc > u
-    dropped <- c(dropped, sort(unique(conc[out]), decreasing = TRUE))
-    signal_fit[out] <- NA
-    levels <- levels[levels <= u]
-    model <- refit(signal_fit)
+    u <- scalir_top(conc, sig)
+    if (is.na(u)) break   # Fewer than 3 points left: the ULOQ found so far
+    uloq <- u
+    if (!any(!is.na(sig) & conc > u)) break
+    sig[conc > u] <- NA
   }
-  num <- function(x) as.character(signif(x, 4))
-  if (is.na(u) && length(dropped) == 0) {
-    return(list(uloq = NA_real_, model = model, signal = signal_fit, dropped = numeric(),
+  if (is.na(uloq)) {
+    return(list(uloq = NA_real_, top = max(levels), model = model, signal = signal_fit, dropped = numeric(),
                 note = "Linear range (SCALiR): fewer than 3 points with a signal"))
   }
-  note <- c(
-    if (length(dropped) > 0) {
-      sprintf("Linear range (SCALiR) up to %s: level(s) %s %s", num(top), paste(num(dropped), collapse = ", "),
-              if (cut) "dropped" else "above it, not cut")
-    },
-    floor_note
-  )
-  list(uloq = top, model = model, signal = signal_fit, dropped = dropped,
-       note = if (length(note) == 0) NA_character_ else paste(note, collapse = "; "))
+  # The curve: up to the ULOQ, but at least `min_n` levels
+  top <- max(uloq, levels[min(min_n, length(levels))])
+  dropped <- sort(levels[levels > top], decreasing = TRUE)
+  if (length(dropped) > 0) {
+    signal_fit[conc > top] <- NA
+    model <- refit(signal_fit)
+  }
+  list(uloq = uloq, top = top, model = model, signal = signal_fit, dropped = dropped,
+       note = .linear_range_note("Linear range (SCALiR)", uloq, top, sort(levels[levels > uloq], decreasing = TRUE),
+                                 cut = cut, min_n = min_n))
 }
 
 ##  CALIBRATION CURVE FITTING  -----------------------------
@@ -1386,26 +1439,29 @@ compute_concentration <- function(sumexp, mat_id, log_scale = FALSE) {
 #' are not changed by the rules that need them.
 #'
 #' @param sumexp A [`SumExp::SumExp`] object with the concentrations, the signal they were
-#'   calculated from (see `util$src_mat_id_for_conc()`, in the scale of the limits) and the
-#'   `lloq`, `lod_signal` and `avg_signal_at_lloq` of each chemical (`row_df`)
+#'   calculated from (see `util$src_mat_id_for_conc()`) and the `lloq`, `lod_signal` and
+#'   `avg_signal_at_lloq` of each chemical (`row_df`; signals in the original scale)
 #' @param conc_mat_id The name of the matrix with the calculated concentrations; it is replaced by
 #'   the result
+#' @param log_scale Whether the signal is `log1p()` of the original (log-scale fitting); the
+#'   signals of the limits are then compared in that scale
 #' @returns `sumexp` with the concentrations after the rules
 #' @md
 #' @export
-apply_llox_rules <- function(sumexp, conc_mat_id) {
+apply_llox_rules <- function(sumexp, conc_mat_id, log_scale = FALSE) {
   stopifnot(conc_mat_id %in% names(sumexp))
   conc <- sumexp[[conc_mat_id]]
   signal <- sumexp[[util$src_mat_id_for_conc(sumexp)]]
   rd <- SumExp::row_df(sumexp)
   lloq <- rd[["lloq"]]
-  # Thresholds of each chemical (row) as matrices
-  as_mat <- function(v) matrix(v, nrow = nrow(conc), ncol = ncol(conc))
+  # Thresholds of each chemical (row) as matrices, in the scale of the signal
+  as_mat <- function(v) matrix(if (log_scale) log1p(v) else v, nrow = nrow(conc), ncol = ncol(conc))
   lod_sig <- as_mat(rd[["lod_signal"]])
   lloq_sig <- as_mat(rd[["avg_signal_at_lloq"]])
-  # The groups, all from the values before any replacement
-  not_detected <- signal < lod_sig
-  detected <- signal >= lod_sig & signal < lloq_sig
+  # The groups, all from the values before any replacement. A signal of 0 is never detected (also
+  # when the LOD signal is 0, i.e. no signal in Cal0; see `util$is_detected()`)
+  not_detected <- !util$is_detected(signal, lod_sig)
+  detected <- !not_detected & signal < lloq_sig
   below_lloq <- signal >= lloq_sig & conc < as_mat(lloq)
   out <- conc
   out <- .replace_where(out, not_detected, lloq / 4)
@@ -1414,6 +1470,7 @@ apply_llox_rules <- function(sumexp, conc_mat_id) {
   sumexp[[conc_mat_id]] <- labelled::copy_labels(conc, out)
   sumexp
 }
+
 #' Which concentrations the LOD/LLOQ rules replaced below the LOD or the LLOQ
 #'
 #' @param conc0 The concentrations before the rules

@@ -1,5 +1,5 @@
 ---
-title: "Calibration curves (4.4 and 4.5)"
+title: "Calibration curves per chemical (4.4)"
 ---
 
 ```{r}
@@ -7,86 +7,101 @@ title: "Calibration curves (4.4 and 4.5)"
 source("_prepare.R")
 box::use(show = projlib/show, util = projlib/msdial_utils)
 tr <- tut$to_report
-# The normalization with the lowest QC RSD% (the app's default choice) and its first batch
-mat_id <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
-batch <- tut$proc[[mat_id]][[1]]
-rd <- SumExp::row_df(batch$concn)
-# A compound with a valid curve and samples above the LLOQ, preferably one whose linear range
-# ends below its highest calibration level (to show the ULOQ)
-ok <- rd$has_proper_range %in% TRUE & rd$to_export %in% TRUE
-pick <- which(ok & rd$uloq < rd$max_c_conc)[1]
-if (is.na(pick)) pick <- which(ok)[1]
-fid <- rownames(rd)[pick]
-cmp <- rd[fid, ]
-in_log <- isTRUE(tr$params$log_calibration)
+# The normalization with the lowest QC RSD% (the app's default choice) and its first batch, as the
+# app shows them at the start
+best <- tr[["best normalization"]]
+mat_id <- util$mat_id_of_blank_subtracted(best)
+lst <- tut$proc[[mat_id]]
+b <- names(lst)[1]
+x <- lst[[b]]
 ```
 
 For every targeted compound (`Quant` in the MS-DIAL comment), QuaNTA fits a calibration curve to
 the calibration samples (`Cal…` classes) and uses it to turn the signal of every sample into a
-concentration. Section 4 of the app shows the curves one compound at a time: choose the compound in
-table **4.2**, and figures **4.4** and **4.5** follow.
-
-The examples below show **`r cmp$feature_name`** in batch `r names(tut$proc[[mat_id]])[1]`.
-
-## 4.4 The calibration points
+concentration. Figure **4.4** of the app shows the curve of the compound selected in table **4.2**.
+Below is the same figure as in the app, with the example data (batch `r b`,
+`r tut$method_labels[[best]]` normalization); here, choose the compound in the list or search it by
+name.
 
 ```{r}
-#| label: fig-points
-d <- SumExp::as_tibble(batch$calcurve[fid, ]) |>
-  dplyr::rename(.cc_pt = c_conc) |>
-  dplyr::mutate(
-    Batch = as.character(batch_id), .uloq = dplyr::coalesce(uloq, Inf),
-    # The place of each point, as in the app
-    c_type = dplyr::case_when(
-      .cc_pt == lod & .cc_pt == lloq & .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "LOD = LLOQ",
-      .cc_pt >= min_c_conc & .cc_pt <= max_c_conc & .cc_pt > .uloq ~ "Above the ULOQ",
-      .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "Within limits",
-      .cc_pt == lod ~ "LOD",
-      .cc_pt == 0 ~ "Cal0",
-      TRUE ~ "Out-of-range"
-    )
-  )
-show$plotly_calcurve_points(d, mat_id, title = cmp$feature_name, log_scale = in_log,
-                            x_title = "Calibrant concentration", y_title = "Signal (normalized, blank-subtracted)",
-                            lod = cmp$lod, lloq = cmp$lloq, uloq = cmp$uloq)
+#| label: viewer-4-4
+# The viewer of the app (app/www/calcurve_viewer.js, copied to assets/ before each render) with the
+# data the app sends for this batch: the batch's curves, and for compounds on the global curve also
+# the calibration points of all batches; the compounds removed before calibration last
+rd <- SumExp::row_df(x$calcurve)
+rem <- tr[["removed features"]]
+rem <- rem[rem$mat_id == best & rem$targeted, ]
+rf <- tr[["qc rsd filter"]]
+why <- ifelse(rem$reason == "QC RSD%", paste0("QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"), "blank filter")
+norm <- tr[["normalized"]]
+removed <- if (nrow(rem) > 0) {
+  show$calib_view_removed(norm, best, rem$feature_id, stats::setNames(why, rem$feature_id),
+                          batch = if (b %in% as.character(SumExp::col_df(norm)$batch_id)) b)
+}
+views <- list()
+if (length(lst) > 1) {
+  views[["All batches (global curve)"]] <- list(
+    parts = list(show$calib_view_all_batches(lst, b, mat_id)),
+    info = paste0("Concentrations in batch ", b, " were calculated with the global curve, fitted on the ",
+                  "calibration points of all batches shown here."))
+}
+views[[if (length(lst) > 1) paste0("Batch ", b, " only") else "All samples"]] <- list(
+  parts = list(show$calib_view_of_batch(x, mat_id), removed),
+  info = paste0("Only batch ", b, "'s calibration points are shown: the concentrations were calculated with the ",
+                "global curve, fitted on the calibration points of all batches."),
+  info_warn = TRUE)
+cv_data <- show$calib_viewer_data(
+  compounds = data.frame(id = c(rownames(x$calcurve), rem$feature_id), name = c(rd$feature_name, rem$feature_name)),
+  views = views, log_scale = isTRUE(tr$params$log_calibration),
+  unit = show$conc_unit(x$concn),
+  y_title = show$label_if_has(x$concn[[util$mat_id_in_calibration(mat_id)]], "Signal"),
+  class_colors = tut$class_colors
+)
+show$calib_viewer_html("calcurve-viewer", cv_data, script_src = "assets/calcurve_viewer.js")
 ```
 
-Each point is one injection of a calibration sample: its spiked (nominal) concentration on the
-x axis and its measured signal on the y axis. Points of the same concentration are replicates; with
-several batches, the symbol tells the batch.
+The figure has two modes; switch with the buttons, or with the arrow keys ← and →. The arrow keys
+↑ and ↓ go to the previous and next compound (in the app, the rows of table 4.2).
 
-**How to read it**
-
-- **Colours** tell the role of each level:
+- **Calibration inspection** (first): every calibration point, each injection of a calibration
+  sample, at its spiked (nominal) concentration and its measured signal. Points of the same
+  concentration are replicates; with several batches, the symbol tells the batch. The colours tell
+  the role of each level:
   - *Cal0* (red): the zero calibrant. Its signal gives the thresholds of the LOD (3×) and the LLOQ
-    (10×, or the mean plus 3 / 10 standard deviations).
+    (10×, or the mean plus 3 / 10 standard deviations). On log axes, a concentration of 0 has no
+    place: Cal0 is a short line at the left edge, at its signal.
   - *LOD* (blue): the lowest level whose mean signal is above the LOD threshold.
   - *Within limits* (green): the levels the curve is fitted on, from the LLOQ upwards.
   - *Above the ULOQ* (olive): levels in the curve but above its linear range.
   - *Out-of-range* (grey): levels not used for the curve.
+- **Final calibration model**: the fitted curve, the calibration points it was fitted on (black),
+  and the QCs (blue; the QC group in the hover text) and study samples (by class) at the
+  concentration the curve gives them. Values replaced by the LOD/LLOQ rules are open circles; their
+  hover text tells the rule and the calculated concentration.
+
+In both modes:
+
 - **Shading**: dark grey below the LOD, light grey below the LLOQ, and olive above the ULOQ (dashed
-  line), the top of the linear range.
-- **Replicates should lie close together.** A level with widely spread replicates is a sign of a
-  pipetting or injection problem; with the RSD% option, the LLOQ level must have an RSD% of at most 20%.
-
-## 4.5 The samples on the curve
-
-```{r}
-#| label: fig-samples
-show$plotly_calcurve_samples(batch$concn[fid, ], batch$calcurve, util$mat_id_in_calibration(mat_id),
-                             tut$class_colors, log_scale = in_log)
-```
-
-The line is the fitted calibration curve (`r sub("_div_", "/", cmp$calcurve_model[[1]]$best_model_name)`
-for this compound). The black points are the calibration samples, the coloured ones the QCs and the
-study samples by class, placed at the concentration the curve gives them.
+  line), the top of the linear range. **Labels** at the top name each limit in its colour: *LOD*
+  (blue) and *LLOQ* (purple), with a dotted line, or *LOD = LLOQ* (orange) when they are the same
+  level, and *ULOQ* (olive). The ULOQ is always the actual top of the linear range: when the curve
+  keeps more levels (the minimum number of calibration levels), those levels are in the olive area.
+- **Above the plot**, the parameters of the curve (model, R², LOD, LLOQ, ULOQ, highest calibration
+  concentration, the curve used) and notes, e.g. why a curve is not valid.
+- **The title** is coloured as the row of the compound in table 4.2: red when it has no valid
+  curve, orange when it was kept although not valid, blue when it uses the global curve, grey when
+  it was removed before calibration.
+- **Curve** (only for a compound that uses the global curve, with several batches): the calibration
+  points of all batches, which the global curve was fitted on, or only those of the batch.
 
 **How to read it**
 
+- **Replicates should lie close together.** A level with widely spread replicates is a sign of a
+  pipetting or injection problem; with the RSD% option, the LLOQ level must have an RSD% of at most 20%.
 - **Samples in the white area** are within the calibration range and quantified.
 - **Samples in the grey areas** are below the LLOQ (light) or the LOD (dark). Depending on the
-  setting *Replace values below the LOD/LLOQ*, their concentrations are replaced (LLOQ/2 or LLOQ/4)
-  or reported as *n.q.* / *n.d.*.
+  setting *Replace values below the LOD/LLOQ*, their concentrations are replaced (LLOQ/2 or LLOQ/4,
+  open circles) or reported as *n.q.* / *n.d.*.
 - **Samples in the olive area** are above the ULOQ: within the curve but above its linear range, or
   extrapolated above its highest level. Treat these values with care, or dilute and re-measure.
 - **A curve far from its calibration points**, or points bending away at the top, suggests that the
@@ -95,7 +110,7 @@ study samples by class, placed at the concentration the curve gives them.
 
 ::: {.callout-tip}
 ## In the app
-Use the arrow keys ↑ / ↓ in table 4.2 to step through the compounds; both figures follow at once.
-With the processing option *Log scale for calibration curve fitting*, both figures have log axes,
-which show the low concentrations better.
+Use the arrow keys ↑ / ↓ to step through the rows of table 4.2 and ← / → to switch the mode; the
+figure follows at once. With the processing option *Log scale for calibration curve fitting*, the
+figure starts with log axes, which show the low concentrations better.
 :::

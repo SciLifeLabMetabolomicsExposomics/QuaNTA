@@ -109,14 +109,13 @@ SECTION_TIPS <- list(
   "3.8" = "Each line is one targeted compound in one QC group: its RSD% among the QC replicates without normalization (Raw) and with each method, before blank filtering. The colour is the method with the lowest RSD%.",
   "3.9" = "The RSD% of 3.8 as a table: per targeted compound, QC group and method. Filter by QC group or search a feature.",
   "3.10" = "Features removed by the blank filter or by the QC RSD% filter, for the chosen normalization method, with the reason.",
-  "3.11" = "One feature in the blanks next to the QCs, study samples (and calibrants), with the threshold of the blank filter (factor × blank mean). Groups: mean ± SD and the samples; per sample: one bar per injection.",
+  "3.11" = "One feature in the blanks next to the QCs, study samples (and calibrants), with the threshold of the blank filter (factor × blank mean), which the maximum or mean of the study samples must exceed. Groups: mean ± SD and the samples; per sample: one bar per injection.",
   "4.1" = "Number of calibration curve samples per concentration in the selected batch.",
   "4.2" = "Per chemical: the calibration curve used (batch or global), the LOD, the LLOQ (start of the curve), the highest level and the ULOQ (linear curves, or the top of the linear range with log calibration; empty for a quadratic curve: no ULOQ), with a note when the curve is not valid. Red: no valid curve; blue: global curve; orange: kept although not valid; grey: removed before calibration. Select a row (or use the arrow keys) to show the chemical in the figures; the first chemical is shown at the start.",
   "4.3" = "Number of chemicals per batch with a valid calibration curve and concentrations in the samples.",
-  "4.4" = "The calibration points of the selected chemical with the fitted curve, coloured by their place: within the calibration range, at the LOD, Cal0 or out of range; one shape per batch. The title is coloured as the row in 4.2 (red: not valid, orange: kept although not valid, blue: global curve), where the reason is given.",
-  "4.5" = "The samples of the selected chemical on its calibration curve (signal against the calculated concentration); the shaded areas are below the LOD and the LLOQ. The title is coloured as in 4.4.",
-  "4.6" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
-  "4.7" = "The selected chemical in the QC samples of all batches along the injection order, a line per QC group: the values should be stable over the run. Open points: values replaced by the LOD/LLOQ rules."
+  "4.4" = "The calibration curve of the chemical selected in 4.2, in two modes (buttons, or the arrow keys left / right). Calibration inspection: all calibration points, coloured by their role (within the calibration range, above the ULOQ, at the LOD, Cal0, out of range), one shape per batch. Final calibration model: the fitted curve, the calibration points it was fitted on, and the QCs (blue; the QC group in the hover text) and study samples (by class) at their concentration; values replaced by the LOD/LLOQ rules are open circles. Grey areas below the LOD and the LLOQ, olive above the ULOQ (the actual top of the linear range), each limit labelled in its colour; the parameters of the curve above the plot. For a chemical quantified with the global curve, Curve chooses the calibration points of all batches or of the selected batch only. The title is coloured as the row in 4.2 (red: not valid, orange: kept although not valid, blue: global curve, grey: removed).",
+  "4.5" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
+  "4.6" = "The selected chemical in the QC samples of all batches along the injection order, a line per QC group: the values should be stable over the run. Open points: values replaced by the LOD/LLOQ rules."
 )
 #' A title with its number and the info icon of `SECTION_TIPS`, e.g. tip_title("Features", "2.3")
 tip_title <- function(title, num) tagList(paste0(title, " (", num, ")"), info_tip(SECTION_TIPS[[num]]))
@@ -248,8 +247,8 @@ ui <-
       ")),
       # Tables (DT) in scrolling boxes:
       # - the selected row (tables where a row chooses what is shown: 3.1, 4.2) is scrolled into view
-      # - the arrow keys up / down select the previous / next row of the table clicked last,
-      #   instead of scrolling the page
+      # - the arrow keys up / down select the previous / next row of the table clicked last (or,
+      #   without one, of the visible table with a selected row), instead of scrolling the page
       # - the column headers are re-aligned when a hidden page is shown or a pane is resized
       tags$script(HTML("
         (function () {
@@ -277,8 +276,15 @@ ui <-
           }, true);
           $(document).on('keydown', function (e) {
             if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-            if (!lastTable || !document.body.contains(lastTable) || $(lastTable).is(':hidden')) return;
             if ($(e.target).is('input, textarea, select, [contenteditable]')) return;
+            // Without a table clicked on this page: the visible table with a selected row (3.1 on
+            // page 3, 4.2 on page 4), so that the keys work at once
+            if (!lastTable || !document.body.contains(lastTable) || $(lastTable).is(':hidden')) {
+              lastTable = $('.dataTables_wrapper:visible').filter(function () {
+                return $(this).find('tbody tr.selected').length > 0;
+              })[0] || null;
+            }
+            if (!lastTable) return;
             var cur = $(lastTable).find('tbody tr.selected').first();
             if (!cur.length) return;   // Only tables where a row is selected
             var next = e.key === 'ArrowDown' ? cur.nextAll('tr:visible').first() : cur.prevAll('tr:visible').first();
@@ -472,7 +478,8 @@ ui <-
                       # QC/QA: one feature in the blanks compared to the other sample groups
                       h3(tip_title("Blanks compared to samples", "3.11"), style = "margin: 16px 0 4px 0;"),
                       p("One feature at a time: the (method) blanks in red next to the QCs, study",
-                        "samples and calibrants, with the threshold of the blank filter. The values are",
+                        "samples and calibrants, with the threshold of the blank filter (only the study",
+                        "samples are compared with it, not the QCs or calibrants). The values are",
                         "normalized but before blank filtering and blank subtraction. Type in the feature",
                         "box to search; in the Feature, Normalization and View boxes, the arrow keys up /",
                         "down switch to the previous / next choice.",
@@ -569,54 +576,35 @@ ui <-
                       spinner( DT::DTOutput("tb_4_5")),
                     )),
         quanta_card_resize("Figures", "cal-right",
-                    # Which calibration points to show for a chemical quantified with the global
-                    # curve: all points of the global curve, or only those of the selected batch
-                    div(
-                      style = "display: flex; gap: 16px; align-items: center; flex-wrap: wrap;",
-                      shiny::selectInput(
-                        inputId = "calib_points_view",
-                        label = "Calibration points shown",
-                        choices = NULL,
-                        width = "260px"
-                      ),
-                      shiny::uiOutput("calib_points_note", style = "flex: 1; min-width: 200px;")
-                    ),
+                    # The calibration curve of the chemical selected in 4.2, drawn in the browser
+                    # (www/calcurve_viewer.js) from the data of all chemicals of the batch, sent
+                    # once (`output` of the server: the message "calcurve_data"); the same viewer
+                    # as in the internal report and the tutorial
                     div(
                       h3(
                         tip_title("Calibration curves per chemical", "4.4"),
-                        style = "margin: 0;"
+                        style = "margin: 0 0 6px 0;"
                       ),
-                      div(
-                        style = "width: 100%;", # aspect-ratio: 4 / 3;",   # ✅ shorter height
-                        spinner(plotlyOutput("ggplot4_3")),
+                      htmltools::attachDependencies(
+                        div(id = "calcurve_viewer", style = "width: 100%; min-height: 560px;"),
+                        # plotly.js, as the other plots (the UI is built before `show` is loaded)
+                        local({ box::use(show = projlib/show); show$plotly_js_dependency() })
                       )
                     ),
                     div(
                       h3(
-                        tip_title("Calibration curves of all measurement samples", "4.5"),
-                        style = "margin: 0;"
-                      ),
-                      
-                      
-                      div(
-                        style = "width: 100%;",
-                        spinner(plotlyOutput("ggplot4_4_2")),
-                      )
-                    ),
-                    div(
-                      h3(
-                        tip_title("Concentration", "4.6"),
+                        tip_title("Concentration", "4.5"),
                         style = "margin: 0;"
                       ),
                       div(
                         style = "width: 100%;",
-                        # As high as the plot (460 px), so that it does not cover the title of 4.7
+                        # As high as the plot (460 px), so that it does not cover the title of 4.6
                         spinner(plotlyOutput("ggplot5_1", height = "470px")),
                       )
                     ),
                     div(
                       h3(
-                        tip_title("QC samples in acquisition order", "4.7"),
+                        tip_title("QC samples in acquisition order", "4.6"),
                         style = "margin: 0;"
                       ),
                       p("The chemical selected in 4.2, in the QC samples of all batches (each with its",
@@ -638,6 +626,47 @@ ui <-
             onDragEnd: function() { window.dispatchEvent(new Event('resize')); }
           });
         });
+      ")),
+      # The calibration curve viewer (4.4): the data of all chemicals of the batch from the server,
+      # the chemical of the row selected in table 4.2 (by click or arrow keys up / down) shown at
+      # once; left / right switch between the two modes
+      tags$script(src = "calcurve_viewer.js"),
+      tags$script(HTML("
+        (function () {
+          var V = null;
+          // The data index of the row selected in table 4.2 (the order of the viewer's chemicals)
+          function selectedRow() {
+            var t = $('#tb_4_2 table.dataTable');
+            if (!t.length || !$.fn.dataTable.isDataTable(t[0])) return null;
+            var r = t.DataTable().rows('.selected').indexes();
+            return r.length ? r[0] : null;
+          }
+          function sync() {
+            if (!V) return;
+            var r = selectedRow();
+            if (r !== null && r !== V.state().i) V.show(r);
+          }
+          Shiny.addCustomMessageHandler('calcurve_data', function (json) {
+            var d = JSON.parse(json), el = document.getElementById('calcurve_viewer');
+            if (!V) V = QuantaCalViewer(el, d, { keys: true, height: 500 }); else V.setData(d);
+            var r = selectedRow();
+            V.show(r === null ? 0 : r);
+          });
+          // A row selected in table 4.2 (also when the table is drawn again)
+          var pending = false;
+          var obs = new MutationObserver(function () {
+            if (pending) return;
+            pending = true;
+            requestAnimationFrame(function () { pending = false; sync(); });
+          });
+          $(function () {
+            var t = document.getElementById('tb_4_2');
+            if (t) obs.observe(t, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+          });
+          // Drawn while page 4 was hidden: fit the plot to its width when the page is shown
+          $(document).on('shown.bs.tab', function () { if (V) setTimeout(V.redraw, 60); });
+          window.addEventListener('resize', function () { if (V) V.redraw(); });
+        })();
       "))
     ),
     nav_panel(
@@ -1094,7 +1123,7 @@ server <- function(input, output, session) {
   ### same table as in the internal report)
 
   output$tb_2_1_2_2 <- DT::renderDataTable({
-    se <- raw_se_r()   # Not inside an S4 method argument (see 4.4)
+    se <- raw_se_r()   # Not inside an S4 method argument: a `req()` there gives an error message
     df_conc_summary <- as.data.frame(show$calib_samples_per_batch(se), check.names = FALSE)
     shiny::validate(shiny::need(
       nrow(df_conc_summary) > 0,
@@ -1992,8 +2021,9 @@ server <- function(input, output, session) {
     tr <- shiny::req(tryCatch(to_report_r(), error = function(e) NULL))
     rf <- tr[["qc rsd filter"]]
     blank_txt <- if (isTRUE(tr[["blank_filter"]])) {
-      paste0("Blank filter: a feature is removed unless its maximum or average signal in the ",
-             "samples is > ", tr[["blank_filter_factor"]], " × the average blank signal.")
+      stat <- if (identical(tr$params$blank_filter_stat, "mean")) "mean" else "maximum"
+      paste0("Blank filter: a feature is removed unless its ", stat, " signal in the study samples ",
+             "(not QCs or calibrants) is > ", tr[["blank_filter_factor"]], " × the average blank signal.")
     } else {
       "Blank filter: not used."
     }
@@ -2092,115 +2122,61 @@ server <- function(input, output, session) {
     id
   })
 
-  # ---- Calibration points shown in the figures ----
-  # Calibration curve used for the selected chemical in the selected batch: "Batch", "Global" or
-  # NA (no proper calibration range)
-  calib_used_curve_r <- shiny::reactive({
-    cc <- calib_batch_proc_r()$calcurve
-    src <- SumExp::row_df(cc)[["src_calcurve"]]
-    if (is.null(src)) return(NA_character_)   # Processed by an older version
-    src[rownames(cc) == calib_selected_feature_r()]
-  })
-  # "All batches" is offered only for a chemical quantified with the global curve
-  calib_global_used_r <- shiny::reactive({
-    isTRUE(calib_used_curve_r() == "Global") && length(calib_lst_proc_r()) > 1
-  })
-  # The user's choice of points ("all" / "batch"). It is kept when only the batch or the
-  # normalization method changes, and reset to the curve used ("all") for another chemical.
-  calib_view_pref <- shiny::reactiveVal("all")
-  calib_last_feature <- shiny::reactiveVal(NULL)
-  shiny::observeEvent(input$calib_points_view, {
-    # Only a choice between both options is the user's; "batch" alone is forced by the data
-    if (shiny::isolate(calib_global_used_r())) calib_view_pref(input$calib_points_view)
-  })
+  # ---- Calibration curve viewer (4.4) ----
+  # The data of all chemicals of the selected batch for the viewer in the browser
+  # (www/calcurve_viewer.js; the same as in the internal report and the tutorial), in the order of
+  # the rows of table 4.2: the calibrated chemicals (`rownames(calcurve)`), then those removed before
+  # calibration. Sent when the batch, the normalization method or the processed data change;
+  # choosing a chemical (table 4.2), a curve or a mode is then done in the browser, at once.
+  # Curves of a chemical that uses the global curve in a multi-batch run: "All batches (global
+  # curve)", the calibration points it was fitted on, or only those of the selected batch.
   shiny::observe({
-    feature_id <- calib_selected_feature_r()
-    if (!identical(feature_id, shiny::isolate(calib_last_feature()))) {
-      calib_last_feature(feature_id)
-      calib_view_pref("all")   # Default: the points of the curve used for quantification
-    }
-    choices <- c("All batches (global curve)" = "all", "Selected batch only" = "batch")
-    if (calib_global_used_r()) {
-      shiny::updateSelectInput(session, "calib_points_view", choices = choices,
-                               selected = shiny::isolate(calib_view_pref()))
-    } else {
-      shiny::updateSelectInput(session, "calib_points_view", choices = choices["Selected batch only"],
-                               selected = "batch")
-    }
-  })
-  calib_points_view_r <- shiny::reactive({
-    if (calib_global_used_r() && identical(input$calib_points_view, "all")) "all" else "batch"
-  })
-
-  # Calibration curve samples of the selected chemical (one row) to show in the figures. For
-  # "all", the samples of all batches, i.e. those the global curve was fitted on, with the global
-  # limits of the selected batch's data (identical for every batch using the global curve).
-  calib_cc_se_r <- shiny::reactive({
-    feature_id <- calib_selected_feature_r()
-    cc_sel <- calib_batch_proc_r()$calcurve
-    cc_sel <- cc_sel[rownames(cc_sel) == feature_id, ]
-    if (calib_points_view_r() == "batch") return(cc_sel)
-
-    # Combine the samples of all batches. A batch without its own calibration curve samples holds
-    # all the global ones, so drop the samples already collected.
-    seen <- character(0)
-    se_lst <- list()
-    for (b in names(calib_lst_proc_r())) {
-      se <- calib_lst_proc_r()[[b]]$calcurve
-      se <- se[rownames(se) == feature_id, !colnames(se) %in% seen]
-      if (nrow(se) == 0 || ncol(se) == 0) next
-      seen <- c(seen, colnames(se))
-      SumExp::row_df(se) <- SumExp::row_df(cc_sel)   # Global limits, required to bind columns
-      se_lst[[b]] <- se
-    }
-    se <- Reduce(cbind, se_lst)
-    # Mask the calibration matrix outside the global range, as done in processing
-    mat_src <- util$mat_id_of_blank_subtracted(input$norm_method)
-    mat_calib <- util$mat_id_in_calibration(mat_src)
-    rd <- SumExp::row_df(se)
-    conc <- util$spiked_conc_pts(se)
-    to_na <- !(conc >= rd$min_c_conc & conc <= rd$max_c_conc)
-    to_na[is.na(to_na)] <- TRUE
-    m <- se[[mat_src]]
-    m[, to_na] <- NA_real_
-    se[[mat_calib]] <- labelled::copy_labels(cc_sel[[mat_calib]], m)
-    se
-  })
-
-  # Explanation next to the dropdown; red when the shown points are not those of the curve used
-  output$calib_points_note <- shiny::renderUI({
-    # Silent when there is nothing to show: the tables and figures say why
     shiny::req(tryCatch({ to_report_r(); is_target_mode() }, error = function(e) FALSE))
-    batch <- input$calib_batch
-    used <- calib_used_curve_r()
-    # Why the batch uses the global curve (saved by process.R), e.g. no blank samples
-    concn_se <- calib_batch_proc_r()$concn   # Evaluated before the S4 method (see 4.3)
-    reason <- SumExp::metadata(concn_se)$calibration_note
-    reason_tag <- if (isTRUE(used == "Global") && length(reason) == 1 && !is.na(reason)) {
-      shiny::tags$div(style = "color: #333; font-style: italic;",
-                      paste0("Reason for the global curve in batch ", batch, ": ", reason, "."))
+    lst <- calib_lst_proc_r()
+    b <- input$calib_batch
+    shiny::req(b %in% names(lst))
+    tr <- to_report_r()
+    mat_blk <- util$mat_id_of_blank_subtracted(input$norm_method)
+    x <- lst[[b]]
+    rd <- SumExp::row_df(x$calcurve)
+    # Removed before calibration (blank filter / QC RSD% filter), as at the end of table 4.2
+    rem <- tr[["removed features"]]
+    rem <- if (is.null(rem)) rem[0, ] else rem[rem$mat_id == input$norm_method & rem$targeted, ]
+    norm <- tr[["normalized"]]
+    removed_v <- if (nrow(rem) > 0 && !is.null(norm) && input$norm_method %in% names(norm)) {
+      rf <- tr[["qc rsd filter"]]
+      why <- ifelse(rem$reason == "QC RSD%", paste0("QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
+                    "blank filter")
+      show$calib_view_removed(norm, input$norm_method, rem$feature_id, stats::setNames(why, rem$feature_id),
+                              batch = if (b %in% as.character(SumExp::col_df(norm)$batch_id)) b)
     }
-    txt <- if (is.na(used)) {
-      list("No calibration curve with a proper range for this chemical in batch ", batch, ".")
-    } else if (used == "Batch") {
-      list("Concentrations in batch ", batch, " were calculated with this batch's own calibration curve.")
-    } else if (!calib_global_used_r()) {
-      list("Concentrations were calculated with the calibration curve of all samples.")
-    } else if (calib_points_view_r() == "all") {
-      list("Concentrations in batch ", batch, " were calculated with the global calibration curve, ",
-           "fitted on the calibration points of all batches shown here.")
-    } else {
-      return(shiny::tagList(
-        shiny::tags$div(
-          style = "color: #C62828; font-weight: 600;",
-          paste0("Only batch ", batch, "'s calibration points are shown. The concentrations were ",
-                 "calculated with the global calibration curve, fitted on the calibration points of ",
-                 "all batches.")
-        ),
-        reason_tag
-      ))
+    # Why the whole batch uses the global curve (saved by process.R), e.g. too few replicates; a
+    # batch with some chemicals on the global curve gives their reasons per chemical
+    reason <- SumExp::metadata(x$concn)$calibration_note
+    whole <- identical(as.character(SumExp::col_df(x$concn)$calibration[1]), "Global")
+    why_global <- if (whole && length(reason) == 1 && !is.na(reason)) paste0(" Reason for the global curve: ", reason, ".") else ""
+    multi <- length(lst) > 1
+    views <- list()
+    if (multi) {
+      views[["All batches (global curve)"]] <- list(
+        parts = list(show$calib_view_all_batches(lst, b, mat_blk)),
+        info = paste0("Concentrations in batch ", b, " were calculated with the global curve, fitted on the ",
+                      "calibration points of all batches shown here.", why_global))
     }
-    shiny::tagList(shiny::tags$div(style = "color: #333;", do.call(paste0, txt)), reason_tag)
+    views[[if (multi) paste0("Batch ", b, " only") else "All samples"]] <- list(
+      parts = list(show$calib_view_of_batch(x, mat_blk), removed_v),
+      info = paste0("Only batch ", b, "'s calibration points are shown: the concentrations were calculated with the ",
+                    "global curve, fitted on the calibration points of all batches.", why_global),
+      info_warn = TRUE)
+    data <- show$calib_viewer_data(
+      compounds = data.frame(id = c(rownames(x$calcurve), rem$feature_id), name = c(rd$feature_name, rem$feature_name)),
+      views = views,
+      log_scale = isTRUE(tr[["params"]][["log_calibration"]]),
+      unit = show$conc_unit(x$concn),
+      y_title = show$label_if_has(x$concn[[util$mat_id_in_calibration(mat_blk)]], "Signal"),
+      class_colors = colors_of_classes()
+    )
+    session$sendCustomMessage("calcurve_data", show$calib_viewer_json(data))
   })
 
   output$tb_4_1 <- DT::renderDataTable({
@@ -2284,12 +2260,15 @@ server <- function(input, output, session) {
       concn <- calib_batch_proc_r()$concn
       rd_q <- SumExp::row_df(concn)[limit_df$feature_id, , drop = FALSE]
       study <- util$extract_ctrl_smpl_cat(concn, "")[limit_df$feature_id, ]
-      sig <- study[[util$src_mat_id_for_conc(concn)]]
-      if (isTRUE(to_report_r()[["params"]][["log_calibration"]])) sig <- log1p(sig)   # As the limits
-      detected <- rowSums(sig >= rd_q$lod_signal, na.rm = TRUE) > 0
+      sig <- study[[util$src_mat_id_for_conc(concn)]]   # Original scale, as the signals of the limits
+      detected <- rowSums(util$is_detected(sig, rd_q$lod_signal), na.rm = TRUE) > 0
+      # Exported only because of "Keep all calibration curves" (none in older processed data)
+      kept_exp <- if (is.null(rd_q$exported_kept)) rep(FALSE, nrow(rd_q)) else rd_q$exported_kept %in% TRUE
       limit_df$detection <- dplyr::case_when(
         !(rd_q$has_proper_range %in% TRUE) ~ "",   # No curve: the reason says why
+        !detected & kept_exp ~ "Not detected in any study sample; exported (Keep all calibration curves)",
         !detected ~ "Not detected in any study sample",
+        kept_exp ~ "No study sample ≥ LLOQ; exported (Keep all calibration curves)",
         !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
         TRUE ~ ""
       )
@@ -2335,8 +2314,8 @@ server <- function(input, output, session) {
           "Chemical Name" = feature_name,
           "Calibration" = calibration,
           "LOD" = lod,
-          "Minimum conc. (LLOQ)" = min_c,
-          "Maximum conc." = max_c,
+          "LLOQ" = min_c,
+          "Highest cal. conc." = max_c,
           "ULOQ" = uloq,
           Notes,
           is_global,
@@ -2356,7 +2335,7 @@ server <- function(input, output, session) {
             "Batch" = shiny::isolate(input$calib_batch),
             "Chemical Name" = rem$feature_name,
             "Calibration" = "None",
-            "LOD" = "", "Minimum conc. (LLOQ)" = "", "Maximum conc." = "", "ULOQ" = "",
+            "LOD" = "", "LLOQ" = "", "Highest cal. conc." = "", "ULOQ" = "",
             Notes = show$calib_notes_html(tibble::tibble(removed = ifelse(
               rem$reason == "QC RSD%",
               paste0("Removed: QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
@@ -2418,143 +2397,9 @@ server <- function(input, output, session) {
   })
 
 
-  # Colour of the title of 4.4 / 4.5 by the state of the curve, as the rows of table 4.2: red not
-  # valid, orange kept although not valid, blue the global curve, grey valid
-  calib_title_fill <- function(rd) {
-    if (!isTRUE(rd$has_proper_range[1])) "lightcoral" else if (isTRUE(rd$kept_calcurve[1])) "#FFD9A0" else
-      if (isTRUE(rd$src_calcurve[1] == "Global")) "lightblue" else "lightgray"
-  }
-
-  ################################################################################################################
-  ### This is for Figure 4.4
-  output$ggplot4_3 <- renderPlotly({
-    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
-    if (is_target_mode()) {
-      ############################################
-      # Parameters
-      log_scale <- to_report_r()[["params"]][["log_calibration"]]
-
-      ############################################
-      # Calibration curve samples of the selected chemical (selected batch or all batches);
-      # the batch of each point is that of the sample
-      # Evaluate the reactives before passing them to S4 methods like `as_tibble`: a `req()`
-      # inside an S4 argument becomes an error message instead of silently waiting
-      cc_se <- calib_cc_se_r()
-      calcurve_lst <- list(calib_batch_proc_r()$calcurve)   # Source of the labels below
-      calcurve_to_show_df <- SumExp::as_tibble(cc_se) |>
-        dplyr::mutate(Batch = as.character(batch_id))
-
-      # Copy labels
-      for (ii in names(calcurve_lst[[1]])) {
-        labelled::label_attribute(calcurve_to_show_df[[ii]]) <-
-          labelled::label_attribute(calcurve_lst[[1]][[ii]])
-      }
-
-      for (ii in names(SumExp::col_df(calcurve_lst[[1]]))) {
-        l <- labelled::label_attribute(SumExp::col_df(calcurve_lst[[1]])[[ii]])
-        labelled::label_attribute(calcurve_to_show_df[[ii]]) <- l
-      }
-
-      calcurve_to_show_df <- calcurve_to_show_df |>
-        dplyr::rename(.cc_pt = util$spiked_conc_pts_name) |>
-        # The ULOQ (none for a quadratic curve, or in data processed by older versions)
-        dplyr::mutate(.uloq = if ("uloq" %in% names(calcurve_to_show_df)) dplyr::coalesce(uloq, Inf) else Inf) |>
-        dplyr::mutate(
-          c_type = dplyr::case_when(
-            # The LOD level is also the LLOQ (the start of the curve): its own colour, as it
-            # would otherwise be one of the points within the limits
-            .cc_pt == lod & .cc_pt == lloq & .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "LOD = LLOQ",
-            # In the curve but above the top of its linear range (curve not cut at the ULOQ)
-            .cc_pt >= min_c_conc & .cc_pt <= max_c_conc & .cc_pt > .uloq ~ "Above the ULOQ",
-            .cc_pt >= min_c_conc & .cc_pt <= max_c_conc ~ "Within limits",
-            .cc_pt == lod ~ "LOD",
-            .cc_pt == 0 ~ "Cal0",
-            TRUE ~ "Out-of-range"
-          )
-        )
-
-      ############################################
-      # Data of the chemical selected in table 4.2
-      dfm <- calcurve_to_show_df[calcurve_to_show_df$.row_id == calib_selected_feature_r(), ]
-      shiny::req(nrow(dfm) > 0)
-      sel_row_df <- SumExp::row_df(calcurve_lst[[1]])[calib_selected_feature_r(), , drop = FALSE]
-
-      ############################################
-      # Drawn with plotly directly (converting a ggplot took seconds per chemical, in the app's
-      # process shared by all users). The title is the name only; its colour tells the state of
-      # the curve, as the rows of 4.2 (which give the reason).
-      y <- input$norm_method
-      show$plotly_calcurve_points(
-        dfm, y = y, title = dfm$feature_name[1], title_fill = calib_title_fill(sel_row_df),
-        log_scale = isTRUE(log_scale),
-        x_title = show$label_if_has(dfm$.cc_pt, "Calibrant Concentration"),
-        y_title = show$label_if_has(dfm[[y]], "Signal"),
-        # The limits of the curve chosen in 4.2 (the batch's own, or the global one it uses)
-        lod = sel_row_df$lod[1], lloq = sel_row_df$lloq[1],
-        uloq = if (isTRUE(sel_row_df$has_proper_range)) sel_row_df$uloq[1] else NA
-      )
-    }
-  })
 
   ################################################################################################################
   ### This is for Figure 4.5
-
-  output$ggplot4_4_2 <- renderPlotly({
-    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
-    MAT_ID_BLANK_SUBT <- input$norm_method |>
-      util$mat_id_of_blank_subtracted()
-    MAT_ID_IN_CALIB <- util$mat_id_in_calibration(MAT_ID_BLANK_SUBT)
-
-    if (is_target_mode()) {
-      ############################################
-      # Prepare data of the selected batch and chemical
-      log_scale <- to_report_r()[["params"]][["log_calibration"]]
-
-      concn_se <- calib_batch_proc_r()$concn
-      calib_se <- calib_cc_se_r()   # Calibration points of the selected batch or all batches
-      feature_id <- calib_selected_feature_r()
-      shiny::req(feature_id %in% rownames(concn_se))
-      se_selected <- concn_se[rownames(concn_se) == feature_id, ]
-
-      # Why the curve is not valid, kept or replaced by the global one ("" if used as is), and
-      # whether the full range is shown as no sample is quantifiable
-      reason <- show$calib_issue_text(SumExp::row_df(se_selected))
-      if (!isTRUE(SumExp::row_df(se_selected)$has_proper_range)) {
-
-
-        ############################################
-        # ✅ Output
-
-        plotly::plotly_empty(type = "scatter", mode = "markers") |>
-          plotly::layout(
-            xaxis = list(visible = FALSE),
-            yaxis = list(visible = FALSE),
-            annotations = list(
-              list(
-                text = paste0("No valid calibration curve<br><span style='font-size:16px'>",
-                              htmltools::htmlEscape(sub("^Not valid: ", "", reason)), "</span>"),
-                x = 0.5,
-                y = 0.5,
-                xref = "paper",
-                yref = "paper",
-                showarrow = FALSE,
-                font = list(size = 24, color = "gray")
-              )
-            )
-          )
-      } else {
-        # Drawn with plotly directly (as 4.4). The title is the name only, coloured by the state
-        # of the curve (as in 4.4 and 4.2)
-        show$plotly_calcurve_samples(
-          se_selected, calib_se, MAT_ID_IN_CALIB, colors_of_classes(), log_scale = isTRUE(log_scale),
-          title_fill = calib_title_fill(SumExp::row_df(se_selected))
-        )
-      }
-    }
-  })
-
-  ################################################################################################################
-  ### This is for Figure 4.6
 
   output$ggplot5_1 <- renderPlotly({
     to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
@@ -2565,7 +2410,7 @@ server <- function(input, output, session) {
       # ------------------------------------------------------------
       # Prepare data of the selected batch and chemical (by feature ID, not by name)
       feature_id <- calib_selected_feature_r()
-      concn_se <- calib_batch_proc_r()$concn   # Evaluated before the S4 method (see 4.3)
+      concn_se <- calib_batch_proc_r()$concn   # Evaluated before the S4 method (a `req()` there gives an error message)
       shiny::req(feature_id %in% rownames(concn_se))
       df1 <- SumExp::as_tibble(concn_se[feature_id, ])   # The selected chemical only (fast)
 
@@ -2603,13 +2448,13 @@ server <- function(input, output, session) {
     }
   })
   ################################################################################################################
-  ### This is for Figure 4.7: the selected chemical in the QC samples of all batches along the
+  ### This is for Figure 4.6: the selected chemical in the QC samples of all batches along the
   ### injection order (each batch with its own calibration), the same as in the internal report
 
   output$ggplot4_7 <- renderPlotly({
     to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
     feature_id <- calib_selected_feature_r()
-    lst_proc <- calib_lst_proc_r()   # Evaluated before the S4 methods (see 4.4)
+    lst_proc <- calib_lst_proc_r()   # Evaluated before the S4 methods (a `req()` there gives an error message)
     d <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), lst_proc), function(x) {
       se <- util$extract_ctrl_smpl_cat(x$concn, "QC")
       if (!feature_id %in% rownames(se) || ncol(se) == 0) return(NULL)

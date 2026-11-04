@@ -122,8 +122,9 @@ desc <- c(
   vis_prenorm = "Divide all peak areas by the volumetric IS of each sample before normalization.",
   rm_outlier = "Remove samples in which more than 20% of the internal standards deviate by more than 3 SD (log scale).",
   rm_outlier_scope = "Which samples can be removed as outliers: all injections, or all but the calibration samples.",
-  blank_filter = "Remove features whose maximum and mean in the samples are not above factor × the blank mean.",
+  blank_filter = "Remove features whose maximum (or mean) in the study samples is not above factor × the blank mean.",
   blank_filter_factor = "The factor of the blank filter.",
+  blank_filter_stat = "Compare the blank mean with the maximum or the mean of the study samples (QCs and calibration standards do not count).",
   rsd_filter = "Remove features with a high RSD% among the QC replicates (after normalization and blank subtraction).",
   rsd_filter_scope = "Targeted, non-targeted features or both.",
   rsd_max_targeted = "Maximum QC RSD% of targeted compounds.",
@@ -131,8 +132,8 @@ desc <- c(
   optimize_cal_points = "End each curve just above the highest study sample (keeping the minimum number of levels).",
   set_minimum_number = "Require more calibration levels than 3 per curve ...",
   min_cal_points = "... namely this many.",
-  average_cal_reps = "Average the replicates of each calibration level within a batch; one global curve for all batches.",
-  keep_all_calcurves = "Keep the curves of compounds without a valid range (marked), instead of leaving them out.",
+  average_cal_reps = "Average the replicates of each calibration level within a batch: per batch, each batch's own curve on its averages; otherwise one global curve with one point per level and batch.",
+  keep_all_calcurves = "Keep the curves of compounds without a valid range (marked), instead of leaving them out; and export compounds with a curve also when no study sample is above the LLOQ.",
   r2_filter = "Curves with a lower R² than the minimum are not valid ...",
   min_r2 = "... namely this R².",
   linear_only = "Fit linear curves only (no quadratic ones).",
@@ -146,7 +147,7 @@ desc <- c(
 )
 group <- c(per_batch = "Reading", vis_prenorm = "Quality control", rm_outlier = "Quality control",
            rm_outlier_scope = "Quality control", blank_filter = "Quality control", blank_filter_factor = "Quality control",
-           rsd_filter = "Quality control", rsd_filter_scope = "Quality control", rsd_max_targeted = "Quality control",
+           blank_filter_stat = "Quality control", rsd_filter = "Quality control", rsd_filter_scope = "Quality control", rsd_max_targeted = "Quality control",
            rsd_max_nontargeted = "Quality control")
 po <- settings$processing_options
 show_val <- function(v) if (is.logical(v)) ifelse(v, "Yes", "No") else as.character(v)

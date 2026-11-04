@@ -41,7 +41,8 @@ processing <- list(
   rm_outlier          = TRUE,    # Remove outlier samples (> 20% of the IS beyond 3 SD, log scale, or zero)
   rm_outlier_scope    = "all",   # "all" injections, or "no_calib": calibration samples always kept
   blank_filter        = TRUE,    # Blank filtering (after normalization, before blank subtraction)
-  blank_filter_factor = 5,       # Kept when the sample max or mean > factor x blank mean (>= 0)
+  blank_filter_factor = 5,       # Kept when the study sample max (or mean) > factor x blank mean (>= 0)
+  blank_filter_stat   = "max",   # "max" or "mean" of the study samples (not QCs or calibration standards)
   rsd_filter          = FALSE,   # Remove features with a high QC RSD%
   rsd_filter_scope    = "both",  # "both", "targeted" or "nontargeted"
   rsd_max_targeted    = 30,      # Maximum QC RSD% of targeted features (1-80)
@@ -50,7 +51,7 @@ processing <- list(
   optimize_cal_points = FALSE,   # Leave out calibration points above the highest sample
   set_minimum_number  = FALSE,   # Require more calibration levels than 3 ...
   min_cal_points      = 3,       # ... namely this many (>= 3; used only with set_minimum_number)
-  average_cal_reps    = FALSE,   # Average calibration replicates per batch (global curve)
+  average_cal_reps    = FALSE,   # Average calibration replicates per batch (one point per level and batch)
   keep_all_calcurves  = FALSE,   # Keep the curves of compounds without a valid range (marked)
   r2_filter           = FALSE,   # Minimum R2 of the calibration curves ...
   min_r2              = 0.99,    # ... namely this (0-1)

@@ -68,6 +68,7 @@ Functions for generating **plots and tables** for reports:
 - **Quality metrics**: `compute_rsd_per_feature()` and `rsd_perc()`
 - **Color schemes**: `get_colors_of_classes()` manages consistent color palettes for control categories and classes
 - **QC visualization**: `extract_quant_qc()` extracts quantitative standards from QC samples for performance monitoring
-- **Calibration curve plots**: `ggplot_calcurve_samples()` and `ggplot_calcurve_samples_facet()` create visualizations with sample points and fitted lines
+- **Calibration curve plots**: `ggplot_calcurve_samples()` and `ggplot_calcurve_samples_facet()` create visualizations with sample points and fitted lines (external report)
+- **Calibration curve viewer** (app 4.4, internal report 4.4, tutorial): the data of the curves for `www/calcurve_viewer.js`, which draws them in the browser: one view per curve from `calib_view_of_batch()`, `calib_view_all_batches()`, `calib_view_of_global()` or `calib_view_removed()`, combined by `calib_viewer_data()` (JSON: `calib_viewer_json()`; for a page: `calib_viewer_html()`)
 - **RSD plots**: `ggplot_rsdp_metab()` visualizes RSD% distributions across different processing stages
 - **Custom aesthetics**: `geom_calibration_curve_line()` and custom coordinate system `CoordZoomInByCC` for specialized calibration curve rendering

@@ -103,8 +103,8 @@ tut_table(t310, height = "300px",
 The features removed for the chosen normalization method (here `r tut$method_labels[[best]]`) and
 why:
 
-- **Blank filter**: a feature is removed unless its maximum or average signal in the samples is
-  more than `r tr[["blank_filter_factor"]]` × its average signal in the blanks; it is mostly
+- **Blank filter**: a feature is removed unless its maximum (or, with that option, mean) signal in
+  the study samples (not the QCs or calibration standards) is more than `r tr[["blank_filter_factor"]]` × its average signal in the blanks; it is mostly
   contamination.
 - **QC RSD% filter** (optional, off in this example): a feature is removed when its RSD% among the
   QC replicates is above the limit; it is measured too imprecisely.

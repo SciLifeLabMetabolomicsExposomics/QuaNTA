@@ -1,4 +1,6 @@
 /.quarto/
 # Quarto's temporary copy of _freeze/site_libs/ while it renders or previews
 /site_libs/
+# Copied from app/www/ before each render (_copy-viewer.ts)
+/assets/
 **/*.quarto_ipynb

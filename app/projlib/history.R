@@ -161,6 +161,9 @@ feature_history <- function(tr, lst_proc = NULL) {
         to_exp <- !is.na(rd$to_export) & rd$to_export
         col[i][!to_exp & !startsWith(col[i], "Not quantified")] <-
           paste0(col[i][!to_exp & !startsWith(col[i], "Not quantified")], "; not exported (no study sample above the LLOQ)")
+        # Exported only because of "Keep all calibration curves"
+        kept_exp <- if (is.null(rd$exported_kept)) rep(FALSE, nrow(rd)) else rd$exported_kept %in% TRUE
+        col[i][kept_exp] <- paste0(col[i][kept_exp], "; exported although no study sample above the LLOQ (Keep all calibration curves)")
         exported[i] <- exported[i] | to_exp
       }
       tbl[[paste("Calibration, batch", b)]] <- ifelse(type == "Targeted" & !removed, col, "")
