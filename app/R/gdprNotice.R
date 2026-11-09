@@ -1,15 +1,14 @@
 # ------------------------------------------------------------------------------------------- #
 # GDPR notice before uploading data on SciLifeLab Serve
 #
-# On Serve (see R/uploadLimit.R for how that is detected), choosing an MS-DIAL file or a saved
-# session file first shows a popup about personal data under the GDPR. The file dialog opens only
+# On Serve (see R/uploadLimit.R for how that is detected), choosing an MS-DIAL file first shows a
+# popup about personal data under the GDPR. The file dialog opens only
 # after "Yes". Run locally, nothing is shown: the data then stay on the user's own computer.
 # Everything happens in the browser: the popup cannot be skipped by a slow server round trip.
 # ------------------------------------------------------------------------------------------- #
 
-# The file inputs with data (module namespaces of app.R: msdialInfoUI("data_info"),
-# sessionLoadUI("session_data"))
-.gdpr_guarded_inputs <- c("data_info-input_file_upload", "session_data-load")
+# The file inputs with data (module namespace of app.R: msdialInfoUI("data_info"))
+.gdpr_guarded_inputs <- "data_info-input_file_upload"
 
 #' Content of the GDPR popup
 #'

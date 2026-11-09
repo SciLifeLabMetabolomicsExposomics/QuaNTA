@@ -77,6 +77,75 @@ read_parsed_msdial_data <- function(user_inputs) {
   sumexp
 }
 
+#' The read data without the peak areas: features, samples and metadata for the app and the reports
+#'
+#' The matrix is a placeholder (see `util$without_values()`); the peak areas of the volumetric IS
+#' are in `metadata(se)$vis_raw`. Data read by older versions: the full data.
+#'
+#' @param user_inputs A list of user inputs including `input_file` and `intermediate_dir`.
+#' @returns A [`SumExp::SumExp`] object
+#' @export
+read_parsed_data_info <- function(user_inputs) {
+  f <- get_raw_data_file_name(user_inputs, suffix = "info")
+  if (!file.exists(f)) return(read_parsed_msdial_data(user_inputs))
+  readRDS(f)
+}
+
+#' File of a matrix of all features, one per data version (`process.R` writes them one at a time)
+#'
+#' @param user_inputs A list of user inputs including `input_file` and `intermediate_dir`.
+#' @param kind "norm" (normalized, all features) or "blk" (blank-subtracted, without the IS)
+#' @param mat_id The matrix ID, e.g. "loess_norm" or "loess_norm_blk"
+#' @export
+full_matrix_file <- function(user_inputs, kind, mat_id) {
+  get_raw_data_file_name(user_inputs, suffix = paste0(kind, "_", mat_id))
+}
+
+#' The normalized values of all features of one data version
+#'
+#' @param user_inputs A list of user inputs including `input_file` and `intermediate_dir`.
+#' @param tr The `to_report` list of `process.R`
+#' @param mat_id The matrix ID, e.g. "loess_norm"
+#' @param keep `NULL`, or a function of the `row_df` that gives the features to keep
+#' @returns A [`SumExp::SumExp`] object with this one matrix
+#' @export
+read_full_normalized <- function(user_inputs, tr, mat_id, keep = NULL) {
+  fd <- tr[["full data"]]
+  .full_sumexp(readRDS(full_matrix_file(user_inputs, "norm", mat_id)), mat_id, fd$norm_rows, fd$norm_cols, fd$metadata, keep)
+}
+
+#' The blank-subtracted values of all features but the IS of one data version (blanks left out)
+#'
+#' @param user_inputs A list of user inputs including `input_file` and `intermediate_dir`.
+#' @param tr The `to_report` list of `process.R`
+#' @param blk_mat_id The matrix ID, e.g. "loess_norm_blk"
+#' @param keep `NULL`, or a function of the `row_df` that gives the features to keep
+#' @returns A [`SumExp::SumExp`] object with this one matrix, the samples ordered by batch
+#' @export
+read_full_blank_subtracted <- function(user_inputs, tr, blk_mat_id, keep = NULL) {
+  fd <- tr[["full data"]]
+  m <- readRDS(full_matrix_file(user_inputs, "blk", blk_mat_id))
+  se <- .full_sumexp(m, blk_mat_id, fd$blk_rows, fd$blk_cols, fd$metadata, keep)
+  rm(m)
+  o <- unlist(split(seq_len(ncol(se)), as.factor(as.character(SumExp::col_df(se)$batch_id))), use.names = FALSE)
+  if (is.unsorted(o)) se[, o] else se
+}
+
+#' Split the result of [read_full_blank_subtracted()] by batch
+#' @param se A [`SumExp::SumExp`] object
+#' @returns A list of [`SumExp::SumExp`] objects, by batch ID
+#' @export
+split_by_batch <- function(se) SumExp::split_columns(se, as.character(SumExp::col_df(se)$batch_id))
+
+.full_sumexp <- function(m, mat_id, row_df, col_df, metadata, keep) {
+  if (!is.null(keep)) {
+    i <- keep(row_df)
+    m <- m[i, , drop = FALSE] |> labelled::copy_labels_from(m)
+    row_df <- row_df[i, , drop = FALSE]
+  }
+  do.call(SumExp::SumExp, c(stats::setNames(list(m), mat_id), list(col_df = col_df, row_df = row_df, metadata = metadata)))
+}
+
 
 # -----  READ MS-DIAL FILES  ---------------------------------------------------
 
@@ -250,24 +319,45 @@ fetch_sample_info <- function(msdial_file, indices) {
 #' @export
 fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
   stopifnot(!missing(indices))
-  # Count total number of columns in the file
-  l1 <- readr::read_tsv(
-    msdial_file,
-    skip = skip,
-    n_max = 1L,
-    col_names = FALSE,
-    col_types = "c"
-  )
-  coltypes <- rep("-", ncol(l1))      # Skip the rest columns
-  coltypes[indices] <- "?"
-  # Read lines of the selected columns
-  readr::read_tsv(
-    msdial_file, 
-    skip = skip,
-    col_types = paste0(coltypes, collapse = ""),
-    guess_max = Inf,
-    name_repair = "unique_quiet"
-  )
+  # As text first, then the types as `readr` guesses them: only the selected columns are parsed
+  # (`readr::read_tsv()` indexes every cell of the file, also of the columns it skips)
+  out <- .fread_columns(msdial_file, indices, skip, colClasses = "character", data.table = FALSE)
+  names(out) <- .column_names(msdial_file, indices, skip)
+  readr::type_convert(tibble::as_tibble(out), col_types = readr::cols(), guess_integer = FALSE, na = c("", "NA"))
+}
+
+#' The selected columns of an MS-DIAL file with `data.table::fread()`, without their header
+.fread_columns <- function(msdial_file, indices, skip, ...) {
+  data.table::fread(msdial_file, skip = skip + 1L, header = FALSE, sep = "\t", select = indices,
+                    na.strings = c("", "NA"), showProgress = FALSE, ...)
+}
+
+#' The names of the selected columns (made unique, as when the file is read)
+.column_names <- function(msdial_file, indices, skip) {
+  header <- strsplit(readLines(msdial_file, n = skip + 1L, warn = FALSE)[skip + 1L], "\t", fixed = TRUE)[[1L]]
+  header <- gsub("^\"|\"$", "", header)
+  header <- c(header, rep("", max(0L, max(indices) - length(header))))
+  vctrs::vec_as_names(header, repair = "unique_quiet")[indices]
+}
+
+#' Read columns of numbers of a MS-DIAL file into a matrix, without a copy as a table in between
+#'
+#' @param msdial_file Path to the MS-DIAL output file
+#' @param indices Indices of the columns to read
+#' @param skip The number of lines before the header
+#' @returns A numeric matrix (no row names; the column names of the file). Values that are not
+#'   numbers are `NA`.
+#' @export
+fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
+  dt <- .fread_columns(msdial_file, indices, skip, integer64 = "double")
+  out <- matrix(NA_real_, nrow = nrow(dt), ncol = length(indices),
+                dimnames = list(NULL, .column_names(msdial_file, indices, skip)))
+  for (j in seq_along(indices)) {
+    out[, j] <- as.numeric(dt[[1L]])
+    data.table::set(dt, j = 1L, value = NULL)   # Each column is released when it has been copied
+    if (j %% 100L == 0L) invisible(gc(FALSE))
+  }
+  out
 }
 
 
@@ -439,6 +529,55 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
   return(wb)
 }
 
+#' Numbers of values of the normalized and the blank-subtracted export tables, known before exporting
+#'
+#' Counted as in [export_data_with_feature_table_xlsx()]: the features without the internal
+#' standards, times the injections.
+#'
+#' @param tr The `to_report` list of `process.R`
+#' @returns A named numeric vector (`norm`, `norm_blk`)
+#' @export
+export_table_values <- function(tr) {
+  fd <- tr[["full data"]]
+  n_features <- function(rd) sum(!(util$is_internal_std(rd$.std_type) | rd$.std_type %in% "vIS"))
+  c(norm = n_features(fd$norm_rows) * as.numeric(nrow(fd$norm_cols)),
+    norm_blk = n_features(fd$blk_rows) * as.numeric(nrow(fd$blk_cols)))
+}
+
+#' Write a table as CSV, with the same layout as the worksheet of [.write_data_to_new_worksheet()],
+#' a part of the rows at a time
+#'
+#' @param sumexp A [`SumExp::SumExp`] object
+#' @param mat_id The name of the matrix to write
+#' @param feat_tbl The feature table (the same order of features as `sumexp`)
+#' @param file The CSV file
+.write_large_csv <- function(sumexp, mat_id, feat_tbl, file) {
+  feat_tbl <- feat_tbl |> .numbers_as_numeric() |> .round_rt_mz()
+  sinfo <- .get_sample_info_rows(sumexp)
+  n_feat <- ncol(feat_tbl)
+  con <- file(file, open = "wb")
+  on.exit(close(con), add = TRUE)
+  csv_line <- function(x) {
+    x[is.na(x)] <- ""
+    needs <- grepl("[\",\r\n]", x)
+    x[needs] <- paste0("\"", gsub("\"", "\"\"", x[needs], fixed = TRUE), "\"")
+    writeLines(enc2utf8(paste(x, collapse = ",")), con, useBytes = TRUE)
+  }
+  for (r in seq_len(nrow(sinfo))) csv_line(c(rep("", n_feat - 1L), rownames(sinfo)[r], sinfo[r, ]))
+  sample_names <- as.character(SumExp::col_df(sumexp)$sample_name)
+  csv_line(c(names(feat_tbl), sample_names))
+  close(con)
+  on.exit()
+  mat <- sumexp[[mat_id]]
+  digits <- .find_rounding_decimal_places(mat)
+  for (rows in split(seq_len(nrow(mat)), ceiling(seq_len(nrow(mat)) / 2000))) {
+    part <- as.data.frame(round(mat[rows, , drop = FALSE], digits), optional = TRUE)
+    data.table::fwrite(c(as.list(feat_tbl[rows, , drop = FALSE]), unname(as.list(part))), file, append = TRUE,
+                       col.names = FALSE, na = "", scipen = 50L, showProgress = FALSE)
+  }
+  invisible(file)
+}
+
 #' Remove calibration curve samples
 .remove_calcurve_samples <- function(sumexp) {
   sumexp[, !util$is_calcurve_sample(sumexp)]
@@ -478,12 +617,14 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
 #'   Information unsaved during processing will be copied from this table.
 #' @param out_file Path to the output file
 #' @param is_closest_norm A logical value indicating whether the data is closest internal standard normalized
+#' @param max_xlsx_cells Tables with more values are written as CSV only (`Inf`: always Excel)
 #' @export
-export_data_with_feature_table_xlsx <- function(sumexp_lst, 
-                                                mat_id, 
-                                                org_feature_table, 
-                                                out_file, 
-                                                is_closest_norm = FALSE) {
+export_data_with_feature_table_xlsx <- function(sumexp_lst,
+                                                mat_id,
+                                                org_feature_table,
+                                                out_file,
+                                                is_closest_norm = FALSE,
+                                                max_xlsx_cells = Inf) {
   stopifnot(inherits(sumexp_lst, "SumExp") || is.list(sumexp_lst))
   
   #' Prepare feature table for export
@@ -506,6 +647,24 @@ export_data_with_feature_table_xlsx <- function(sumexp_lst,
     sumexp |> 
       .remove_calcurve_samples() |> 
       .reorder_samples_as_qc_first()
+  }
+
+  # Very large tables: as CSV only (one per worksheet, as the CSV copies of the other tables).
+  # Building a workbook takes many times the memory of the values.
+  lst <- if (inherits(sumexp_lst, "SumExp")) list(Data = sumexp_lst) else stats::setNames(sumexp_lst, paste("Batch", names(sumexp_lst)))
+  n_cells <- sum(vapply(lst, \(se) prod(dim(se)), numeric(1)))
+  if (n_cells > max_xlsx_cells) {
+    cat(sprintf("The table has %.1f million values, above the limit for Excel files here: written as CSV (%s).\n",
+                n_cells / 1e6, basename(tools::file_path_sans_ext(out_file))))
+    for (s in names(lst)) {
+      se <- filter_and_reorder_samples(lst[[s]])
+      lst[[s]] <- NA      # The copy above is the one to keep
+      csv <- paste0(tools::file_path_sans_ext(out_file), ".", gsub("[^A-Za-z0-9_-]+", "_", s), ".csv")
+      .write_large_csv(se, mat_id, prepare_feature_table(se), csv)
+      rm(se)
+      invisible(gc(FALSE))
+    }
+    return(invisible(NULL))
   }
 
   # Prepare the data table

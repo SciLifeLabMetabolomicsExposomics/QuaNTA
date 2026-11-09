@@ -46,6 +46,8 @@ a:hover { color: var(--q-blue-hover); }
 .quanta-brand-main img { height: 46px; width: auto; object-fit: contain; display: block; }
 .quanta-brand-divider { width: 1px; height: 34px; background: var(--q-border); }
 .quanta-brand img.quanta-brand-partner { height: 26px; width: auto; display: block; }
+/* The SU logo has a round seal and two text lines: a bit taller to look as large as SciLifeLab */
+.quanta-brand img.quanta-brand-su { height: 32px; }
 .quanta-tagline {
   position: absolute; left: 0; top: 100%; margin-top: 3px; white-space: nowrap;
   font-size: .82rem; color: var(--q-text); letter-spacing: .01em;
@@ -62,6 +64,7 @@ a:hover { color: var(--q-blue-hover); }
   .quanta-brand { gap: 10px; }
   .quanta-brand-main img { height: 40px; }
   .quanta-brand img.quanta-brand-partner { height: 22px; }
+  .quanta-brand img.quanta-brand-su { height: 27px; }
   .quanta-brand-divider { height: 28px; }
   .navbar-collapse > .navbar-nav:first-child { margin-left: 24px; }
   .q-step-label { font-size: .88rem; }
@@ -176,6 +179,24 @@ a:hover { color: var(--q-blue-hover); }
 .tooltip { --bs-tooltip-max-width: 360px; --bs-tooltip-opacity: 1; }
 .tooltip .tooltip-inner { text-align: left; }
 
+/* "Preview report" (page 5): the box fills the rest of the window (at least 560 px high), the active
+   tab fills the box and the report (iframe) fills the tab, under its download button. Only the
+   report scrolls, inside the iframe; the box does not */
+.card.q-preview { min-height: 560px; overflow: hidden !important; }
+.q-preview > .card-body,
+.q-preview .tab-content,
+.q-preview .tab-content > .tab-pane.active,
+.q-preview .tab-pane .shiny-spinner-output-container,
+.q-preview .tab-pane .shiny-html-output {
+  display: flex !important; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden !important;
+}
+.q-preview .tab-pane > .d-flex { flex: 0 0 auto; }
+.q-preview iframe.q-report-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: none; }
+
+/* Outputs with a spinner only the first time (`spinner(once = TRUE)` in app.R): later updates
+   do not grey the earlier output */
+.q-spin-once.q-loaded .recalculating { opacity: 1 !important; }
+
 /* ---------- Controls ---------- */
 .form-control, .selectize-input, .form-select {
   background-color: #FFFFFF !important;
@@ -216,7 +237,7 @@ a:hover { color: var(--q-blue-hover); }
 .shiny-input-container { margin-bottom: 14px; }
 .help-block, .form-text { color: var(--q-muted); }
 
-/* ---------- Buttons: secondary by default, orange for primary actions ---------- */
+/* ---------- Buttons: white / light blue, orange for every download ---------- */
 .btn {
   background-color: #FFFFFF !important;
   color: var(--q-blue) !important;
@@ -231,20 +252,14 @@ a:hover { color: var(--q-blue-hover); }
   color: var(--q-blue) !important;
   box-shadow: none !important;
 }
-/* Primary actions of the pipeline: read, process, reports, export (by their Shiny IDs) */
-#read_msdial-run_button, #proc-run_button, #report-gen_internal, #report-gen_external,
-#export_data-run_button,
-.btn-quanta-primary, .btn-primary {
+/* Downloads (every `downloadButton()` has the class `shiny-download-link`): orange */
+.btn.shiny-download-link {
   background-color: var(--q-orange) !important;
   border-color: var(--q-orange) !important;
   color: var(--q-navy) !important;
   font-weight: 700;
-  font-size: 1.05rem;
-  padding: 10px 18px;
 }
-#read_msdial-run_button:hover, #proc-run_button:hover, #report-gen_internal:hover,
-#report-gen_external:hover, #export_data-run_button:hover,
-.btn-quanta-primary:hover, .btn-quanta-primary:focus, .btn-primary:hover, .btn-primary:focus {
+.btn.shiny-download-link:hover, .btn.shiny-download-link:focus {
   background-color: var(--q-orange-hover) !important;
   border-color: var(--q-orange-hover) !important;
   color: var(--q-navy) !important;

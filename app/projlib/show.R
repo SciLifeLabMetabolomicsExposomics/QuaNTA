@@ -14,6 +14,19 @@ sci_txt <- function(x) ifelse(is.na(x), "NA", toupper(formatC(x, format = "e", d
 #' @param x Numbers
 #' @export
 num_txt <- function(x) ifelse(is.na(x), "NA", ifelse(abs(x) >= 1000, sci_txt(x), as.character(signif(x, 4))))
+
+#' Text typed by the user, as plain text in the markdown of a report
+#'
+#' Every punctuation character gets a backslash, so pandoc shows it as it is: without this, LaTeX
+#' commands in the text (e.g. `\input{<file>}`) would run when the PDF is made, and HTML would be
+#' kept in the HTML report.
+#'
+#' @param x A character string (`NULL` / `NA`: "")
+#' @export
+md_text <- function(x) {
+  x <- if (length(x) == 0 || is.na(x[1])) "" else as.character(x[1])
+  gsub("([[:punct:]])", "\\\\\\1", x)
+}
 #  -----  COLOURS  -------------------------------------------------------------
 
 #' Colour-blind safe colours of Okabe & Ito (2008), named
@@ -245,37 +258,6 @@ mark_lowest_rsd_norm <- function(rsd_df, labs) {
   rsd_df
 }
 
-#' Plot the RSD% of various data sets of features
-#'
-#' @param rsd_df A data frame with columns `feature_id` as well as all in `mat_ids`
-#' @param mat_ids A character vector of assay IDs to be plotted in the x-axis
-#' @returns A ggplot object
-#' @export
-ggplot_rsdp_metab <- function(rsd_df, mat_ids) {
-  nms <- names(mat_ids)
-  if (is.null(nms)) {
-    nms <- labelled::get_variable_labels(rsd_df[mat_ids])
-  }
-  ids <- unname(mat_ids)    # Duplicated by `dplyr::all_of`
-  rsd_df <- rsd_df |>
-    dplyr::mutate(
-      # NA was generated when all values were zero
-      dplyr::across(
-        dplyr::all_of(ids),
-        \(.x) ifelse(is.na(.x), 0, .x)
-      ),
-    ) |>
-    tidyr::pivot_longer(
-      dplyr::all_of(ids),
-      names_to = "Data",
-      values_to = "RSD%"
-    ) |>
-    dplyr::mutate(Data = factor(Data, levels = ids, labels = nms))
-  ggplot2::ggplot(rsd_df) +
-    ggplot2::aes(x = Data, y = `RSD%`) +
-    ggplot2::geom_line(ggplot2::aes(group = feature_id), alpha = 0.5)
-}
-
 #' Axis labels in scientific notation, as the interactive plots (plotly's `exponentformat: "E"`):
 #' e.g. "1.5E+6", "5E-2"; zero is "0"
 #'
@@ -336,7 +318,7 @@ calcurve_line_df <- function(lim_df, log_scale = FALSE) {
     
     .y_value <- stats::predict.lm(calcurve_model$inv_model, data.frame(conc = conc))
     if (log_scale) {
-      .y_value <- expm1(.y_value)    # Return to original scale
+      .y_value <- exp(.y_value)    # Return to original scale (log-log fit: ln(signal) on ln(conc))
       conc <- exp(conc)    # Return to original scale
     }
     tibble::tibble(conc = conc, .y_value = .y_value, ...)
@@ -553,6 +535,55 @@ calib_view_removed <- function(se, mat_id, ids, reasons, batch = NULL) {
                                        inj = cd$injection_order[keep])))
 }
 
+#' The curves of one batch for the calibration curve viewer, as the app shows them (app 4.4 and
+#' the tutorial): the curve each compound uses in the batch; for compounds on the global curve
+#' with several batches, first the calibration points of all batches; the compounds removed
+#' before calibration last, with their calibration points only
+#'
+#' @param lst The calibration of all batches of one data version (`proc[[mat_blk]]`)
+#' @param batch The batch
+#' @param to_report The processed data (`removed features`, `qc rsd filter`, `normalized`)
+#' @param norm_method The data version (e.g. "loess_norm")
+#' @returns A list of `compounds` and `views`, for [calib_viewer_data()]
+#' @export
+calib_views_of_batch <- function(lst, batch, to_report, norm_method) {
+  mat_blk <- util$mat_id_of_blank_subtracted(norm_method)
+  x <- lst[[batch]]
+  rd <- SumExp::row_df(x$calcurve)
+  # Removed before calibration (blank filter / QC RSD% filter), as at the end of table 4.2
+  rem <- to_report[["removed features"]]
+  rem <- if (is.null(rem)) data.frame(feature_id = character(), feature_name = character()) else
+    rem[rem$mat_id == norm_method & rem$targeted, ]
+  norm <- to_report[["normalized"]]
+  removed_v <- if (nrow(rem) > 0 && !is.null(norm) && norm_method %in% names(norm)) {
+    rf <- to_report[["qc rsd filter"]]
+    why <- ifelse(rem$reason == "QC RSD%", paste0("QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
+                  "blank filter")
+    calib_view_removed(norm, norm_method, rem$feature_id, stats::setNames(why, rem$feature_id),
+                       batch = if (batch %in% as.character(SumExp::col_df(norm)$batch_id)) batch)
+  }
+  # Why the whole batch uses the global curve (saved by process.R), e.g. too few replicates; a
+  # batch with some compounds on the global curve gives their reasons per compound
+  reason <- SumExp::metadata(x$concn)$calibration_note
+  whole <- identical(as.character(SumExp::col_df(x$concn)$calibration[1]), "Global")
+  why_global <- if (whole && length(reason) == 1 && !is.na(reason)) paste0(" Reason for the global curve: ", reason, ".") else ""
+  multi <- length(lst) > 1
+  views <- list()
+  if (multi) {
+    views[["All batches (global curve)"]] <- list(
+      parts = list(calib_view_all_batches(lst, batch, mat_blk)),
+      info = paste0("Concentrations in batch ", batch, " were calculated with the global curve, fitted on the ",
+                    "calibration points of all batches shown here.", why_global))
+  }
+  views[[if (multi) paste0("Batch ", batch, " only") else "All samples"]] <- list(
+    parts = list(calib_view_of_batch(x, mat_blk), removed_v),
+    info = paste0("Only batch ", batch, "'s calibration points are shown: the concentrations were calculated with the ",
+                  "global curve, fitted on the calibration points of all batches.", why_global),
+    info_warn = TRUE)
+  list(compounds = data.frame(id = c(rownames(x$calcurve), rem$feature_id), name = c(rd$feature_name, rem$feature_name)),
+       views = views)
+}
+
 #' The data of the calibration curve viewer (`www/calcurve_viewer.js`)
 #'
 #' @param compounds A data frame of the compounds, in the order of the viewer (`id`, `name`)
@@ -641,6 +672,136 @@ conc_unit <- function(concn) {
 #' @export
 calib_viewer_json <- function(data) {
   as.character(jsonlite::toJSON(data, auto_unbox = TRUE, na = "null", null = "null", digits = NA))
+}
+
+#  -----  FIGURES DRAWN IN THE BROWSER (app 3.5, 4.5, 4.6)  -------------------------
+# The data of all internal standards (3.5) or compounds (4.5, 4.6) is sent once; `www/quanta_figs.js`
+# draws the one selected in the table, without the server (as the calibration curve viewer).
+
+#' Colours as "#RRGGBB" (R colour names such as "grey25" are not known in the browser)
+#' @noRd
+.hex_colors <- function(x) {
+  if (length(x) == 0) return(list())
+  as.list(stats::setNames(grDevices::rgb(t(grDevices::col2rgb(unname(x))), maxColorValue = 255), names(x)))
+}
+.r6 <- function(x) { x <- as.numeric(x); x[!is.finite(x)] <- NA; signif(x, 6) }
+
+#' The data of figure 3.5 of the app (the peak areas of the internal standard selected in 3.1, by
+#' sample group and along the injection order), for `QuantaFigs.isDistribution()`
+#'
+#' @param se A [`SumExp::SumExp`] object of the internal standards (with `raw`), rows in the order
+#'   of table 3.1
+#' @param outlier `NULL`, or a logical vector named by sample ID: outlier samples
+#' @param failed `NULL`, or a logical vector: failed internal standards (rows of `se`)
+#' @param rsd `NULL`, or the RSD% of each IS per QC group and sample class for table 3.4 (a list of
+#'   `rsd`, a matrix with the groups in rows and the IS in columns in the order of `se`, and `n`,
+#'   as [is_rsd_by_group()])
+#' @returns A list, for [calib_viewer_json()]
+#' @export
+is_distribution_data <- function(se, outlier = NULL, failed = NULL, rsd = NULL) {
+  cd <- SumExp::col_df(se)
+  grp <- sample_group(cd)
+  y <- se[["raw"]]
+  out <- if (is.null(outlier)) rep(FALSE, ncol(se)) else unname(outlier[colnames(se)] %in% TRUE)
+  list(
+    names = I(SumExp::row_df(se)$feature_name),
+    failed = I(if (is.null(failed)) rep(FALSE, nrow(se)) else unname(failed) %in% TRUE),
+    y = lapply(seq_len(nrow(y)), \(i) I(.r6(y[i, ]))),
+    smp = list(name = I(cd$sample_name), cls = I(as.character(cd$Class)), batch = I(as.character(cd$batch_id)),
+               inj = I(cd$injection_order), grp = I(grp), out = I(out)),
+    colors = .hex_colors(sample_group_colors(grp)),
+    # Table 3.4: the groups, their number of samples, and the RSD% of each IS (a column each)
+    rsd = if (!is.null(rsd)) list(
+      groups = I(rownames(rsd$rsd)), n = I(unname(as.integer(rsd$n))),
+      v = lapply(seq_len(ncol(rsd$rsd)), \(j) I(.r6(rsd$rsd[, j])))
+    )
+  )
+}
+
+#' The data of figures 4.5 and 4.6 of the app, for `QuantaFigs.concByClass()` and
+#' `QuantaFigs.qcConc()`: the concentrations of every compound in the QCs and study samples of a
+#' batch (4.5), and in the QCs of all batches, each with its own calibration (4.6)
+#'
+#' Each value has a kind (an index of `kinds`, as in [calib_viewer_data()]): measured, replaced
+#' by an LOD/LLOQ rule, or without a value ("n.d." / "n.q.").
+#'
+#' @param lst The calibration of all batches of one data version (`proc[[mat_blk]]`)
+#' @param batch The batch of figure 4.5 (`NULL`: no data for 4.5, e.g. figure 4.6 alone in the
+#'   internal report and the tutorial)
+#' @param class_colors The colours of the classes (named), for 4.5
+#' @returns A list, for [calib_viewer_json()]
+#' @export
+conc_figs_data <- function(lst, batch = NULL, class_colors = character()) {
+  kinds <- .calib_conc_kinds()
+  part <- function(se) {
+    conc <- se[["conc"]]
+    flag <- if ("conc_flag" %in% names(se)) se[["conc_flag"]] else NULL
+    lloq <- SumExp::row_df(se)$lloq
+    entries <- lapply(seq_len(nrow(se)), function(i) {
+      x <- conc[i, ]
+      f <- if (is.null(flag)) rep(NA_character_, length(x)) else as.character(flag[i, ])
+      k <- match(as.character(imputed_kind(x, lloq[i])), kinds) - 1L
+      cens <- is.na(x) & !is.na(f)
+      k[cens] <- match(paste0(f[cens], " (no value)"), kinds) - 1L
+      list(y = I(.r6(x)), kind = I(k))
+    })
+    names(entries) <- rownames(se)
+    cd <- SumExp::col_df(se)
+    list(info = list(name = I(cd$sample_name), cls = I(as.character(cd$Class)), batch = I(as.character(cd$batch_id)),
+                     inj = I(cd$injection_order)),
+         c = entries)
+  }
+  qcs <- lapply(Filter(\(x) !is.null(x$concn), lst), \(x) util$extract_ctrl_smpl_cat(x$concn, "QC"))
+  qcs <- Filter(\(se) ncol(se) > 0, qcs)
+  qc_groups <- sort(unique(unlist(lapply(qcs, \(se) as.character(SumExp::col_df(se)$Class)))))
+  first <- if (!is.null(batch)) lst[[batch]]$concn else Filter(Negate(is.null), lapply(lst, `[[`, "concn"))[[1]]
+  unit_label <- labelled::get_label_attribute(first[["conc"]]) %||% "Concentration"
+  unit_label <- sub(" \\[\\]$", "", unit_label)   # No unit given: no empty brackets
+  rds <- lapply(c(if (!is.null(batch)) list(lst[[batch]]$concn), qcs), SumExp::row_df)
+  ids <- unlist(lapply(rds, rownames))
+  nms <- unlist(lapply(rds, \(rd) as.character(rd$feature_name)))
+  keep <- !duplicated(ids)
+  list(
+    names = as.list(stats::setNames(nms[keep], ids[keep])),   # Compound ID -> name (plot titles)
+    kinds = I(kinds), kind_colors = .hex_colors(imputed_colors), class_colors = .hex_colors(class_colors),
+    qc_colors = .hex_colors(hue_colors(qc_groups)), y_title = unit_label,
+    samples = if (!is.null(batch)) part(lst[[batch]]$concn),
+    qc = unname(lapply(qcs, part))
+  )
+}
+
+#' The compounds with a value in the QC samples (any batch), from [conc_figs_data()]: the
+#' compounds figure 4.6 can show
+#'
+#' @param data The output of [conc_figs_data()]
+#' @returns A data frame of `id` and `name`, sorted by name
+#' @export
+conc_figs_qc_compounds <- function(data) {
+  ids <- unique(unlist(lapply(data$qc, function(p) {
+    names(p$c)[vapply(p$c, function(e) any(!is.na(e$y) | !is.na(e$kind)), logical(1))]
+  })))
+  d <- data.frame(id = ids, name = vapply(ids, \(i) data$names[[i]] %||% i, ""), stringsAsFactors = FALSE)
+  d[order(d$name), , drop = FALSE]
+}
+
+#' Figure 4.6 of one compound as HTML for a page (the tutorial): `www/quanta_figs.js` (linked),
+#' plotly.js and the data
+#'
+#' @param id The ID of the element
+#' @param data The output of [conc_figs_data()] (`batch = NULL` is enough)
+#' @param compound The ID of the compound
+#' @param script_src The address of `quanta_figs.js`
+#' @returns An HTML tag list (with plotly.js as a dependency)
+#' @export
+qc_conc_html <- function(id, data, compound, script_src) {
+  htmltools::attachDependencies(htmltools::tagList(
+    htmltools::tags$script(src = script_src),
+    htmltools::div(id = id, style = "min-height: 500px;"),
+    htmltools::tags$script(htmltools::HTML(sprintf(
+      "(function () { var d = %s; function go() { QuantaFigs.qcConc(document.getElementById('%s'), d, %s); }
+       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go(); })();",
+      calib_viewer_json(data), id, jsonlite::toJSON(compound, auto_unbox = TRUE))))
+  ), plotly_js_dependency())
 }
 
 #' The calibration curve viewer as HTML for a page (internal report, tutorial): the script
@@ -756,7 +917,8 @@ ggplot_calcurve_samples <- function(x_se, cc_se, mat_id, colors_of_classes, log_
     )
   # Peak areas in scientific notation, as in the interactive plots
   out <- out + if (log_scale) {
-    ggplot2::scale_x_log10() + ggplot2::scale_y_log10(labels = label_e)
+    # A list: two scales cannot be added to each other, only to a plot
+    list(ggplot2::scale_x_log10(), ggplot2::scale_y_log10(labels = label_e))
   } else {
     ggplot2::scale_y_continuous(labels = label_e)
   }
@@ -780,22 +942,6 @@ ggplot_calcurve_samples <- function(x_se, cc_se, mat_id, colors_of_classes, log_
     return(out)
   }
   out + ggplot2::scale_color_manual(values = colors_of_classes)
-}
-
-#' @inheritParams ggplot2::facet_wrap
-#' @param ... parameters to be passed to `ggplot2::facet_wrap`
-#' @export
-#' @rdname ggplot_calcurve_samples
-ggplot_calcurve_samples_facet <- function(x_se,
-                                          cc_se,
-                                          mat_id,
-                                          colors_of_classes,
-                                          scales = "free",
-                                          ncol = 3,
-                                          log_scale = FALSE,
-                                          ...) {
-  ggplot_calcurve_samples(x_se, cc_se, mat_id, colors_of_classes, log_scale) +
-    ggplot2::facet_wrap(~ feature_name, scales = scales, ncol = ncol, ...)
 }
 
 #' ggproto for zooming in by the calibration curve
@@ -877,118 +1023,9 @@ coord_zoom_in_by_cc <- function(n_cc = 4,
   )
 }
 
-#' [ggplot2::geom_text()] for the best model of the calibration curve
-#'
-#' @param x_se A [`SumExp::SumExp`] object
-#' @param hjust,vjust,size,color,... Parameters to be passed to `ggplot2::geom_text()`
-#' @returns A [ggplot2::geom_text()] output
-#' @md
-#' @seealso [ggplot_calcurve_samples()]
-#' @export
-geom_best_model_text <- function(x_se, hjust = 1, vjust = 0, size = 4, color = "red3", ...) {
-  show_df <- SumExp::row_df(x_se) |>
-    # `feature_name` is added for further usage, e.g. `ggplot2::facet_wrap(~ feature_name)`
-    dplyr::select(feature_name, calcurve_model) |>
-    tibble::rownames_to_column("feature_id")
-  # Text for the selected calibration curve models
-  best_model_text_df <- show_df |>
-    dplyr::mutate(
-      best_model_name = purrr::map_chr(calcurve_model, \(m) m$best_model_name),
-      R2 = purrr::map_dbl(calcurve_model, \(m) m$R2s[[m$best_model_name]]),
-      txt = paste0(best_model_name, "\n R2=", sprintf("%.3f", R2)),
-      .keep = "unused"
-    )
-  ggplot2::geom_text(         # Display the best model name
-    ggplot2::aes(x = Inf, y = 0, label = txt),
-    data = best_model_text_df,
-    hjust = hjust,
-    vjust = vjust,
-    size = size,
-    color = color,
-    ...
-  )
-}
-
 #  -----  INJECTION ORDER  -----------------------------------------------------
 
-#' Create a data frame for the injection order plot
-#'
-#' @param sumexp A [`SumExp::SumExp`] object
-#' @param inj_ord A `tidyselect` expression for the injection order in the
-#'   `SumExp::col_df(sumexp)`
-#' @param mat_ids Matrix IDs to be included in the plot
-#' @returns A tibble with the data for the injection order plot. The columns include:
-#'   - `Data`: The name of the data in the `sumexp`
-#'   - `Value`: The value of the data
-#'   - `sum_value`: The sum of the `Value` per injection and per `Data`. It is for smoothed line
-#' @md
-#' @export
-df_for_injection_order <- function(sumexp, mat_ids = names(sumexp), inj_ord = injection_order) {
-  labs <- SumExp::name_labs(sumexp)
-  stopifnot(all(mat_ids %in% labs))
-  labs <- labs[match(mat_ids, labs)]   # The same order as `mat_ids`
-
-  SumExp::as_tibble(sumexp) |>
-    tidyr::pivot_longer(cols = dplyr::all_of(mat_ids),
-                        names_to = "Data",
-                        values_to = "Value") |>
-    # Decorate the names of the data in the `sumexp`
-    dplyr::mutate(Data = factor(Data, levels = labs, labels = names(labs))) |>
-    # For smoothed line across the injections
-    dplyr::mutate(sum_value = sum(Value, na.rm = TRUE), .by = c({{ inj_ord }}, Data))
-}
-
-#' Create a column plot for the injection order
-#'
-#' @param data A tibble with the data for the injection order plot. It can be created by
-#'   [df_for_injection_order()]
-#' @param fill A `tidyselect` expression for the color aesthetic of the columns in the plot
-#' @param inj_ord A `tidyselect` expression for the injection order
-#'
-#' @returns A [ggplot2::ggplot()] object
-#' @seealso [df_for_injection_order()]
-#' @md
-#' @export
-ggplot_col_injection_order <- function(data, fill, inj_ord = injection_order) {
-  ggplot2::ggplot(data, ggplot2::aes(x = {{ inj_ord }})) +
-    ggplot2::geom_col(ggplot2::aes(y = Value, fill = {{ fill }})) +
-    ggplot2::labs(
-      x = label_if_has(dplyr::pull(data, {{ inj_ord }}), "Injection order"),
-      fill = label_if_has(dplyr::pull(data, {{ fill }}), deparse(substitute(fill)))
-    ) +
-    ggplot2::geom_smooth(ggplot2::aes(y = sum_value),
-                         method = "loess", formula = "y ~ x", se = FALSE) +
-    ggplot2::facet_wrap(~Data , scales = "free_y")
-}
-
 #  -----  PCA  -----------------------------------------------------------------
-
-#' Create a PCA plot
-#'
-#' @param sumexp A [`SumExp::SumExp`] object
-#' @param mat_id The matrix ID in the `sumexp` to be used for PCA
-#' @param ... Additional arguments to [ggfortify::autoplot.prcomp()]
-#'
-#' @returns A [ggplot2::ggplot()] object
-#' @md
-#' @export
-ggplot_pca <- function(sumexp, mat_id, ...) {
-  mat <- sumexp[[mat_id]]
-  lab <- labelled::get_label_attribute(mat)
-  mat <- mat[rowSums(mat > 0) > 0, ]    # Remove all-zero rows
-  pca_res <- tryCatch({
-    stats::prcomp(t(mat), scale. = TRUE)
-  }, error = function(e) {
-    warning("PCA failed. The error message is: ", e$message)
-    NULL
-  })
-  if (is.null(pca_res)) {
-    return(NULL)
-  }
-  # `autoplot.prcomp` is exported via `S3method`, so it is not available in the namespace
-  ggfortify:::autoplot.prcomp(pca_res, data = SumExp::col_df(sumexp), ...) +
-    ggplot2::labs(title = lab)
-}
 
 #  -----  SHARED INTERACTIVE PLOTS (app and internal report)  ----------------------------------
 
@@ -1635,19 +1672,37 @@ plotly_binned_hist <- function(x, binwidth, x_title, y_title = "Number of featur
 #'   `NULL` without values, or a list of `breaks`, `counts`, `mids`)
 #' @export
 value_distribution_bins <- function(values, bins = 50) {
-  v <- as.vector(values)
-  n_na <- sum(!is.finite(v))
-  v <- v[is.finite(v)]
-  pos <- v[v > 0]
-  count <- function(x, log) {
-    if (length(x) == 0) return(NULL)
-    lx <- if (log) log10(x) else x
-    br <- seq(min(lx), max(lx), length.out = bins + 1)
-    if (diff(range(br)) == 0) br <- c(br[1] - 0.5, br[1] + 0.5)
-    h <- graphics::hist(lx, breaks = br, plot = FALSE, include.lowest = TRUE)
-    list(breaks = h$breaks, counts = h$counts, mids = h$mids)
+  # Part by part (a matrix in blocks of columns), so that large data is not copied as a whole; the
+  # breaks come from the range of all values, so the counts are those of all values at once
+  blocks <- if (is.matrix(values)) split(seq_len(ncol(values)), ceiling(seq_len(ncol(values)) / 200)) else list(NULL)
+  part <- function(b) {
+    v <- if (is.null(b)) as.vector(values) else as.vector(values[, b])
+    finite <- is.finite(v)
+    v <- v[finite]
+    list(v = v, pos = log10(v[v > 0]), n_na = sum(!finite))
   }
-  structure(list(n = length(v), n_pos = length(pos), n_na = n_na, lin = count(v, FALSE), log = count(pos, TRUE)),
+  n <- n_pos <- n_na <- 0
+  r_lin <- r_log <- NULL
+  for (b in blocks) {
+    p <- part(b)
+    n <- n + length(p$v); n_pos <- n_pos + length(p$pos); n_na <- n_na + p$n_na
+    if (length(p$v) > 0) r_lin <- range(c(r_lin, p$v))
+    if (length(p$pos) > 0) r_log <- range(c(r_log, p$pos))
+  }
+  count <- function(r, what) {
+    if (is.null(r)) return(NULL)
+    br <- seq(r[1], r[2], length.out = bins + 1)
+    if (diff(range(br)) == 0) br <- c(br[1] - 0.5, br[1] + 0.5)
+    out <- NULL
+    for (b in blocks) {
+      x <- part(b)[[what]]
+      if (length(x) == 0) next
+      h <- graphics::hist(x, breaks = br, plot = FALSE, include.lowest = TRUE)
+      if (is.null(out)) out <- list(breaks = h$breaks, counts = h$counts, mids = h$mids) else out$counts <- out$counts + h$counts
+    }
+    out
+  }
+  structure(list(n = n, n_pos = n_pos, n_na = n_na, lin = count(r_lin, "v"), log = count(r_log, "pos")),
             class = "quanta_value_bins")
 }
 
@@ -1698,52 +1753,6 @@ plotly_value_distribution <- function(values, bins = 50, x_title = "Intensities"
     )
 }
 
-#' Interactive plot of one compound's concentrations in the QC samples along the injection order:
-#' a line per QC group; measured values filled, values replaced by the LOD/LLOQ rules open
-#'
-#' @param d A data frame of the QC samples of the compound: `sample_name`, `Class` (QC group),
-#'   `batch_id`, `injection_order`, `conc`, `kind` ([imputed_kind()]) and `flag` ("n.d." / "n.q."
-#'   for values without a value, otherwise `NA`)
-#' @param name The name of the compound (title)
-#' @param y_title The title of the y-axis
-#' @param height Height of the plot in pixels
-#' @returns A plotly object
-#' @export
-plotly_qc_conc <- function(d, name, y_title = "Concentration", height = 440) {
-  d <- d[order(d$injection_order), ]
-  ok <- !is.na(d$conc)
-  n_flag <- table(d$flag[!ok & !is.na(d$flag)])
-  note <- if (length(n_flag) == 0) "" else paste0("Not shown (no value): ", paste(names(n_flag), n_flag, collapse = ", "))
-  groups <- sort(unique(as.character(d$Class)))
-  col <- hue_colors(groups)
-  p <- plotly::plot_ly(height = height)
-  for (g in groups) {
-    k <- ok & d$Class == g
-    if (!any(k)) next
-    measured <- d$kind[k] %in% "Measured"
-    txt <- paste0("<b>", d$sample_name[k], "</b><br>", g, " · batch ", d$batch_id[k], " · inj. ",
-                  d$injection_order[k], "<br>conc. ", num_txt(d$conc[k]), " (", d$kind[k], ")")
-    p <- plotly::add_trace(p, type = "scatter", mode = "lines+markers", x = d$injection_order[k],
-                           y = d$conc[k], name = g, text = txt, hoverinfo = "text",
-                           line = list(color = col[[g]], width = 1),
-                           marker = list(color = ifelse(measured, col[[g]], "white"), size = 8,
-                                         line = list(color = col[[g]], width = 1.5)))
-  }
-  axis_buttons <- list(
-    list(label = "Linear", method = "relayout", args = list(list(yaxis.type = "linear"))),
-    list(label = "Log", method = "relayout", args = list(list(yaxis.type = "log")))
-  )
-  plotly::layout(
-    p, title = list(text = paste0(name, if (nzchar(note)) paste0("<br><sup>", note, "</sup>")), x = 0.02),
-    hovermode = "closest", font = list(family = "Lato"),
-    xaxis = list(title = "Injection order"), yaxis = list(title = y_title, exponentformat = "E"),
-    legend = list(orientation = "v", x = 1.02, y = 1,
-                  title = list(text = "QC group<br><sup>open points: replaced<br>by the LOD/LLOQ rules</sup>")),
-    margin = list(t = 70),
-    updatemenus = list(list(type = "buttons", direction = "right", x = 0.55, y = 1.02, xanchor = "center",
-                            yanchor = "bottom", buttons = axis_buttons))
-  )
-}
 #' Number of calibration curve samples per concentration, per batch and in total (app 2.2 and the
 #' internal report)
 #'

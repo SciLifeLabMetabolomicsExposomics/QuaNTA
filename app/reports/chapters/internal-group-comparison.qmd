@@ -12,8 +12,9 @@ rate over all compared features [@benjamini1995].
 grp <- study_classes[1:2]
 # Study samples of the two groups after outlier removal (the data that is compared)
 nt_ids <- feat$feature_id[feat$type == "Non-targeted"]
-nt_m <- do.call(cbind, lapply(tr[["normalized - blank"]], \(se) se[[BLK]][nt_ids, , drop = FALSE]))
-nt_cd <- bind_rows(lapply(tr[["normalized - blank"]], \(se) tibble::as_tibble(SumExp::col_df(se))))
+nt_m <- blk_se[[BLK]][nt_ids, , drop = FALSE]
+nt_cd <- tibble::as_tibble(SumExp::col_df(blk_se))
+rm(blk_se)
 g1 <- nt_cd$Class == grp[1] & nt_cd$.ctrl_cat == ""
 g2 <- nt_cd$Class == grp[2] & nt_cd$.ctrl_cat == ""
 n_grp <- c(sum(g1), sum(g2))

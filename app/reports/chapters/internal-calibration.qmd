@@ -2,83 +2,34 @@
 
 ```{r}
 #| label: calib-data
-CAL_MAT <- util$mat_id_in_calibration(BLK)
 gcal <- tr[["global calibration"]][[BLK]]
 multi_batch <- length(batch_ids) > 1 && !is.null(gcal)
 in_log <- isTRUE(tr$params$log_calibration)
-name2id <- setNames(smp$sample_id, smp$sample_name)
-# Averaged calibration points (option): ID = name
-if (!is.null(cal_avg) && nrow(cal_avg) > 0) name2id <- c(name2id, setNames(cal_avg$sample_id, cal_avg$sample_name))
-
-curve_grid <- function(lloq, uloq) {
-  if (in_log) exp(seq(log(lloq), log(uloq), length.out = 120)) else
-    sort(unique(c(seq(lloq, uloq, length.out = 100), seq(lloq, min(lloq * 10, uloq), length.out = 40))))
-}
-# Curve from the coefficients of the fit of signal on concentration
-curve_from_coef <- function(cf, lloq, uloq) {
-  if (is.null(cf) || !is.finite(lloq) || !is.finite(uloq)) return(NULL)
-  x <- curve_grid(lloq, uloq); xx <- if (in_log) log(x) else x
-  y <- cf[1] + cf[2] * xx + if (length(cf) > 2) cf[3] * xx^2 else 0
-  if (in_log) y <- expm1(y)
-  npts(x = sig(x), y = sig(y))
-}
 # Point lists stay JSON arrays also with a single point (`to_json` unboxes length-1 vectors)
 npts <- function(...) lapply(list(...), I)
 model_label <- function(nm) if (is.null(nm) || is.na(nm)) NULL else sub("_div_", "/", nm)
 
+# The limits, model and notes of each compound and curve, for table 4.2 (the viewer in 4.4 has its
+# own data, `show$calib_viewer_data()`)
 global_view <- function(fid) {
   i <- match(fid, gcal$limits$feature_id)
   if (is.na(i)) return(NULL)
   L <- gcal$limits[i, ]
-  okc <- !is.na(gcal$cal_signal[fid, ]) & !is.na(gcal$cal_conc)
-  xs <- gcal$conc0[fid, ]; ys <- gcal$signal[fid, ]; oks <- !is.na(xs) & !is.na(ys)
   list(src = if (isTRUE(L$has_proper_range)) "Global" else "None",
-       notes = util$calib_notes(L, batch_view = FALSE),   # For table 4.2 (not in the viewer data)
-       why = show$calib_issue_text(L, batch_view = FALSE), kept = isTRUE(L$kept_calcurve),
-       nq = show$calib_range_note(L),
-       lod = sig(L$lod), lloq = sig(L$lloq), uloq = sig(L$uloq %||% L$max_c_conc), top = sig(L$max_c_conc),
-       model = model_label(L$model), r2 = if (is.na(L$r2)) NULL else round(L$r2, 3),
-       # Also a curve that is not valid (e.g. R² below the minimum), when it was fitted
-       curve = curve_from_coef(L$coef[[1]], L$lloq, L$max_c_conc),
-       cal = npts(x = sig(gcal$cal_conc[okc]), y = sig(gcal$cal_signal[fid, okc]),
-                  u = as.integer(gcal$cal_used[fid, okc]), s = unname(s_idx[id2name[names(which(okc))]])),
-       smp = npts(x = sig(xs[oks]), y = sig(ys[oks]), s = unname(s_idx[id2name[names(which(oks))]])))
+       notes = util$calib_notes(L, batch_view = FALSE), kept = isTRUE(L$kept_calcurve),
+       lod = sig(L$lod), lloq = sig(L$lloq), uloq = sig(L$uloq %||% L$max_c_conc),
+       model = model_label(L$model), r2 = if (is.na(L$r2)) NULL else round(L$r2, 3))
 }
 batch_view <- function(x, fid) {
   if (!fid %in% rownames(x$concn)) return(NULL)
   rd <- SumExp::row_df(x$concn)[fid, ]
-  cc <- x$calcurve[fid, ]; cs <- x$concn[fid, ]
-  ccd <- SumExp::col_df(cc); csd <- SumExp::col_df(cs)
-  ok_c <- !is.na(cc[[BLK]][1, ]) & !is.na(ccd$c_conc)
-  xs <- cs[["conc0"]][1, ]; ys <- cs[[CAL_MAT]][1, ]; ok_s <- !is.na(xs) & !is.na(ys)
   m <- rd$calcurve_model[[1]]
-  # Points used for the curve; for a batch using the global curve, those used by the global fit
-  used <- !is.na(cc[[CAL_MAT]][1, ok_c])
-  if (isTRUE(rd$src_calcurve == "Global") && !is.null(gcal)) {
-    used <- gcal$cal_used[fid, name2id[ccd$sample_name[ok_c]]]
-  }
   has_m <- is.list(m) && !is.null(m$best_model_name)
   list(src = if (is.na(rd$src_calcurve)) "None" else rd$src_calcurve,
-       notes = util$calib_notes(rd),   # For table 4.2 (not in the viewer data)
-       why = show$calib_issue_text(rd), kept = isTRUE(rd$kept_calcurve),
-       nq = show$calib_range_note(rd),
-       lod = sig(rd$lod), lloq = sig(rd$lloq), uloq = sig(rd$uloq %||% rd$max_c_conc), top = sig(rd$max_c_conc),
+       notes = util$calib_notes(rd), kept = isTRUE(rd$kept_calcurve),
+       lod = sig(rd$lod), lloq = sig(rd$lloq), uloq = sig(rd$uloq %||% rd$max_c_conc),
        model = if (has_m) model_label(m$best_model_name) else NULL,
-       r2 = if (has_m) round(m$R2s[[m$best_model_name]], 3) else NULL,
-       # Also a curve that is not valid (e.g. R² below the minimum), when it was fitted
-       curve = if (has_m) curve_from_coef(unname(stats::coef(m$inv_model)), rd$lloq, rd$max_c_conc) else NULL,
-       cal = npts(x = sig(ccd$c_conc[ok_c]), y = sig(cc[[BLK]][1, ok_c]), u = as.integer(used),
-                  s = unname(s_idx[ccd$sample_name[ok_c]])),
-       smp = npts(x = sig(xs[ok_s]), y = sig(ys[ok_s]), s = unname(s_idx[csd$sample_name[ok_s]])))
-}
-# Removed compounds have no calibration: show their calibration points (normalized signal)
-cal_cols <- util$ctrl_smpl_cat(norm_all) == "CalCurve"
-cal_conc <- util$spiked_conc_pts(norm_all)
-removed_view <- function(fid, batch = NULL) {
-  keep <- cal_cols
-  if (!is.null(batch)) keep <- keep & as.character(SumExp::col_df(norm_all)$batch_id) == batch
-  list(src = "None", cal = npts(x = sig(cal_conc[keep]), y = sig(norm_all[[MAT]][fid, keep]),
-                                u = rep(0L, sum(keep)), s = unname(s_idx[SumExp::col_df(norm_all)$sample_name[keep]])))
+       r2 = if (has_m) round(m$R2s[[m$best_model_name]], 3) else NULL)
 }
 
 # View name -> batch ID ("Global": the global curve of all batches)
@@ -89,9 +40,9 @@ in_calib_ids <- rownames(lst[[1]]$concn)
 cal_data <- lapply(seq_len(nrow(tcomps)), function(k) {
   fid <- tcomps$feature_id[k]
   in_calib <- fid %in% in_calib_ids
+  # Removed compounds have no calibration (not in table 4.2)
   v <- lapply(view_names, function(nm) {
-    if (!in_calib) return(removed_view(fid, if (nm == "Global") NULL else view_ids[[nm]]))
-    if (nm == "Global") global_view(fid) else batch_view(lst[[view_ids[[nm]]]], fid)
+    if (!in_calib) NULL else if (nm == "Global") global_view(fid) else batch_view(lst[[view_ids[[nm]]]], fid)
   })
   names(v) <- view_names
   note <- if (!in_calib) {
@@ -164,16 +115,17 @@ r2_long <- purrr::map_dfr(batch_ids, function(b) {
   rd <- SumExp::row_df(lst[[b]]$concn)
   purrr::map_dfr(seq_len(nrow(rd)), function(i) {
     m <- rd$calcurve_model[[i]]
-    if (!is.list(m) || is.null(m$R2s_adj) || !isTRUE(rd$has_proper_range[i]) || !identical(rd$src_calcurve[i], "Batch")) return(NULL)
-    tibble(batch = batch_label(b), model = sub("_div_", "/", names(m$R2s_adj)), r2 = m$R2s_adj,
-           best = names(m$R2s_adj) == m$best_model_name)
+    # The real R² of each model (the penalty of quadratic models only chooses the model)
+    if (!is.list(m) || is.null(m$R2s) || !isTRUE(rd$has_proper_range[i]) || !identical(rd$src_calcurve[i], "Batch")) return(NULL)
+    tibble(batch = batch_label(b), model = sub("_div_", "/", names(m$R2s)), r2 = m$R2s,
+           best = names(m$R2s) == m$best_model_name)
   })
 })
 ```
 
 ::: {.panel-tabset}
 
-#### Adjusted R² per model type
+#### R² per model type
 
 ```{r}
 #| fig-height: 4.5
@@ -181,7 +133,7 @@ if (nrow(r2_long) == 0) note("No batch-wise calibration curves (all batches use 
 ggplot(r2_long, aes(model, r2, fill = batch)) +
   geom_boxplot(outlier.size = .5) +
   coord_cartesian(ylim = c(max(0, quantile(r2_long$r2, .02, na.rm = TRUE)), 1)) +
-  labs(x = NULL, y = "Adjusted R² (quadratic penalized)", fill = NULL) +
+  labs(x = NULL, y = if (in_log) "R² (log-log fit)" else "R²", fill = NULL) +
   theme(axis.text.x = element_text(angle = 20, hjust = 1))
 ```
 
@@ -295,7 +247,7 @@ cat('<div class="viewer" id="concv">',
 
 Statistics of the study samples only (no QCs), from the measured values at or above the LLOQ: values
 `r if (LLOX_IMPUTED) "replaced by the LOD/LLOQ rules" else "below the LOD / LLOQ (n.d. / n.q.) or set to the LLOQ"` are left out, as in the exported tables. *All batches* pools the measured
-values of all batches; *n* is the number of these values. Concentrations in `r unit`.
+values of all batches; *n* is the number of these values. Concentrations in `r show$md_text(unit)`.
 
 ```{r}
 # Measured values (as `msdial$measured_conc()` of the exports): study samples, at or above the
@@ -319,33 +271,36 @@ if (nrow(stats_tbl) == 0) note("No measured concentrations at or above the LLOQ 
 
 
 
-## 4.6 QC samples in acquisition order
+## 4.6 QC samples
 
-One compound at a time: its concentration in each QC sample of all batches (each batch with its own
-calibration) along the injection order, a line per QC group; the values should be stable over the run.
-Filled points are measured values, open points values replaced by the LOD/LLOQ rules. Choose the compound
-in the dropdown or search; hover over a point for the sample.
+One compound at a time in the QC samples of all batches (each batch with its own calibration), as in
+the app, in two views:
+
+- **Control chart**: the % deviation of each QC from the median of its QC group along the injection
+  order, with a band at ±15%, lines at ±30%, the batches shaded, a trend line (a moving mean within
+  each batch) and the QCs beyond ±30% ringed in red. Drift within a batch and steps between batches
+  show here.
+- **Per batch**: the QC values of each batch with mean ± SD and their CV% (red above 15%); the dashed
+  line is the mean of all batches.
+
+The chips above give the QCs beyond ±15% and ±30%, and per QC group the CV% per batch and between
+batches. Only measured values count for the median, the means and the CV%; open points are values
+replaced by the LOD/LLOQ rules. Choose the compound in the dropdown or search; hover over a point for
+the sample.
 
 ```{r}
 #| results: asis
-qc_long <- filter(conc_long, .ctrl_cat == "QC")
-qc_comp <- qc_long |> group_by(feature_name) |> filter(any(!is.na(conc) | !is.na(conc_flag))) |> ungroup()
-if (!has_qc) note(NO_QC) else if (nrow(qc_comp) == 0) note("No concentrations in the QC samples.") else {
-  qc_classes <- sort(unique(as.character(qc_comp$Class)))
-  qc_view <- list(
-    kinds = names(show$imputed_colors), unit = unit,
-    group_colors = as.list(show$hue_colors(qc_classes)),   # As in the app
-    comps = qc_comp |> mutate(kind = as.integer(show$imputed_kind(conc, lloq)) - 1L) |>
-      arrange(feature_name, injection_order) |> group_by(feature_name) |> group_split() |>
-      # I(): arrays also for a single QC sample
-      lapply(function(d) list(name = d$feature_name[1], s = I(unname(s_idx[d$sample_name])), y = I(sig(d$conc)),
-                              k = I(d$kind), f = I(d$conc_flag)))
-  )
+# The figure of the app (app/www/quanta_figs.js), with the data of all compounds
+qc_figs <- show$conc_figs_data(lst)
+qc_comps <- show$conc_figs_qc_compounds(qc_figs)
+if (!has_qc) note(NO_QC) else if (nrow(qc_comps) == 0) note("No concentrations in the QC samples.") else {
+  # As raw HTML (not markdown: the script has blank lines and characters such as `*`)
+  cat('\n```{=html}\n<script>', readLines(file.path(app_root, "www", "quanta_figs.js"), warn = FALSE, encoding = "UTF-8"), '</script>', sep = "\n")
   cat('<div class="viewer" id="qcv">',
       '<div class="controls"><input type="search" class="search" placeholder="Search…" size="14"><button type="button" class="prev">&#9664;</button><select class="sel"></select>',
-      '<button type="button" class="next">&#9654;</button>',
-      '<label><input type="checkbox" class="log"> Log scale</label></div>',
-      '<div class="info"></div><div class="plot" style="height:460px;"></div></div>',
-      '<script>window.QCVIEW = ', to_json(qc_view), ';</script>', sep = "")
+      '<button type="button" class="next">&#9654;</button></div>',
+      '<div class="plot"></div></div>',
+      '<script>window.QCVIEW = { comps: ', to_json(lapply(seq_len(nrow(qc_comps)), \(k) list(id = qc_comps$id[k], name = qc_comps$name[k]))),
+      ', data: ', show$calib_viewer_json(qc_figs), ' };</script>\n```\n', sep = "")
 }
 ```

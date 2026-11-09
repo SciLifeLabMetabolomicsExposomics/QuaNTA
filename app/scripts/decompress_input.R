@@ -18,22 +18,16 @@ job <- readRDS(job_file)
 
 safe_name <- function(x) gsub("[^A-Za-z0-9._-]", "_", basename(x))
 ext <- tolower(tools::file_ext(job$name))
+# The largest decompressed file: the disk (/tmp) is shared by all users of the app, and a small
+# compressed file can unpack to terabytes. Counted while writing (a zip header can state any size)
+max_bytes <- 10e9
 
 if (ext == "gz") {
   inner_name <- sub("\\.gz$", "", job$name, ignore.case = TRUE)
   if (!grepl("\\.txt$", inner_name, ignore.case = TRUE)) {
     stop("The .gz file must be of a .txt file (named <name>.txt.gz): ", job$name, call. = FALSE)
   }
-  out <- file.path(job$out_dir, safe_name(inner_name))
   con_in <- gzfile(job$src, "rb")
-  con_out <- file(out, "wb")
-  repeat {   # In chunks, so that large files do not need to fit in memory
-    chunk <- readBin(con_in, "raw", n = 1e7)
-    if (length(chunk) == 0) break
-    writeBin(chunk, con_out)
-  }
-  close(con_in)
-  close(con_out)
 
 } else if (ext == "zip") {
   listing <- utils::unzip(job$src, list = TRUE)
@@ -46,15 +40,28 @@ if (ext == "gz") {
   if (!grepl("\\.txt$", inner_name, ignore.case = TRUE)) {
     stop("The file in the zip file must be a .txt file; it is: ", inner_name, call. = FALSE)
   }
-  tmp <- tempfile("unzip_")
-  utils::unzip(job$src, files = files, exdir = tmp, junkpaths = TRUE)
-  out <- file.path(job$out_dir, safe_name(inner_name))
-  if (!file.copy(file.path(tmp, inner_name), out, overwrite = TRUE)) stop("Could not unpack the zip file.")
-  unlink(tmp, recursive = TRUE)
+  con_in <- unz(job$src, files, "rb")
 
 } else {
   stop("Not a compressed file: ", job$name)
 }
+
+out <- file.path(job$out_dir, safe_name(inner_name))
+con_out <- file(out, "wb")
+written <- 0
+repeat {   # In chunks, so that large files do not need to fit in memory
+  chunk <- readBin(con_in, "raw", n = 1e7)
+  if (length(chunk) == 0) break
+  written <- written + length(chunk)
+  if (written > max_bytes) {
+    close(con_in); close(con_out); unlink(out)
+    stop(sprintf("The decompressed file is larger than %.0f GB, the most this app accepts.", max_bytes / 1e9),
+         call. = FALSE)
+  }
+  writeBin(chunk, con_out)
+}
+close(con_in)
+close(con_out)
 
 if (!file.exists(out) || file.size(out) == 0) stop("The decompressed file is empty.")
 saveRDS(list(path = normalizePath(out, winslash = "/"), name = inner_name), job$result_file)

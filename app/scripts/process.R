@@ -91,7 +91,11 @@ option_list <- rlang::list2(
   optparse::make_option(
     c("--log_calibration"),
     type = "logical", default = FALSE,
-    help = "Log scale for calibration curve fitting [default: %default]"
+    help = paste(
+      "Fit the calibration curves as straight lines in log-log scale: ln(signal) on ln(concentration),",
+      "weight 1, no quadratic models (`--weight` and `--linear_only` are then not used); the ULOQ is",
+      "found by SCALiR [default: %default]"
+    )
   ),
   optparse::make_option(
     c("--weight"),
@@ -250,12 +254,11 @@ FILE <- rlang::list2(
   proc = msdial$get_raw_data_file_name(user_inputs, suffix = "proc"),
   # Intermediate status of the data for reporting
   to_rep = msdial$get_raw_data_file_name(user_inputs, suffix = "to_report"),
-  # The app's copy (see `prepare_app_data()`), and the values of its figure 3.11 per method
+  # The app's copy (see `prepare_app_data()`)
   app = msdial$get_raw_data_file_name(user_inputs, suffix = "app"),
 )
-blank_values_file <- function(mat_id) msdial$get_raw_data_file_name(user_inputs, suffix = paste0("blank_", mat_id))
 # Those of an earlier run go first: a run that stops would otherwise leave them next to new results
-unlink(c(FILE$app, Sys.glob(sub("\\.rds$", "*.rds", blank_values_file("")))))
+unlink(c(FILE$app, unlist(lapply(c("norm", "blk"), \(k) Sys.glob(sub("\\.rds$", "*.rds", msdial$full_matrix_file(user_inputs, k, "")))))))
 cat("\nProcessing steps are started.\n")
 # Read the parsed data by `read-msdial.R`. If not available, warn the user
 # This 'proc_sumexp' is the main data object that will undergo processing.
@@ -271,7 +274,8 @@ stopifnot(!is.null(IS_NON_TARGET_MODE))
 # - `Completed`: A logical flag indicating whether the processing was completed
 # - `is_non_target_mode`: A logical flag indicating if it is non-target mode
 # - `blank_filter_factor`: The factor used for blank filtering (default: 5)
-# - `before normalization`: `SumExp` object of all data before internal standard normalization
+# - `before normalization`: `SumExp` object of all features and samples before normalization,
+#       without its values (see `util$without_values()`)
 # - `internal std. before qc`: `SumExp` object of internal standard features before QC
 # - `is failed internal std.`: A logical vector flagging failed internal standards.
 #       length() == nrow(`internal std. before qc`)
@@ -289,14 +293,16 @@ stopifnot(!is.null(IS_NON_TARGET_MODE))
 # - `median RSD% basis`: Sample category of those replicates: "QC", "CalCurve" or NA (none)
 # - `best normalization`: Matrix ID of the normalization with the lowest median RSD%
 #       (`loess_norm` when it cannot be computed)
-# - `normalized`: `SumExp` object after normalization (before blank filtering)
-# - `after blank filtering`: `SumExp` object after blank filtering
+# - `normalized`: `SumExp` object of the internal standards and targeted compounds after
+#       normalization (before blank filtering), all data versions. All features of a version are
+#       in the files of `msdial$full_matrix_file()`; see `msdial$read_full_normalized()` and
+#       `msdial$read_full_blank_subtracted()`
+# - `full data`: The features and samples of those files
 # - `qc rsd filter`: Settings of the QC RSD% filter (`enabled`, `scope`, `max_targeted`,
 #       `max_nontargeted`) and whether it was `skipped` (with `skip_reason`)
 # - `removed features`: Features removed by the blank filter or the QC RSD% filter, per matrix:
 #       `mat_id`, `feature_id`, `feature_name`, `targeted`, `reason`, `qc_rsd`
 # - `matrix ids to blk subt`: IDs of matrices that underwent blank subtraction
-# - `normalized - blank`: A list of `SumExp` objects after blank subtraction, split by batch
 # - `events`: What happened to the features, samples and batches (see `log_event()`)
 # - `feature history`, `sample history`: The same per feature and per sample (see `history.R`)
 to_report <- rlang::list2(
@@ -336,6 +342,7 @@ if (isTRUE(params$log_calibration) && params$weight != "1") {
   log_event("Settings", "run", "Log-scale calibration", "Setting not used",
             paste0("Weighting `1` used instead of `", params$weight, "` (the only one in log scale)"), "fallback")
 }
+# "Linear models only" is not logged: log-scale curves are always straight lines
 
 
 #  -----  NORMALIZATION USING INTERNAL STANDARDS  ------------------------------
@@ -374,7 +381,8 @@ if (isTRUE(params$vis_prenorm)) {
   }
 }
 
-to_report[["before normalization"]] <- proc_sumexp
+# (Only its features and samples are used: no peak areas)
+to_report[["before normalization"]] <- util$without_values(proc_sumexp)
 # Extract internal standard features
 internal_std_se <- local(
   envir = list(se = proc_sumexp),
@@ -472,25 +480,29 @@ if (nrow(imputed$imputed) > 0) {
   }
 }
 
-##  NORMALIZE - CLOSEST INTERNAL STANDARD FEATURES  --------
-proc_sumexp <- list(se = proc_sumexp, mat_id = "raw", istd_se = internal_std_se, proc = proc) |>
-  list2env(parent = baseenv()) |> # To make sure all required objects are listed here
-  local(envir = _, { # Control scope, like a function
-    closest_istd <- proc$get_data_of_closest_istd( # @returns mat, feat_nm, rt
-      se = se,
-      istd_se = istd_se,
-      mat_id = mat_id,
-      verbose = TRUE
-    )
-    se[["closest_norm"]] <- (se[[mat_id]] / closest_istd$mat) |>
-      labelled::set_variable_labels("Closest RT normalized")
-    SumExp::row_df(se)[["closest_istd"]] <- closest_istd$feat_nm
-    SumExp::row_df(se)[["closest_istd_rt"]] <- closest_istd$rt
-    return(se)
-  })
-cat("Closest internal standard normalization is done.\n")
+##  ONE DATA VERSION AT A TIME  ------------------------------
+# All features of a data version (raw or a normalization method) go through normalization, blank
+# filtering, blank subtraction and the QC RSD% filter one version at a time, and are then written
+# to a file of their own (`msdial$full_matrix_file()`), so that at most one version of all features
+# is in memory. The internal standards and targeted compounds (`is_core`), which the calibration
+# and the app use, stay in memory in all versions: they are a small part of the features of
+# non-targeted data. The steps treat each feature on its own, so the result is the same as with all
+# versions in memory.
+is_is_row <- util$is_internal_std(proc_sumexp)
+has_targets <- any(util$is_targeted_feature(proc_sumexp))
+is_core <- is_is_row | util$is_targeted_feature(proc_sumexp) | util$std_type(proc_sumexp) %in% "vIS"
+store_matrix <- function(kind, mat_id, m) saveRDS(m, msdial$full_matrix_file(user_inputs, kind, mat_id))
+sub_labelled <- function(m, i) m[i, , drop = FALSE] |> labelled::copy_labels_from(m)
 
-##  NORMALIZE - LOESS FIT OVER RT  -------------------------
+# Events of the steps below, logged in the order of the steps after the loop over the versions
+later <- list(blank = list(), rsd = list())
+log_later <- function(bucket, ...) {
+  later[[bucket]][[length(later[[bucket]]) + 1]] <<- list(...)
+  invisible()
+}
+flush_later <- function(bucket) for (a in later[[bucket]]) do.call(log_event, a)
+
+##  LOESS AND MULTIVARIATE FITS  ---------------------------
 
 overall_rt_range <- range(util$retention_time(proc_sumexp)) # Fit for RT of all features
 excl_cat <- c("Blank", "CalCurve")
@@ -504,22 +516,12 @@ loess_fit <- proc$get_loess_fit(
   mat_id = "raw"
 )
 to_report[["LOESS fit"]] <- loess_fit
-# Normalize the data by LOESS fit along RT
 rt <- util$retention_time(proc_sumexp)
-proc_sumexp[["loess_norm"]] <- sapply(
-  colnames(proc_sumexp), function(sample_id) {
-    norm_factor <- predict(loess_fit[[sample_id]], newdata = rt)
-    exp(log(proc_sumexp[["raw"]][, sample_id]) - norm_factor) # Normalize in log scale
-  }
-) |>
-  labelled::set_variable_labels("LOESS normalized")
-cat("LOESS normalization is done.\n")
 
-##  NORMALIZE - MULTIVARIATE (PCA) OF INTERNAL STANDARDS  --
 # Optional: if it fails (e.g. too few internal standards), the other methods are still used
 norm_mat_ids <- c("loess_norm", "closest_norm")
 mvis_out <- tryCatch(
-  proc$multivariate_is_pca_normalization(se = proc_sumexp, istd_se = internal_std_se, mat_id = "raw"),
+  proc$multivariate_is_pca_normalization(se = proc_sumexp[is_core, ], istd_se = internal_std_se, mat_id = "raw"),
   error = function(e) {
     warning("Multivariate (PCA) IS normalization skipped: ", conditionMessage(e),
             call. = FALSE, immediate. = TRUE)
@@ -529,22 +531,242 @@ mvis_out <- tryCatch(
   }
 )
 if (!is.null(mvis_out)) {
-  proc_sumexp[["mvis_norm"]] <- mvis_out$normalized |>
-    labelled::set_label_attribute("Multivariate (PCA) normalized")
   to_report[["multivariate IS-PCA"]] <- mvis_out[c("factor", "loadings", "explained_variance", "is_used")]
   norm_mat_ids <- c(norm_mat_ids, "mvis_norm")
-  cat("Multivariate (PCA) IS normalization is done (PC1 explains ",
-      round(100 * mvis_out$explained_variance, 1), "% of the IS variance).\n", sep = "")
 }
+
+# Matrix IDs to perform blank subtraction. Raw + normalized matrices
+to_blk_subt <- c("raw", norm_mat_ids)
+to_report[["matrix ids to blk subt"]] <- to_blk_subt
+mat_ids_after_blk_subt <- util$mat_id_of_blank_subtracted(to_blk_subt)
+
+##  SETTINGS OF THE STEPS  ---------------------------------
+
+# The features without the internal standards (the data after normalization), without values: each
+# data version is put in it in turn
+shell <- local({
+  # All samples again (`[, 1]` above: not to copy all the values)
+  rows <- util$without_values(proc_sumexp[!is_is_row, 1])
+  m <- matrix(as.raw(0L), nrow = nrow(rows), ncol = ncol(proc_sumexp), dimnames = list(rownames(rows), colnames(proc_sumexp)))
+  SumExp::SumExp(raw = m, col_df = SumExp::col_df(proc_sumexp), row_df = SumExp::row_df(rows), metadata = SumExp::metadata(proc_sumexp))
+})
+# Removed features are kept as rows of NA (per matrix, i.e. normalization method). Which features
+# were removed and why is collected for the app and the reports:
+# `removed features`: tibble of `mat_id`, `feature_id`, `feature_name`, `targeted`, `reason`
+# ("Blank filter" / "QC RSD%") and `qc_rsd` (QC RSD% of the matrix, NA if not computed)
+is_all_na_row <- function(m) rowSums(!is.na(m)) == 0
+removed_blank <- list()
+removed_rsd <- list()
+targeted <- util$is_targeted_feature(shell)
+# The volumetric IS is not filtered (blank filter, QC RSD% filter): it is added to every sample,
+# also to the blanks, and is not a feature to measure
+is_vis <- util$std_type(shell) %in% "vIS"
+# Nor are the internal standards by the blank filter: they are added to the blanks too, and they
+# were used for the normalization before
+is_std <- is_vis | util$is_internal_std(shell)
+removed_tbl <- function(mat_id, is_removed, reason, qc_rsd = NA_real_) {
+  tibble::tibble(
+    mat_id = mat_id,
+    feature_id = rownames(shell),
+    feature_name = SumExp::row_df(shell)$feature_name,
+    targeted = targeted,
+    reason = reason,
+    qc_rsd = qc_rsd
+  )[is_removed, ]
+}
+
+# Get batch IDs for per-batch processing
+batch_ids <- as.character(SumExp::col_df(shell)[["batch_id"]])
+has_multiple_batches <- dplyr::n_distinct(batch_ids) > 1
+# Batches without blank samples: blank subtraction with the average of all blank samples. Their
+# calibration follows the usual rules (batch-wise if possible, otherwise the global curve).
+batches_without_blank <- setdiff(
+  unique(batch_ids),
+  unique(batch_ids[util$ctrl_smpl_cat(shell) == "Blank"])
+)
+to_report[["batches without blank"]] <- batches_without_blank
+# Which blank average is subtracted from each sample (shown in the exported tables)
+SumExp::col_df(shell)[["blank_source"]] <- ifelse(
+  batch_ids %in% batches_without_blank, "Average of all batches", "Batch"
+)
+
+# QC RSD% filter: features whose RSD% among the QC replicates exceeds the threshold are removed,
+# per normalization method, after normalization and blank subtraction (the matrices used for
+# calibration). RSD% is computed on the QC samples of all batches. Skipped with a warning without
+# QC replicates.
+rsd_filter <- list(
+  enabled = isTRUE(params$rsd_filter),
+  scope = params$rsd_filter_scope,
+  max_targeted = if (params$rsd_filter_scope %in% c("both", "targeted")) params$rsd_max_targeted else NA_real_,
+  max_nontargeted = if (params$rsd_filter_scope %in% c("both", "nontargeted")) params$rsd_max_nontargeted else NA_real_,
+  skipped = FALSE,
+  skip_reason = NA_character_
+)
+if (rsd_filter$enabled && !proc$has_qc_replicates(shell)) {
+  rsd_filter$skipped <- TRUE
+  rsd_filter$skip_reason <- paste(
+    "Not enough QC samples: at least two QC samples of the same class are needed to compute",
+    "RSD%. No features were removed by the QC RSD% filter."
+  )
+  warning("QC RSD% filtering skipped. ", rsd_filter$skip_reason, call. = FALSE, immediate. = TRUE)
+  log_later("rsd", "QC RSD% filter", "run", "QC RSD% filter", "Not done", rsd_filter$skip_reason, "fallback")
+}
+# The maximum RSD% of each feature; NA where the filter does not apply
+rsd_limit <- ifelse(targeted, rsd_filter$max_targeted, rsd_filter$max_nontargeted)
+rsd_to_remove <- list()
+
+if (params$blank_filter) {
+  ctrl_cat <- util$ctrl_smpl_cat(shell)
+  # Skipped by `proc$filter_by_blank()` (blanks are required to read the data, but all of them can
+  # be removed as outliers)
+  if (!any(ctrl_cat %in% "Blank")) {
+    log_later("blank", "Blank filter", "run", "Blank filter", "Not done",
+              "No blank samples left (all removed as outliers)", "fallback")
+  } else if (!any(is.na(ctrl_cat) | ctrl_cat == "")) {
+    log_later("blank", "Blank filter", "run", "Blank filter", "Not done",
+              "No study samples to compare with the blanks (QCs and calibration standards do not count)", "fallback")
+  }
+}
+
+# Without targeted compounds, the best normalization is chosen from all features but the IS: their
+# replicates (QCs, calibration levels) are kept for that
+nt_rsd_se <- if (!has_targets) proc_sumexp[!is_is_row, util$ctrl_smpl_cat(proc_sumexp) %in% c("QC", "CalCurve")]
+
+##  THE DATA VERSIONS, ONE AT A TIME  ----------------------
+
+core_norm <- list()     # The internal standards and targeted compounds, per version
+core_filtered <- list() # The same after the blank filter (without the IS)
+i_core <- which(is_core[!is_is_row])   # The rows of `shell` kept in memory
+for (mat_id in to_blk_subt) {
+  blk_mat_id <- util$mat_id_of_blank_subtracted(mat_id)
+
+  ## Normalization
+  if (mat_id == "closest_norm") {
+    closest_istd <- proc$get_data_of_closest_istd( # @returns mat, feat_nm, rt
+      se = proc_sumexp,
+      istd_se = internal_std_se,
+      mat_id = "raw",
+      verbose = TRUE
+    )
+    SumExp::row_df(shell)[["closest_istd"]] <- closest_istd$feat_nm[!is_is_row]
+    SumExp::row_df(shell)[["closest_istd_rt"]] <- closest_istd$rt[!is_is_row]
+    SumExp::row_df(proc_sumexp)[["closest_istd"]] <- closest_istd$feat_nm
+    SumExp::row_df(proc_sumexp)[["closest_istd_rt"]] <- closest_istd$rt
+  }
+  mat <- switch(
+    mat_id,
+    raw = proc_sumexp[["raw"]],
+    closest_norm = (proc_sumexp[["raw"]] / closest_istd$mat) |>
+      labelled::set_variable_labels("Closest RT normalized"),
+    loess_norm = sapply(   # Normalize the data by LOESS fit along RT, in log scale
+      colnames(proc_sumexp), function(sample_id) {
+        norm_factor <- predict(loess_fit[[sample_id]], newdata = rt)
+        exp(log(proc_sumexp[["raw"]][, sample_id]) - norm_factor)
+      }
+    ) |>
+      labelled::set_variable_labels("LOESS normalized"),
+    mvis_norm = sweep(proc_sumexp[["raw"]], 2, mvis_out$factor, FUN = "/") |>
+      labelled::set_label_attribute("Multivariate (PCA) normalized")
+  )
+  if (mat_id == "closest_norm") {
+    rm(closest_istd)
+    cat("Closest internal standard normalization is done.\n")
+  }
+  if (mat_id == "loess_norm") cat("LOESS normalization is done.\n")
+  if (mat_id == "mvis_norm") {
+    cat("Multivariate (PCA) IS normalization is done (PC1 explains ",
+        round(100 * mvis_out$explained_variance, 1), "% of the IS variance).\n", sep = "")
+  }
+  store_matrix("norm", mat_id, mat)
+  core_norm[[mat_id]] <- sub_labelled(mat, is_core)
+  if (!has_targets) nt_rsd_se[[mat_id]] <- sub_labelled(mat, !is_is_row)[, colnames(nt_rsd_se), drop = FALSE]
+
+  se <- shell
+  se[[mat_id]] <- sub_labelled(mat, !is_is_row)
+  rm(mat)
+  invisible(gc(FALSE))
+
+  ## Blank filter
+  if (params$blank_filter) {
+    cat("Performing blank filtering for matrix:", mat_id, "\n")
+    na_before <- is_all_na_row(se[[mat_id]])
+    std_values <- se[[mat_id]][is_std, , drop = FALSE]
+    # The ratio that decided (the maximum or mean of the study samples over the blank mean), for
+    # the event log
+    blank_ratio <- proc$blank_ratio(se, mat_id, params$blank_filter_stat)
+    se <- proc$filter_by_blank(
+      se,
+      mat_id = mat_id,
+      factor = params$blank_filter_factor,
+      stat = params$blank_filter_stat
+    )
+    se[[mat_id]][is_std, ] <- std_values   # Kept (see `is_std`)
+    SumExp::row_df(se)$blank_filtered[is_std] <- TRUE
+    is_removed <- !na_before & is_all_na_row(se[[mat_id]])
+    removed_blank[[length(removed_blank) + 1]] <- removed_tbl(mat_id, is_removed, "Blank filter")
+    r <- blank_ratio[is_removed]
+    log_later("blank", "Blank filter", "feature", rownames(se)[is_removed], "Removed",
+              ifelse(is.finite(r),
+                     sprintf("Study sample %s %.2f × the blank mean (needed: more than %g ×)",
+                             if (params$blank_filter_stat == "max") "maximum" else "mean", r, params$blank_filter_factor),
+                     "The ratio to the blank mean could not be computed (no value)"),
+              "removed", mat_id = mat_id)
+  }
+  core_filtered[[mat_id]] <- sub_labelled(se[[mat_id]], i_core)
+  invisible(gc(FALSE))
+
+  ## Blank subtraction (all batches at once: per batch, the same values)
+  se <- proc$add_blank_subtracted_sumexp(
+    sumexp = se,
+    no_change = util$ctrl_smpl_cat(se) == "CalCurve",
+    mat_ids = mat_id,
+    out_mat_ids = blk_mat_id
+  )
+  invisible(gc(FALSE))
+
+  ## QC RSD% filter
+  if (rsd_filter$enabled && !rsd_filter$skipped) {
+    rsd <- proc$qc_rsd_per_feature(se, blk_mat_id)
+    already_removed <- is_all_na_row(se[[blk_mat_id]])
+    to_remove <- !already_removed & !is_vis & !is.na(rsd_limit) & !is.na(rsd) & rsd > rsd_limit
+    se[[blk_mat_id]] <- util$extract_with_na(se[[blk_mat_id]], i = !to_remove)
+    rsd_to_remove[[mat_id]] <- to_remove
+    removed_rsd[[length(removed_rsd) + 1]] <- removed_tbl(mat_id, to_remove, "QC RSD%", qc_rsd = rsd)
+    log_later("rsd", "QC RSD% filter", "feature", rownames(se)[to_remove], "Removed",
+              sprintf("QC RSD%% %.1f (maximum %g)", rsd[to_remove], rsd_limit[to_remove]), "removed", mat_id = mat_id)
+    cat("QC RSD% filtering for ", mat_id, ": ", sum(to_remove & targeted), " targeted and ",
+        sum(to_remove & !targeted), " non-targeted features removed (the volumetric IS is not filtered).\n", sep = "")
+  }
+  store_matrix("blk", blk_mat_id, se[[blk_mat_id]])
+  blk_cols <- SumExp::col_df(se)      # The same for all versions
+  rows_after <- SumExp::row_df(se)    # The columns of the blank filter are of the last version
+  rm(se)
+  invisible(gc(FALSE))
+}
+
+# What is needed to put the files of the versions back together with their features and samples
+to_report[["full data"]] <- list(
+  norm_rows = SumExp::row_df(proc_sumexp), norm_cols = SumExp::col_df(proc_sumexp),
+  blk_rows = rows_after, blk_cols = blk_cols, metadata = SumExp::metadata(proc_sumexp)
+)
+
+##  THE INTERNAL STANDARDS AND TARGETED COMPOUNDS  ---------
+# From here on, only these: all the versions, in the order of the methods as in the app
+normalized_se <- proc_sumexp[is_core, ]
+rm(proc_sumexp)
+for (m in intersect(c("closest_norm", "loess_norm", "mvis_norm"), norm_mat_ids)) normalized_se[[m]] <- core_norm[[m]]
+to_report[["normalized"]] <- normalized_se # Final internal standard normalized data
+invisible(gc(FALSE))
 
 ##  BEST NORMALIZATION METHOD  -----------------------------
 # Lowest median RSD% of replicate QC samples (before blank filtering/subtraction). Without QC
 # replicates, the replicates of the calibration curve levels are used instead.
+rsd_input <- if (has_targets) normalized_se else nt_rsd_se
 rsd_basis <- "QC"
-median_rsd <- proc$median_rsd_per_matrix(proc_sumexp, c("raw", norm_mat_ids), cat = "QC")
+median_rsd <- proc$median_rsd_per_matrix(rsd_input, c("raw", norm_mat_ids), cat = "QC")
 if (all(is.na(median_rsd[norm_mat_ids]))) {
   rsd_basis <- "CalCurve"
-  median_rsd <- proc$median_rsd_per_matrix(proc_sumexp, c("raw", norm_mat_ids), cat = "CalCurve")
+  median_rsd <- proc$median_rsd_per_matrix(rsd_input, c("raw", norm_mat_ids), cat = "CalCurve")
 }
 if (all(is.na(median_rsd[norm_mat_ids]))) rsd_basis <- NA_character_
 best_norm <- proc$select_best_normalization(median_rsd, candidates = norm_mat_ids)
@@ -559,89 +781,23 @@ to_report[["best normalization"]] <- best_norm
 cat("Median RSD% of ", rsd_basis, " replicates per method: ",
     paste0(names(median_rsd), " = ", round(median_rsd, 2), collapse = ", "), "\n",
     "Best normalization method: ", best_norm, "\n", sep = "")
+rm(rsd_input, nt_rsd_se)
 
-##  END OF INTERNAL STANDARD PROCESSING  -------------------
-to_report[["normalized"]] <- proc_sumexp # Final internal standard normalized data
-proc_sumexp <- proc_sumexp[!util$is_internal_std(proc_sumexp), ] # Remove internal standards
+# The compounds after the blank filter, without the internal standards
+core_shell <- shell
+SumExp::row_df(core_shell) <- rows_after
+proc_sumexp <- normalized_se[!util$is_internal_std(normalized_se), ]
+SumExp::row_df(proc_sumexp) <- SumExp::row_df(core_shell[i_core, 1])
+SumExp::col_df(proc_sumexp) <- SumExp::col_df(shell)
+for (m in to_blk_subt) proc_sumexp[[m]] <- core_filtered[[m]]
+rm(core_shell, core_norm, core_filtered)
+invisible(gc(FALSE))
 
-
-#  -----  BLANK FILTERING  ----------------------------------------------------
-
-# Matrix IDs to perform blank subtraction. Raw + normalized matrices
-to_blk_subt <- c("raw", norm_mat_ids)
-to_report[["matrix ids to blk subt"]] <- to_blk_subt
-
-# Removed features are kept as rows of NA (per matrix, i.e. normalization method). Which features
-# were removed and why is collected for the app and the reports:
-# `removed features`: tibble of `mat_id`, `feature_id`, `feature_name`, `targeted`, `reason`
-# ("Blank filter" / "QC RSD%") and `qc_rsd` (QC RSD% of the matrix, NA if not computed)
-is_all_na_row <- function(m) rowSums(!is.na(m)) == 0
-removed_features <- list()
-targeted <- util$is_targeted_feature(proc_sumexp)
-# The volumetric IS is not filtered (blank filter, QC RSD% filter): it is added to every sample,
-# also to the blanks, and is not a feature to measure
-is_vis <- util$std_type(proc_sumexp) %in% "vIS"
-# Nor are the internal standards by the blank filter: they are added to the blanks too, and they
-# were used for the normalization before
-is_std <- is_vis | util$is_internal_std(proc_sumexp)
-removed_tbl <- function(mat_id, is_removed, reason, qc_rsd = NA_real_) {
-  tibble::tibble(
-    mat_id = mat_id,
-    feature_id = rownames(proc_sumexp),
-    feature_name = SumExp::row_df(proc_sumexp)$feature_name,
-    targeted = targeted,
-    reason = reason,
-    qc_rsd = qc_rsd
-  )[is_removed, ]
-}
-
-if (params$blank_filter) {
-  ctrl_cat <- util$ctrl_smpl_cat(proc_sumexp)
-  # Skipped by `proc$filter_by_blank()` (blanks are required to read the data, but all of them can
-  # be removed as outliers)
-  if (!any(ctrl_cat %in% "Blank")) {
-    log_event("Blank filter", "run", "Blank filter", "Not done",
-              "No blank samples left (all removed as outliers)", "fallback")
-  } else if (!any(is.na(ctrl_cat) | ctrl_cat == "")) {
-    log_event("Blank filter", "run", "Blank filter", "Not done",
-              "No study samples to compare with the blanks (QCs and calibration standards do not count)", "fallback")
-  }
-  for (mat_id in to_blk_subt) {
-    cat("Performing blank filtering for matrix:", mat_id, "\n")
-    na_before <- is_all_na_row(proc_sumexp[[mat_id]])
-    std_values <- proc_sumexp[[mat_id]][is_std, , drop = FALSE]
-    # The ratio that decided (the maximum or mean of the study samples over the blank mean), for
-    # the event log
-    blank_ratio <- proc$blank_ratio(proc_sumexp, mat_id, params$blank_filter_stat)
-    proc_sumexp <- proc$filter_by_blank(
-      proc_sumexp,
-      mat_id = mat_id,
-      factor = params$blank_filter_factor,
-      stat = params$blank_filter_stat
-    )
-    proc_sumexp[[mat_id]][is_std, ] <- std_values   # Kept (see `is_std`)
-    SumExp::row_df(proc_sumexp)$blank_filtered[is_std] <- TRUE
-    is_removed <- !na_before & is_all_na_row(proc_sumexp[[mat_id]])
-    removed_features[[length(removed_features) + 1]] <- removed_tbl(mat_id, is_removed, "Blank filter")
-    r <- blank_ratio[is_removed]
-    log_event("Blank filter", "feature", rownames(proc_sumexp)[is_removed], "Removed",
-              ifelse(is.finite(r),
-                     sprintf("Study sample %s %.2f × the blank mean (needed: more than %g ×)",
-                             if (params$blank_filter_stat == "max") "maximum" else "mean", r, params$blank_filter_factor),
-                     "The ratio to the blank mean could not be computed (no value)"),
-              "removed", mat_id = mat_id)
-  }
-  to_report[["after blank filtering"]] <- proc_sumexp
-}
+flush_later("blank")
 
 
 #  -----  BLANK SUBTRACTION  ---------------------------------------------------
 
-mat_ids_after_blk_subt <- util$mat_id_of_blank_subtracted(to_blk_subt)
-
-# Get batch IDs for per-batch processing
-batch_ids <- as.character(SumExp::col_df(proc_sumexp)[["batch_id"]])
-has_multiple_batches <- dplyr::n_distinct(batch_ids) > 1
 if (has_multiple_batches) {
   cat(
     "Processing blank subtraction per batch.",
@@ -650,13 +806,6 @@ if (has_multiple_batches) {
 } else {
   cat("Processing blank subtraction for a single batch.\n")
 }
-# Batches without blank samples: blank subtraction with the average of all blank samples. Their
-# calibration follows the usual rules (batch-wise if possible, otherwise the global curve).
-batches_without_blank <- setdiff(
-  unique(batch_ids),
-  unique(batch_ids[util$ctrl_smpl_cat(proc_sumexp) == "Blank"])
-)
-to_report[["batches without blank"]] <- batches_without_blank
 if (length(batches_without_blank) > 0) {
   cat("Batches without blank samples (the average of all blank samples is subtracted):",
       paste(batches_without_blank, collapse = ", "), "\n")
@@ -666,10 +815,6 @@ log_event("Blank subtraction", "batch", batches_without_blank, "Blank of all bat
 if (!any(util$ctrl_smpl_cat(proc_sumexp) == "Blank")) {
   log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "No blank samples left (all removed as outliers)", "fallback")
 }
-# Which blank average is subtracted from each sample (shown in the exported tables)
-SumExp::col_df(proc_sumexp)[["blank_source"]] <- ifelse(
-  batch_ids %in% batches_without_blank, "Average of all batches", "Batch"
-)
 # Split the data by batch IDs
 per_batch_proc_se_lst <- SumExp::split_columns(proc_sumexp, batch_ids)
 # Per batch, then per normalization method
@@ -702,57 +847,25 @@ for (batch_id in batches_without_blank) {
 }
 cat("Blank subtraction is done.\n")
 
-
-#  -----  QC RSD% FILTERING  ---------------------------------------------------
-# Remove features whose RSD% among the QC replicates exceeds the threshold, per normalization
-# method, after normalization and blank subtraction (the matrices used for calibration). RSD% is
-# computed on the QC samples of all batches. Skipped with a warning without QC replicates.
-rsd_filter <- list(
-  enabled = isTRUE(params$rsd_filter),
-  scope = params$rsd_filter_scope,
-  max_targeted = if (params$rsd_filter_scope %in% c("both", "targeted")) params$rsd_max_targeted else NA_real_,
-  max_nontargeted = if (params$rsd_filter_scope %in% c("both", "nontargeted")) params$rsd_max_nontargeted else NA_real_,
-  skipped = FALSE,
-  skip_reason = NA_character_
-)
-if (rsd_filter$enabled) {
-  if (!proc$has_qc_replicates(proc_sumexp)) {
-    rsd_filter$skipped <- TRUE
-    rsd_filter$skip_reason <- paste(
-      "Not enough QC samples: at least two QC samples of the same class are needed to compute",
-      "RSD%. No features were removed by the QC RSD% filter."
-    )
-    warning("QC RSD% filtering skipped. ", rsd_filter$skip_reason, call. = FALSE, immediate. = TRUE)
-    log_event("QC RSD% filter", "run", "QC RSD% filter", "Not done", rsd_filter$skip_reason, "fallback")
-  } else {
-    # The maximum RSD% of each feature; NA where the filter does not apply
-    limit <- ifelse(targeted, rsd_filter$max_targeted, rsd_filter$max_nontargeted)
-    for (ii in seq_along(to_blk_subt)) {
-      mat_id <- to_blk_subt[ii]                     # e.g. "loess_norm" (reported)
-      blk_mat_id <- mat_ids_after_blk_subt[ii]      # e.g. "loess_norm_blk" (filtered)
-      rsd <- proc$qc_rsd_per_feature(proc_sumexp, blk_mat_id)
-      already_removed <- is_all_na_row(proc_sumexp[[blk_mat_id]])
-      to_remove <- !already_removed & !is_vis & !is.na(limit) & !is.na(rsd) & rsd > limit
-      # In the overall (global) data and in each batch
-      proc_sumexp[[blk_mat_id]] <- util$extract_with_na(proc_sumexp[[blk_mat_id]], i = !to_remove)
-      for (batch_id in names(per_batch_proc_se_lst)) {
-        se <- per_batch_proc_se_lst[[batch_id]]
-        stopifnot(identical(rownames(se), rownames(proc_sumexp)))
-        se[[blk_mat_id]] <- util$extract_with_na(se[[blk_mat_id]], i = !to_remove)
-        per_batch_proc_se_lst[[batch_id]] <- se
-      }
-      removed_features[[length(removed_features) + 1]] <-
-        removed_tbl(mat_id, to_remove, "QC RSD%", qc_rsd = rsd)
-      log_event("QC RSD% filter", "feature", rownames(proc_sumexp)[to_remove], "Removed",
-                sprintf("QC RSD%% %.1f (maximum %g)", rsd[to_remove], limit[to_remove]), "removed", mat_id = mat_id)
-      cat("QC RSD% filtering for ", mat_id, ": ", sum(to_remove & targeted), " targeted and ",
-          sum(to_remove & !targeted), " non-targeted features removed (the volumetric IS is not filtered).\n", sep = "")
-    }
+# The QC RSD% filter of the versions above, on the compounds in memory: overall and in each batch
+flush_later("rsd")
+for (ii in seq_along(to_blk_subt)) {
+  to_remove <- rsd_to_remove[[to_blk_subt[ii]]]
+  if (is.null(to_remove)) next
+  to_remove <- to_remove[i_core]
+  blk_mat_id <- mat_ids_after_blk_subt[ii]
+  proc_sumexp[[blk_mat_id]] <- util$extract_with_na(proc_sumexp[[blk_mat_id]], i = !to_remove)
+  for (batch_id in names(per_batch_proc_se_lst)) {
+    se <- per_batch_proc_se_lst[[batch_id]]
+    stopifnot(identical(rownames(se), rownames(proc_sumexp)))
+    se[[blk_mat_id]] <- util$extract_with_na(se[[blk_mat_id]], i = !to_remove)
+    per_batch_proc_se_lst[[batch_id]] <- se
   }
 }
 to_report[["qc rsd filter"]] <- rsd_filter
-to_report[["removed features"]] <- dplyr::bind_rows(removed_features)
-to_report[["normalized - blank"]] <- per_batch_proc_se_lst
+to_report[["removed features"]] <- dplyr::bind_rows(c(removed_blank, removed_rsd))
+rm(shell, later, removed_blank, removed_rsd)
+invisible(gc(FALSE))
 
 
 #  -----  CALIBRATION USING CALCURVE  ------------------------------------------
@@ -767,15 +880,15 @@ progress_bar <- function(i, n, width = 30) {
 
 #' The app's copy of the results (`FILE$app`): what the app shows, and the data of its figures and
 #' tables prepared here, so that the app does not compute them when it draws them (on a server, one
-#' R process draws for all users). The large matrices that only the reports use are left out; the
-#' values of figure 3.11 are one file per method, which the app reads when that method is shown.
+#' R process draws for all users). The values of figure 3.11 are the files of the data versions
+#' (`msdial$full_matrix_file()`), which the app reads when that method is shown.
 #'
 #' @param tr The completed `to_report`
 prepare_app_data <- function(tr) {
   cat("Preparing plots and figures:\n")
   norm <- tr[["normalized"]]
   methods <- intersect(c("raw", "closest_norm", "loess_norm", "mvis_norm"), names(norm))
-  n_steps <- 4 + length(methods)
+  n_steps <- 4
   step <- 0
   tick <- function() {
     step <<- step + 1
@@ -786,9 +899,10 @@ prepare_app_data <- function(tr) {
   targeted <- util$is_targeted_feature(norm)
   # Only what the app uses: of the normalized data the internal standards (3.7) and the targeted
   # compounds (3.8, 3.9); of the data before normalization the feature information (3.1, 3.2)
-  app <- tr[setdiff(names(tr), c("normalized - blank", "after blank filtering", "LOESS fit"))]
+  app <- tr[setdiff(names(tr), c("full data", "LOESS fit"))]
   app[["normalized"]] <- norm[is_std | targeted, ]
   app[["before normalization"]] <- tr[["before normalization"]][, 1]
+  app[["export table values"]] <- msdial$export_table_values(tr)   # For the note in the export box
   tick()
   prep <- list()
   # 3.4: RSD% of each IS per QC group and sample class
@@ -798,12 +912,10 @@ prepare_app_data <- function(tr) {
   if (show$has_enough_qc(norm) && any(targeted)) prep[["qc rsd"]] <- show$qc_rsd_by_method(norm)
   tick()
   # 3.11: the samples and features (all but the internal standards), and their values per method
-  prep[["blank"]] <- list(col_df = SumExp::col_df(norm), row_df = SumExp::row_df(norm)[!is_std, , drop = FALSE],
+  all_rows <- tr[["full data"]]$norm_rows
+  prep[["blank"]] <- list(col_df = SumExp::col_df(norm),
+                          row_df = all_rows[!(util$is_internal_std(all_rows$.std_type) | all_rows$.std_type %in% "vIS"), , drop = FALSE],
                           methods = methods)
-  for (m in methods) {
-    saveRDS(norm[[m]][!is_std, , drop = FALSE], blank_values_file(m))
-    tick()
-  }
   app[["app data"]] <- prep
   saveRDS(app, FILE$app)
   tick()
@@ -843,14 +955,14 @@ if (has_multiple_batches) {
 
 ##  CALIBRATION FUNCTION  ----------------------------------
 
-#' Concentrations from the signal in `se[[mat_id]]` (in the scale of the fit) with the fitted
+#' Concentrations from the signal in `se[[mat_id]]` (original scale) with the fitted
 #' models (`calcurve_model`) and limits in `row_df(se)`, and the LOD/LLOQ rules
 #'
 #' @returns `se` with the matrices `conc0` (before the rules), `conc` and `conc_flag` ("n.d." /
 #'   "n.q." where the rules replaced a value below the LOD / LLOQ, otherwise `NA`). Without
 #'   `--impute_llox`, those values are removed from `conc` at the end (see `censor_llox()`)
-quantify_conc <- function(se, mat_id, in_log) {
-  se[["conc0"]] <- proc$compute_concentration(se, mat_id, log_scale = in_log) |>
+quantify_conc <- function(se, mat_id) {
+  se[["conc0"]] <- proc$compute_concentration(se, mat_id) |>
     labelled::set_label_attribute("Concentration before filtering")
   # [[conc0]] is the unfiltered reference; [[conc]] gets the LOD/LLOQ replacements below
   se[["conc"]] <- se[["conc0"]]
@@ -858,7 +970,7 @@ quantify_conc <- function(se, mat_id, in_log) {
   # The LOD / LLOQ rules, each value decided once from its signal (and concentration): below the
   # LOD signal LLOQ/4, below the average signal of the LLOQ level LLOQ/2, above it but below the
   # LLOQ the LLOQ (see `proc$apply_llox_rules()`); rows are kept intact
-  se <- proc$apply_llox_rules(se, conc_mat_id = "conc", log_scale = in_log)
+  se <- proc$apply_llox_rules(se, conc_mat_id = "conc")
   # Curves kept although not valid can lack an LLOQ (no replacements then): no negative values
   neg <- se[["conc"]] < 0 & SumExp::row_df(se)$kept_calcurve
   neg[is.na(neg)] <- FALSE
@@ -888,15 +1000,12 @@ censor_llox <- function(se) {
 #' @param mat_id_to_calib The ID of the blank-subtracted matrix used for calibration
 #' @returns A `SumExp` object of the blanks with `conc0` and `conc` (same chemicals as `concn_se`)
 quantify_blanks <- function(blank_se, concn_se, mat_id_to_calib) {
-  in_log <- isTRUE(params$log_calibration)
   mat_id <- util$mat_id_in_calibration(mat_id_to_calib)
   src_mat_id <- to_blk_subt[match(mat_id_to_calib, mat_ids_after_blk_subt)]   # Not subtracted
   se <- blank_se[rownames(concn_se), ]
   SumExp::row_df(se) <- SumExp::row_df(concn_se)
-  sig <- se[[src_mat_id]]
-  se[[mat_id]] <- if (in_log) log1p(sig) else sig
-  se <- quantify_conc(se, mat_id, in_log)
-  if (in_log) se[[mat_id]] <- expm1(se[[mat_id]])   # Restore to original scale
+  se[[mat_id]] <- se[[src_mat_id]]
+  se <- quantify_conc(se, mat_id)
   # Chemicals not exported have no concentrations, as for the samples
   se[["conc"]] <- util$extract_with_na(se[["conc"]], i = SumExp::row_df(se)$to_export, j = TRUE) |>
     labelled::set_label_attribute(labelled::get_label_attribute(concn_se[["conc"]]))
@@ -906,10 +1015,10 @@ quantify_blanks <- function(blank_se, concn_se, mat_id_to_calib) {
 
 # Separated as a function to be used for both per-batch and global-mode calibration
 quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
-  # Whether to fit in log scale (--log_calibration):
-  # - signal (normalized, blank-subtracted): `log(x + 1)` and `exp(x) - 1`
-  # - concentration: log(x) / exp(x)
-  in_log <- params$log_calibration
+  # Whether to fit in log scale (--log_calibration): a straight line of ln(signal) on ln(conc),
+  # weight 1 (`proc$loglog_calcurve_model()`). Only the fit is in log scale: the matrices stay in
+  # the original scale, and the models take and give original-scale values.
+  in_log <- isTRUE(params$log_calibration)
   
   # Restrict to targeted features
   qt_se <- qt_se[util$is_targeted_feature(qt_se), ]
@@ -919,13 +1028,12 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   
   # Sort by chemical name for presentation consistency in the reports, exported files, etc.
   qt_se <- qt_se[order(SumExp::row_df(qt_se)$feature_name), ]
-  # Preserve the signal matrix label; `log1p()` below may strip the label
+  # Preserve the signal matrix label (for the quantified samples below)
   signal_mat_label <- labelled::get_label_attribute(qt_se[[mat_id_to_calib]])
   
   # Determine the valid calibration range endpoints and LOD/LLOQ thresholds, always from the
-  # signal in the original scale (also with log-scale fitting: "3 x the Cal0 mean" of log values
-  # would be the Cal0 signal cubed). The signals of the limits (`lod_signal`, `lloq_signal`,
-  # `avg_signal_at_lloq`) stay in the original scale.
+  # signal in the original scale (also with log-scale fitting). The signals of the limits
+  # (`lod_signal`, `lloq_signal`, `avg_signal_at_lloq`) are in the original scale.
   fun <- switch(params$llox_method,
                 "pt_signal_mean" = proc$compute_llox_signal_using_mean_times,
                 "pt_signal_mean_plus_sd" = proc$compute_llox_signal_using_mean_plus_sd_times
@@ -935,9 +1043,6 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     min_n = params$min_cal_points,
     enough_n = if (params$optimize_cal_points) 3 else Inf
   )
-
-  # If calibration curve is fitted in log scale, transform the signal
-  if (in_log) qt_se[[mat_id_to_calib]] <- log1p(qt_se[[mat_id_to_calib]]) # log1p(x) = log(x + 1)
 
   # Exclude chemicals without a valid calibration range; return early if none qualify.
   # `range_issue` tells why a range is not valid. With `--keep_all_calcurves`, those chemicals keep
@@ -960,9 +1065,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   # This preserves the original signal matrix for reference and for chemicals without a proper calibration range
   mat_id <- util$mat_id_in_calibration(mat_id_to_calib)
   qt_se[[mat_id]] <- qt_se[[mat_id_to_calib]]
-  # Restore "mat_id_to_calib" before splitting
-  if (in_log) qt_se[[mat_id_to_calib]] <- expm1(qt_se[[mat_id_to_calib]])
-  
+
   # Split into two parts:
   # - `calcurve_se` : calibration curve samples
   # - `concn_se` : samples to be calibrated
@@ -982,12 +1085,8 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     list2env(parent = baseenv()) # To make sure all required objects are listed here
   calcurve_models <- local(envir = e, { # Isolated scope; intermediates do not leak out
     c_concs <- util$spiked_conc_pts(cc_se)
-    if (in_log) {
-      c_concs <- log(c_concs) # Signal in [[mat_id]] is already log-transformed; match the scale
-      if (w_method != "1") {
-        warning("Weighting methods other than `1` are not available under log scale. Using `1`.")
-        w_method <- "1"
-      }
+    if (in_log && w_method != "1") {
+      warning("Weighting methods other than `1` are not available under log scale. Using `1`.")
     }
     out <- lapply(seq_len(nrow(cc_se)), function(ii) {
       proc$fit_and_test_calcurve_model(
@@ -995,7 +1094,8 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
         signal = cc_se[[mat_id]][ii, ],
         weight_method = w_method,
         penalty_quadratic = 0.01,
-        linear_only = linear_only
+        linear_only = linear_only,
+        log_log = in_log   # Log-log: a straight line, weight 1 (no quadratic models)
       )
     })
     names(out) <- rownames(cc_se)
@@ -1022,8 +1122,7 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     lr <- if (in_log) {
       proc$linear_range_of_log_curve(
         c_concs, calcurve_se[[mat_id_to_calib]][ii, ], cc_mat[ii, ], m, min_n = params$min_cal_points,
-        refit = \(s) proc$fit_and_test_calcurve_model(log(c_concs), s, weight_method = "1", penalty_quadratic = 0.01,
-                                                     linear_only = isTRUE(params$linear_only)),
+        refit = \(s) proc$fit_and_test_calcurve_model(c_concs, s, log_log = TRUE),
         cut = enforce
       )
     } else if (startsWith(m$best_model_name, "linear")) {
@@ -1054,7 +1153,6 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   SumExp::row_df(calcurve_se)$linear_range_note <- linear_range_note
   SumExp::row_df(concn_se) <- SumExp::row_df(concn_se) |>
     dplyr::mutate(calcurve_model = calcurve_models)
-  if (in_log) calcurve_se[[mat_id]] <- expm1(calcurve_se[[mat_id]]) # expm1(x) = exp(x) - 1
 
   # Minimum R2 (--r2_filter, --min_r2): a curve fitted with a lower R2 is not valid, i.e. no
   # concentrations and not exported; with --keep_all_calcurves it is kept (and marked) instead
@@ -1082,15 +1180,14 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     }
   }
 
-  quantify <- function(se) quantify_conc(se, mat_id, in_log)
+  quantify <- function(se) quantify_conc(se, mat_id)
   concn_se <- quantify(concn_se)
   labelled::label_attribute(concn_se) <- signal_mat_label
-  if (in_log) concn_se[[mat_id]] <- expm1(concn_se[[mat_id]]) # Restore to original scale
   # The calibration samples too (back-calculated, all points), for the export with all samples
   cc_conc <- local({
     se <- calcurve_se
     SumExp::row_df(se) <- dplyr::mutate(SumExp::row_df(se), calcurve_model = calcurve_models)
-    se[[mat_id]] <- if (in_log) log1p(se[[mat_id_to_calib]]) else se[[mat_id_to_calib]]
+    se[[mat_id]] <- se[[mat_id_to_calib]]
     quantify(se)
   })
   calcurve_se[["conc0"]] <- cc_conc[["conc0"]]
@@ -1198,7 +1295,7 @@ compact_global_calibration <- function(cal, mat_id_to_calib) {
     linear_range_note = rd$linear_range_note,   # Levels above the ULOQ (NA: none)
     model = vapply(model_info, `[[`, "", "model"),
     r2 = vapply(model_info, `[[`, 0, "r2"),
-    coef = lapply(model_info, `[[`, "coef")   # Intercept, conc (, conc^2); log scale if fitted so
+    coef = lapply(model_info, `[[`, "coef")   # Intercept, conc (, conc^2); log-log: of ln(signal) on ln(conc)
   )
   list(
     log_scale = isTRUE(params$log_calibration),

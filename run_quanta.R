@@ -59,7 +59,7 @@ processing <- list(
   linear_range_tol    = 15,      # ULOQ of linear curves: top levels deviating more than this % (1-50)
                                  # when back-calculated are above the linear range (log: SCALiR)
   enforce_linear_range = FALSE,  # Cut the curves at the ULOQ and refit them
-  log_calibration     = FALSE,   # Fit in log scale (weighting 1 only)
+  log_calibration     = FALSE,   # Straight lines in log-log scale (weighting 1, no quadratic curves)
   weight              = "largestR2",              # "largestR2", "1", "1_div_x" or "1_div_x2"
   llox_method         = "pt_signal_mean_plus_sd", # "pt_signal_mean" or "pt_signal_mean_plus_sd"
   use_rsd20           = TRUE,    # The LLOQ level must also have an RSD% <= 20%

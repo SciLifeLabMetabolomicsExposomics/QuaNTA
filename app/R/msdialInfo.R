@@ -37,7 +37,7 @@ msdialInfoUI <- function(uiId) {
     shiny::fileInput(
       ns("load_params"),
       label = NULL,
-      buttonLabel = "Load parameters file",
+      buttonLabel = "Load parameters",
       placeholder = "No file loaded",
       accept = c(".yml", ".yaml"),
       width = "100%"
@@ -114,7 +114,10 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
 
     # MS-DIAL file upload: keep the original file name (used to name reports and tables).
     # Compressed uploads (.gz, .zip) are decompressed in a background process.
+    n_uploads <- 0   # A decompression that ends after a newer upload is ignored
     shiny::observeEvent(input$input_file_upload, {
+      n_uploads <<- n_uploads + 1
+      this_upload <- n_uploads
       up <- input$input_file_upload
       # Only a .txt file, or a .gz / .zip with one .txt file inside (checked when decompressing);
       # another file keeps the earlier data
@@ -130,7 +133,7 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
         return()
       }
       # A new file makes all earlier results stale (data, exported tables, reports)
-      unlink(list.files(ws$input, full.names = TRUE))
+      unlink(list.files(ws$input, full.names = TRUE), recursive = TRUE)
       unlink(list.files(ws$intermediate, full.names = TRUE))
       unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
       unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
@@ -138,15 +141,23 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       if (tolower(tools::file_ext(up$name)) %in% c("gz", "zip")) {
         data_info$input_file <- ""   # Not usable until decompressed ("Read" stays disabled)
         data_info$input_file_name <- paste(up$name, "(decompressing ...)")
-        result_file <- file.path(ws$base, "decompress_result.rds")
+        result_file <- file.path(ws$base, paste0("decompress_result_", this_upload, ".rds"))
         unlink(result_file)
-        job <- list(src = up$datapath, name = up$name, out_dir = ws$input, result_file = result_file)
+        # A folder per upload: an older decompression cannot overwrite a newer file of the same name
+        out_dir <- file.path(ws$input, this_upload)
+        dir.create(out_dir)
+        job <- list(src = up$datapath, name = up$name, out_dir = out_dir, result_file = result_file)
         run_bg_rscript(
           session, ws, "scripts/decompress_input.R", job,
           progress_message = paste("Decompressing", up$name),
           on_done = function(ok, log) {
             res <- if (ok && file.exists(result_file)) readRDS(result_file)
             unlink(result_file)
+            # Another file was uploaded meanwhile: that one is the data file
+            if (this_upload != n_uploads) {
+              unlink(out_dir, recursive = TRUE)
+              return()
+            }
             if (is.null(res)) {
               data_info$input_file_name <- paste(up$name, "(could not be decompressed)")
               shiny::showNotification(paste("The uploaded file could not be decompressed:",

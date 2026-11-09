@@ -22,7 +22,7 @@ format:
     code-fold: true
     toc-depth: 3
     toc-location: left
-    embed-resources: true
+    embed-resources: false     # Done by scripts/embed_html_resources.R: Pandoc needs GB for large reports
     page-layout: full
 
     fig-width : 10

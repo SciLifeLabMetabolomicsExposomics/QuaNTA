@@ -98,6 +98,9 @@ if (!norm_method %in% mat_ids_to_export) {
   stop("Normalization method `", norm_method, "` is not available. Available: ",
        paste(mat_ids_to_export, collapse = ", "), call. = FALSE)
 }
+# `--max_xlsx_cells=<number>` (given by the app on SciLifeLab Serve): larger tables as CSV only
+max_arg <- sub("^--max_xlsx_cells=", "", grep("^--max_xlsx_cells=", args, value = TRUE))
+max_xlsx_cells <- if (length(max_arg) == 0) Inf else as.numeric(max_arg[1])
 ii <- which(mat_ids_to_export == norm_method)
 mat_id <- mat_ids_to_export[ii]
 blk_mat_id <- util$mat_id_of_blank_subtracted(mat_id)
@@ -108,26 +111,31 @@ cat("Exporting", mat_id, "data.\n")
 is_std <- function(se) util$is_internal_std(se) | util$std_type(se) %in% "vIS"
 
 # Normalized data
-norm_se <- to_report[["normalized"]]
-se <- norm_se[!is_std(norm_se), ]
+not_std <- \(rd) !(util$is_internal_std(rd$.std_type) | rd$.std_type %in% "vIS")
+se <- msdial$read_full_normalized(user_inputs, to_report, mat_id, keep = not_std)
 msdial$export_data_with_feature_table_xlsx(
   sumexp_lst = se,
   mat_id = mat_id,
   org_feature_table = org_feature_table,
   out_file = FILE$o$norm[[ii]],
-  is_closest_norm = is_closest_norm
+  is_closest_norm = is_closest_norm,
+  max_xlsx_cells = max_xlsx_cells
 )
-cat(glue::glue("{mat_id} data has been saved to {basename(FILE$o$norm[[ii]])}."), "\n")
+cat(glue::glue("{mat_id} data has been saved."), "\n")
+rm(se)
+invisible(gc(FALSE))
 
 # Blank subtracted normalized data
 msdial$export_data_with_feature_table_xlsx(
-  sumexp_lst = lapply(to_report[["normalized - blank"]], \(se) se[!is_std(se), ]),
+  sumexp_lst = msdial$split_by_batch(msdial$read_full_blank_subtracted(user_inputs, to_report, blk_mat_id, keep = not_std)),
   mat_id = blk_mat_id,
   org_feature_table = org_feature_table,
   out_file = FILE$o$norm_blk[[ii]],
-  is_closest_norm = is_closest_norm
+  is_closest_norm = is_closest_norm,
+  max_xlsx_cells = max_xlsx_cells
 )
-cat(glue::glue("{blk_mat_id} data has been saved to {basename(FILE$o$norm_blk[[ii]])}."), "\n")
+cat(glue::glue("{blk_mat_id} data has been saved."), "\n")
+invisible(gc(FALSE))
 
 # Export concentration values ----------
 if (IS_TARGET_MODE) {

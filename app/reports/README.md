@@ -16,7 +16,5 @@ The reports are defined in the following files:
    : Main file for the external report
 * `report-internal.qmd`
    : Main file for the internal report
-* ~`report-read-msdial.qmd`~
-   : Report for reading MS-Dial results. Currently not used.
 * `chapters/`
    : Directory containing the individual chapters included in the reports

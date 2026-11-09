@@ -4,7 +4,7 @@ project:
   render: ["*.qmd"]   # Not README.md (for the repository)
   # The calibration curve viewer of the app, copied before each render (see _copy-viewer.ts)
   pre-render: _copy-viewer.ts
-  resources: [assets/calcurve_viewer.js]
+  resources: [assets/calcurve_viewer.js, assets/quanta_figs.js]
 
 website:
   title: "Introduction"
@@ -101,8 +101,8 @@ website:
             contents:
               - text: "4.5 Concentration per class"
                 href: concentrations.qmd#concentration-per-class
-              - text: "4.6 QC samples in acquisition order"
-                href: concentrations.qmd#qc-samples-in-acquisition-order
+              - text: "4.6 QC samples"
+                href: concentrations.qmd#qc-samples
       - section: "5 Report export"
         contents:
           - section: "Reports and exported tables"

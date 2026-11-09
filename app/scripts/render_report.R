@@ -56,6 +56,14 @@ render_in_private_copy <- function(job) {
   )
   out <- file.path(job$out_dir, job$out_name)
   if (!file.exists(out)) stop("The report was not created: ", out)
+  # One self-contained HTML file (not by Pandoc's `embed-resources`, see the script)
+  if (identical(tolower(tools::file_ext(out)), "html")) {
+    source(file.path(job$reports_dir, "..", "scripts", "embed_html_resources.R"), local = TRUE)
+    embed_html_resources(out)
+  }
+  # What Quarto copies next to a report is inside the report now
+  unlink(file.path(job$out_dir, c(paste0(tools::file_path_sans_ext(job$qmd), "_files"), "logos", "styles.css", "chempages")),
+         recursive = TRUE, force = TRUE)
   cat("Report created:", basename(out), "\n")
 }
 

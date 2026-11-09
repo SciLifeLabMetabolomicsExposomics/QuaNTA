@@ -6,7 +6,8 @@ params:
   project_title: "Test"
   generated_at: ""             # Time of generation, set by the app (also in the file name)
   on_serve: false              # Generated on SciLifeLab Serve (hosting acknowledgement)
-title: "Report on `r params$project_title`"
+# The title: as `show$md_text()` (not loaded yet here), and once more for the YAML string
+title: "Report on `r gsub('([\"\\\\])', '\\\\\\1', gsub('([[:punct:]])', '\\\\\\1', params$project_title))`"
 format:
   pdf:
     echo: false 
@@ -63,7 +64,7 @@ user_inputs <- msdial$get_user_input()
 app_root <- Sys.getenv("APP_ROOT", "app")
 constants_yml <- yaml::read_yaml(file.path(app_root, "constants.yml"))
 COLORS <- lapply(constants_yml$COLORS, unlist) # Lists to named vectors
-raw_se <- msdial$read_parsed_msdial_data(user_inputs)
+raw_se <- msdial$read_parsed_data_info(user_inputs)
 # For consistency throughout the report
 COLORS_OF_CLASSES <- show$get_colors_of_classes(raw_se, COLORS$.ctrl_cat)
 
@@ -110,6 +111,10 @@ summary_tbl <- lapply(concn_lst, msdial$tbl_chemical_summary) |>
     chem_name = stringr::str_trunc(chem_name, 40),
     perc_detf = round(100 * n_det / n_samples, 1),
     model_r2 = ifelse(is.na(model_r2), NA_character_, sprintf("%.3f", model_r2)),   # Always 3 decimals
+    # The model as text (e.g. "Linear, weight 1/x"); with log calibration always a straight line in
+    # log-log scale
+    best_model = if (isTRUE(log_scale)) ifelse(is.na(best_model), NA_character_, "Linear (log-log)") else
+      show$calib_model_label(best_model),
     dplyr::across(   # At most 3 decimals, as in the exported tables
       c(median, mean, min, max, lod, lloq),
       ~ round(.x, 3)
@@ -124,11 +129,11 @@ summary_tbl <- lapply(concn_lst, msdial$tbl_chemical_summary) |>
 # Project Information
 
 * Report generated: `r if (nzchar(params$generated_at)) params$generated_at else format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")`
-* User: `r user_inputs$user`
-* University: `r user_inputs$university`
-* Project: `r user_inputs$project_title`
+* User: `r show$md_text(user_inputs$user)`
+* University: `r show$md_text(user_inputs$university)`
+* Project: `r show$md_text(user_inputs$project_title)`
 
-`r user_inputs$free_text`
+`r show$md_text(user_inputs$free_text)`
 
 {{< pagebreak >}}
 
@@ -204,10 +209,10 @@ plot_pca <- function(se, mat_id) {
   # Plot
   ggplot2::autoplot(pca_res, data = se_df, colour = "Class")
 }
-both_se_lst <- lapply(to_report[["normalized - blank"]], \(se) {
-  se <- util$exclude_ctrl_smpl_cat(se, c("QC", "CalCurve", "Blank"))
-  se[!util$is_targeted_feature(se), ] # Only `Quant` targeted chemicals
-})
+both_se_lst <- msdial$read_full_blank_subtracted(user_inputs, to_report, MAT_ID_BLANK_SUBT,
+                                                 keep = \(rd) !util$is_targeted_feature(rd$.std_type)) |>
+  util$exclude_ctrl_smpl_cat(c("QC", "CalCurve", "Blank")) |>
+  msdial$split_by_batch()
 for (batch_id in names(both_se_lst)) {
   cat("\n\n### Batch ", batch_id, "\n")
   both_se <- both_se_lst[[batch_id]]
@@ -242,6 +247,8 @@ df_desc <- switch(
 
 # Summary table
 summary_tbl |>
+  # The model short, so that the table fits the page width (e.g. "Quadratic, 1/x²")
+  dplyr::mutate(model_short = sub(", weight ", ", ", best_model, fixed = TRUE)) |>
   dplyr::select(
     "Batch" = Batch,
     "Chemical" = chem_name,
@@ -254,9 +261,11 @@ summary_tbl |>
     "Min" = min,
     "Max" = max,
     "R2" = model_r2,
-    "Model" = best_model,
+    "Model, weight" = model_short,
     "N of points" = n_conc,
   ) |>
+  # With log calibration the R2 is that of the fit in log-log scale
+  dplyr::rename_with(\(x) if (isTRUE(log_scale)) "R2 (log-log)" else x, "R2") |>
   knitr::kable(caption = "Summary of Targets") |>
   kableExtra::kable_styling(
     latex_options = "striped",
@@ -267,7 +276,7 @@ summary_tbl |>
 
 **Note**
 
-The unit of concentration is `r user_inputs$concentration_unit`.
+The unit of concentration is `r show$md_text(user_inputs$concentration_unit)`.
 
 ```{r}
 #| label: 'lod-lloq-limits-text'
@@ -327,6 +336,17 @@ textbox_of_a_width <- function(txt, width) {
     scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
     scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
     theme_void()
+}
+
+#' Draw a figure into its own PDF file and insert that file in the report. knitr would keep every
+#' plot of this chunk in memory until the chunk ends, here one per chemical and batch.
+insert_figure <- function(p) {
+  dir.create("chempages", showWarnings = FALSE)
+  file <- sprintf("chempages/page%05d.pdf", length(list.files("chempages")) + 1L)
+  grDevices::pdf(file, width = 12, height = 6)
+  on.exit(grDevices::dev.off())
+  print(p)
+  cat("\n\n![](", file, "){fig-align=\"center\"}\n\n", sep = "")
 }
 
 for (batch_id in names(concn_lst)) {
@@ -389,8 +409,9 @@ for (batch_id in names(concn_lst)) {
       envir = as.list(summary_tbl[summary_tbl$chem_id == i_chem & summary_tbl$Batch == batch_id, ]),
       {
         paste0(
-          "Best model: ", best_model, "  \n",
-          "R2: ", model_r2, "  \n",
+          # With log calibration there is only one model (no choice of the best one)
+          if (isTRUE(log_scale)) "Model: " else "Best model: ", best_model, "  \n",
+          if (isTRUE(log_scale)) "R2 (log-log): " else "R2: ", model_r2, "  \n",
           "N of points: ", n_conc, "  \n",
           "DF: ", perc_detf, " (", n_det, "/", n_samples, ")", "  \n",
           "LOD: ", lod, "  \n",
@@ -418,7 +439,7 @@ for (batch_id in names(concn_lst)) {
         111222
         334444
       "
-      print(p1 + p3 + text1 + txt_legend +
+      insert_figure(p1 + p3 + text1 + txt_legend +
         patchwork::plot_layout(design = design, guides = "collect"))
     } else {
       design <- "
@@ -426,7 +447,7 @@ for (batch_id in names(concn_lst)) {
         112233
         445555
       "
-      print(p1 + p2 + p3 + text1 + txt_legend +
+      insert_figure(p1 + p2 + p3 + text1 + txt_legend +
         patchwork::plot_layout(design = design, guides = "collect"))
     }
   }

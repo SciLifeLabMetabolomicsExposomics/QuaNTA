@@ -19,13 +19,7 @@ Helper functions to access and **manipulate MS-DIAL data elements**:
 - **Sample filtering**: `exclude_ctrl_smpl_cat()`, `extract_ctrl_smpl_cat()`, `split_into_calcurve_and_other()`
 - **Matrix ID management**: `mat_id_of_blank_subtracted()`, `mat_id_in_calibration()`, `src_mat_id_for_conc()`
 - **Matrix manipulation**: `extract_with_na()`
-- **Statistical utilities**: `.rsd_perc()`, `avg_plus_std_times()`
-- **Feature accessors**: `std_type()`, `is_targeted_feature()`, `is_internal_std()`, `retention_time()`
-- **Sample accessors**: `ctrl_smpl_cat()`, `is_calcurve_sample()`, `spiked_conc_pts()`
-- **Sample filtering**: `exclude_ctrl_smpl_cat()`, `extract_ctrl_smpl_cat()`, `split_into_calcurve_and_other()`
-- **Matrix ID management**: `mat_id_of_blank_subtracted()`, `mat_id_in_calibration()`, `src_mat_id_for_conc()`
-- **Matrix manipulation**: `extract_with_na()`
-- **Statistical utilities**: `.rsd_perc()`, `avg_plus_std_times()`
+- **Detection**: `is_detected()` (a signal at or above the LOD signal, and above 0)
 
 ### `msdial.R`
 
@@ -68,7 +62,7 @@ Functions for generating **plots and tables** for reports:
 - **Quality metrics**: `compute_rsd_per_feature()` and `rsd_perc()`
 - **Color schemes**: `get_colors_of_classes()` manages consistent color palettes for control categories and classes
 - **QC visualization**: `extract_quant_qc()` extracts quantitative standards from QC samples for performance monitoring
-- **Calibration curve plots**: `ggplot_calcurve_samples()` and `ggplot_calcurve_samples_facet()` create visualizations with sample points and fitted lines (external report)
-- **Calibration curve viewer** (app 4.4, internal report 4.4, tutorial): the data of the curves for `www/calcurve_viewer.js`, which draws them in the browser: one view per curve from `calib_view_of_batch()`, `calib_view_all_batches()`, `calib_view_of_global()` or `calib_view_removed()`, combined by `calib_viewer_data()` (JSON: `calib_viewer_json()`; for a page: `calib_viewer_html()`)
-- **RSD plots**: `ggplot_rsdp_metab()` visualizes RSD% distributions across different processing stages
+- **Calibration curve plots**: `ggplot_calcurve_samples()` creates visualizations with sample points and fitted lines (external report)
+- **Calibration curve viewer** (app 4.4, internal report 4.4, tutorial): the data of the curves for `www/calcurve_viewer.js`, which draws them in the browser: one view per curve from `calib_view_of_batch()`, `calib_view_all_batches()`, `calib_view_of_global()` or `calib_view_removed()`, combined by `calib_viewer_data()` (JSON: `calib_viewer_json()`; for a page: `calib_viewer_html()`); `calib_views_of_batch()` gives the curves of a batch as the app shows them
+- **Report text**: `md_text()` escapes text typed by the user for the markdown of a report
 - **Custom aesthetics**: `geom_calibration_curve_line()` and custom coordinate system `CoordZoomInByCC` for specialized calibration curve rendering

@@ -76,8 +76,8 @@ feature_history <- function(tr, lst_proc = NULL) {
   ev_all <- tr[["events"]]
   ev_all <- ev_all[ev_all$scope == "feature", ]
   is_std <- type %in% c("Internal standard", "Volumetric IS")
-  norm_rd <- SumExp::row_df(tr[["normalized"]])
-  closest <- stats::setNames(norm_rd$closest_istd, rownames(tr[["normalized"]]))
+  norm_rd <- tr[["full data"]]$norm_rows     # All features
+  closest <- stats::setNames(norm_rd$closest_istd, rownames(norm_rd))
   failed_ev <- ev_all[ev_all$step == "Failed internal standards", ]
   failed <- ids %in% failed_ev$id
   rsd <- tr[["qc rsd filter"]]

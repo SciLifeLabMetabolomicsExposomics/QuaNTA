@@ -27,7 +27,9 @@ runProcessUI <- function(uiId) {
     ")),
     settings_group(
     "Quality control", "chart-simple",
+    # Every setting in a grey box (`option_group()`), with its suboptions and hint if any
     # Pre-normalization by the volumetric internal standard(s), before all other steps
+    option_group(
     shiny::checkboxInput(
       inputId = ns("vis_prenorm"),
       label = label_tip("Pre-normalize by the volumetric IS",
@@ -37,6 +39,7 @@ runProcessUI <- function(uiId) {
                               "are not changed. Greyed out when the data has no volumetric IS.")),
       value = FALSE,
       width = "100%"
+    )
     ),
     # Outlier removal
     option_group(
@@ -150,6 +153,7 @@ runProcessUI <- function(uiId) {
     # Grouped by theme, in the order of the processing: the levels of a curve, its limits (from
     # the zero calibrant), the fit from the LLOQ upwards, its linear range, and which curves are valid
     settings_subhead("Calibration levels"),
+    option_group(
     shiny::checkboxInput(
       inputId = ns("average_cal_reps"),
       label = label_tip("Average calibration replicates per batch",
@@ -159,8 +163,10 @@ runProcessUI <- function(uiId) {
                               "each batch is represented in the global calibration curve by one point per concentration.")),
       value = FALSE,
       width = "100%"
+    )
     ),
     # Option for keeping all calibration points (even though outside range)
+    option_group(
     shiny::checkboxInput(
       inputId = ns("optimize_cal_points"),
       label = label_tip("Optimize calibration curves based on sample range",
@@ -170,6 +176,7 @@ runProcessUI <- function(uiId) {
                               "the LLOQ, the full range is kept. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
+    )
     ),
     option_group(
     shiny::checkboxInput(
@@ -186,7 +193,7 @@ runProcessUI <- function(uiId) {
       shiny::numericInput(
         inputId = ns("min_cal_points"),
         label = shiny::tags$span(
-          "Set minimum number of cal points per curve",
+          "Minimum n cal points per curve",
           style = "white-space: nowrap;"
         ),
         value = 3,
@@ -196,6 +203,7 @@ runProcessUI <- function(uiId) {
     )
     ),
     settings_subhead("LOD and LLOQ"),
+    option_group(
     shiny::radioButtons(
       inputId = ns("llox_method"),
       label = label_tip("LOD/LLOQ method",
@@ -211,8 +219,10 @@ runProcessUI <- function(uiId) {
         shiny::HTML(paste0("pt. > mean", shiny::tags$sub("Cal0"), " + 3 (or 10) * StdDev", shiny::tags$sub("Cal0")))
       ),
     ),
-    shiny::uiOutput(ns("hint_llox_method")),   # Why the option above is greyed out (see the server)
+    shiny::uiOutput(ns("hint_llox_method"))   # Why the option above is greyed out (see the server)
+    ),
     # RSD% 20% threshold for LLOQ
+    option_group(
     shiny::checkboxInput(
       inputId = ns("use_rsd20"),
       label = label_tip("Use RSD 20% precision threshold for LLOQ",
@@ -223,8 +233,10 @@ runProcessUI <- function(uiId) {
       value = TRUE,
       width = "100%"
     ),
-    shiny::uiOutput(ns("hint_use_rsd20")),   # Why the option above is greyed out (see the server)
+    shiny::uiOutput(ns("hint_use_rsd20"))   # Why the option above is greyed out (see the server)
+    ),
     # Replace the concentrations below the LOD/LLOQ, or report them as "n.d." / "n.q."
+    option_group(
     shiny::checkboxInput(
       inputId = ns("impute_llox"),
       label = label_tip("Replace values below the LOD/LLOQ",
@@ -234,15 +246,22 @@ runProcessUI <- function(uiId) {
                               "without a value, and left out of plots and statistics. Greyed out when the data has no targeted (Quant) features.")),
       value = TRUE,
       width = "100%"
+    )
     ),
     settings_subhead("Curve fit"),
+    option_group(
     shiny::checkboxInput(
       inputId = ns("log_calibration"),
       label = label_tip("Log scale for calibration curve fitting",
-                        "Fit on log-transformed concentrations and signals (weighting 1 only). Greyed out when the data has no targeted (Quant) features."),
+                        paste("Fit each curve as a straight line in log-log scale: ln(signal) on ln(concentration),",
+                              "weighting 1, no quadratic curves. Points with a signal of 0 are left out of the fit",
+                              "(a log of 0 does not exist); the ULOQ is found by SCALiR. Greyed out when the data has",
+                              "no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
+    )
     ),
+    option_group(
     shiny::radioButtons(
       inputId = ns("weight"),
       label = label_tip("Weighting method",
@@ -261,30 +280,36 @@ runProcessUI <- function(uiId) {
         shiny::HTML(paste0("1/x", shiny::tags$sup("2")))
       ),
     ),
-    shiny::uiOutput(ns("hint_weight")),   # Why the option above is greyed out (see the server)
+    shiny::uiOutput(ns("hint_weight"))   # Why the option above is greyed out (see the server)
+    ),
+    option_group(
     shiny::checkboxInput(
       inputId = ns("linear_only"),
       label = label_tip("Linear models only",
                         paste("Fit only linear calibration curves (with the chosen weighting), even when",
-                              "a quadratic curve would fit better. Greyed out when the data has no targeted (Quant) features.")),
+                              "a quadratic curve would fit better. Not used with log-scale fitting (always linear",
+                              "then). Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
     ),
+    shiny::uiOutput(ns("hint_linear_only"))   # Why the option above is greyed out (see the server)
+    ),
     settings_subhead("Linear range (ULOQ)"),
+    option_group(
     shiny::numericInput(
       inputId = ns("linear_range_tol"),
-      label = label_tip("Linear range: maximum deviation of the top level (%, 1-50)",
-                        paste("The ULOQ is the top of the linear range of a curve. Linear curves (also those chosen",
-                              "with mixed models): the mean signal of each calibration level is back-calculated;",
-                              "while the top level deviates from its nominal concentration by more than this, it is",
-                              "left out and the curve refitted, down to 3 levels (the minimum number of levels only",
-                              "limits where a cut curve ends, not the ULOQ). With",
-                              "log-scale fitting the linear range is found by SCALiR instead (this value is not",
-                              "used, greyed out). Quadratic curves have no ULOQ. Greyed out when the data has no",
-                              "targeted (Quant) features.")),
-      value = 15, min = 1, max = 50, step = 1
+      label = label_tip("ULOQ: max error% from nominal conc.",
+                        paste("ULOQ calculated for all linear curves: ",
+                              "mean signal of each calibration level is back-calculated;",
+                              "when top level deviates from its nominal concentration by more than assigned %, it is",
+                              "left out and the curve refitted, down to 3 levels. With",
+                              "log-scale fitting the linear range is found by SCALiR instead.",
+                              "Quadratic curves have no ULOQ. Greyed out when the data has no targeted (Quant) features.")),
+      value = 20, min = 5, max = 50, step = 5
     ),
-    shiny::uiOutput(ns("hint_linear_range_tol")),   # Why the option above is greyed out (see the server)
+    shiny::uiOutput(ns("hint_linear_range_tol"))   # Why the option above is greyed out (see the server)
+    ),
+    option_group(
     shiny::checkboxInput(
       inputId = ns("enforce_linear_range"),
       label = label_tip("Enforce linear range (cut the curves at the ULOQ)",
@@ -296,6 +321,7 @@ runProcessUI <- function(uiId) {
                               "targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
+    )
     ),
     settings_subhead("Curve validity"),
     option_group(
@@ -318,6 +344,7 @@ runProcessUI <- function(uiId) {
       )
     )
     ),
+    option_group(
     shiny::checkboxInput(
       inputId = ns("keep_all_calcurves"),
       label = label_tip("Keep all calibration curves",
@@ -329,6 +356,7 @@ runProcessUI <- function(uiId) {
                               "QCs only); otherwise they are not. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
+    )
     )
     ),
     shiny::hr(class = "q-divider"),
@@ -367,7 +395,8 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
     # Options that are not feasible are greyed out (and switched off), from the settings and from
     # what the read data allows (`data_caps()`, `NULL` before a read: nothing greyed out then):
     # - no targeted (Quant) features: all calibration options; the QC RSD% filter of targeted features
-    # - log-scale fitting: only the weighting 1, no linear range tolerance (SCALiR)
+    # - log-scale fitting: only the weighting 1, no "linear models only" (always linear), no linear
+    #   range tolerance (SCALiR)
     # - averaged calibration replicates: no RSD% 20% threshold, no LOD/LLOQ method "mean + SD"
     # - fewer than 2 Cal0 replicates (in every batch and all together): no "mean + SD"
     # - fewer than 2 replicates per calibration level (same): no RSD% 20% threshold
@@ -386,10 +415,12 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       vis_ok <- is.null(caps) || isTRUE(caps$has_vis)
 
       for (id in c("optimize_cal_points", "set_minimum_number", "min_cal_points", "average_cal_reps",
-                   "keep_all_calcurves", "r2_filter", "min_r2", "linear_only", "log_calibration",
+                   "keep_all_calcurves", "r2_filter", "min_r2", "log_calibration",
                    "impute_llox")) {
         shinyjs::toggleState(id, condition = tgt)
       }
+      # Linear models only: log-scale curves are always straight lines (not used then)
+      shinyjs::toggleState("linear_only", condition = tgt && !log_fit)
       # Not only greyed out but also switched off (e.g. ticked in a loaded parameters file): the
       # settings then show what is used, also in the reports
       if (!tgt) {
@@ -446,6 +477,9 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
     })
     hint_when("weight", function(caps, avg, log_fit) {
       if (log_fit) "With log-scale fitting only the weighting 1 is possible."
+    })
+    hint_when("linear_only", function(caps, avg, log_fit) {
+      if (log_fit) "Not used with log-scale fitting: the curves are then always straight lines in log-log scale."
     })
     hint_when("linear_range_tol", function(caps, avg, log_fit) {
       if (log_fit) "Not used with log-scale fitting: SCALiR finds the linear range."

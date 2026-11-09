@@ -2,7 +2,7 @@
 
 ```{r}
 # The same plot as in the app (3.6), from projlib/show.R
-show$plotly_vis_bars(unname(raw[["raw"]][VIS_I, smp$sample_id]), smp, SumExp::row_df(raw)$feature_name[VIS_I],
+show$plotly_vis_bars(unname(SumExp::metadata(raw)$vis_raw[rownames(raw)[VIS_I], smp$sample_id]), smp, SumExp::row_df(raw)$feature_name[VIS_I],
                      switchable = TRUE)
 ```
 

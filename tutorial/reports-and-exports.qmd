@@ -36,13 +36,15 @@ you are most interested in.
 | **QC/QA report (html)** | the internal report: all quality-control steps, tables and interactive figures, as on pages 2–4 of the app | checking and documenting the processing |
 | **Summary report (pdf)** | the external report: the project, the methods and the results in a few pages | sharing the results |
 
-A progress bar shows how far the report is; the HTML report is shown in the app when it is ready,
-and **Download HTML Report** saves it. The reports name the settings that were used, so they
-document the processing.
+The buttons are in the box **Report** at the top of the page, next to the normalization method. A
+progress bar shows how far the report is. When it is ready, it is shown in **Preview report**, the
+wide box below, in its own tab: *QC/QA report (html)* or *Summary report (pdf)*, each with its download
+button in the upper right corner (**Download HTML report**, **Download PDF report**). The reports
+name the settings that were used, so they document the processing.
 
 ## Exported tables
 
-**Export data into tables** writes five Excel files for the final method (and each of their sheets
+**Export data into tables**, in the box **Export tabular data** at the top right, writes five Excel files for the final method (and each of their sheets
 as a `.csv` file), ready to download:
 
 | File | Content |
@@ -52,6 +54,11 @@ as a `.csv` file), ready to download:
 | `….conc.xlsx` | concentrations of the targeted compounds: QCs, study samples and blanks |
 | `….conc_all.xlsx` | the same with all samples, including the calibration samples |
 | `….history.xlsx` | what the processing did with each feature and sample (see [Processing history](#processing-history)) |
+
+On SciLifeLab Serve, very large tables (more than 5 million values, e.g. tens of thousands of
+non-targeted features) are written as `.csv` files only, with the same layout, since an Excel file
+of that size takes too much memory to create there. This concerns `….norm` and `….norm_blk`, and
+the export box says so in advance. Run locally, QuaNTA always writes the Excel files as well.
 
 This is the start of a batch sheet of the concentration table of the example
 (`r basename(conc_file)`), the feature columns first and then the samples:

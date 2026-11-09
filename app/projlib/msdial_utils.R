@@ -19,6 +19,21 @@ conv_tbl <- tibble::tribble(
   "Comment",         ".std_type",    "Standard Type", # e.g. "Quant", "IS", "vIS", or NA
 )
 
+#' A `SumExp` object with its features, samples and metadata but without its values
+#'
+#' Every matrix is replaced by one placeholder matrix of bytes (1/8 of the memory): for what only
+#' needs to know the features and samples. The values must not be used.
+#'
+#' @param se A [`SumExp::SumExp`] object
+#' @param mat_id The name of the placeholder matrix
+#' @returns A [`SumExp::SumExp`] object with the same dimensions
+#' @export
+without_values <- function(se, mat_id = "raw") {
+  m <- matrix(as.raw(0L), nrow = nrow(se), ncol = ncol(se), dimnames = dimnames(se))
+  do.call(SumExp::SumExp, c(stats::setNames(list(m), mat_id),
+                            list(col_df = SumExp::col_df(se), row_df = SumExp::row_df(se), metadata = SumExp::metadata(se))))
+}
+
 #' Get the retention time of the calibration curve samples
 #'
 #' @param sumexp A [`SumExp::SumExp`] object
@@ -246,13 +261,6 @@ save_src_mat_id_for_conc <- function(sumexp, value) {  # `src_mat_id_for_conc<-`
 mat_id_of_blank_subtracted <- function(mat_id) {
   paste0(mat_id, "_blk")
 }
-#' Get the matrix ID before blank subtraction
-#' @rdname mat_id_of_blank_subtracted
-#' @export
-mat_id_before_blank_subtraction <- function(mat_id) {
-  sub("_blk$", "", mat_id)
-}
-
 #' Get the matrix ID for calibration
 #'
 #' @param mat_id The name of a matrix
@@ -261,13 +269,6 @@ mat_id_before_blank_subtraction <- function(mat_id) {
 mat_id_in_calibration <- function(mat_id) {
   paste0(mat_id, "_calib")
 }
-#' Get the matrix ID before calibration
-#' @rdname mat_id_in_calibration
-#' @export
-mat_id_before_calibration <- function(mat_id) {
-  sub("_calib$", "", mat_id)
-}
-
 
 #  -----  UTILS  ---------------------------------------------------------------
 
@@ -306,29 +307,6 @@ extract_with_na <- function(mat, i = TRUE, j = TRUE) {
 }
 
 ##  COMPUTE  -----------------------------------------------
-
-#' Compute the average plus the standard deviation multiplied by `times`
-#'
-#' @param v A numeric vector
-#' @param times Multiplication factor to the standard deviation.
-#' @param na.rm A logical value indicating whether to remove NA values
-#'
-#' @returns A numeric vector of the average plus the standard deviation multiplied by `times`
-#' @export
-avg_plus_std_times <- function(v, times, na.rm = TRUE) { # nolint
-  s <- stats::sd(v, na.rm = na.rm)
-  m <- mean(v, na.rm = na.rm)
-  s * times + m
-}
-
-#' Calculate RSD%
-#'
-#' @param x A numeric vector
-#' @param na.rm A logical value indicating whether to remove NA values
-#' @returns A numeric value of RSD%
-.rsd_perc <- function(x, na.rm = FALSE) { # nolint
-  100 * stats::sd(x, na.rm = na.rm) / mean(x, na.rm = na.rm)
-}
 
 ##  CALIBRATION NOTES  -------------------------------------
 

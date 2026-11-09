@@ -4,7 +4,7 @@ RSD% of the raw vIS peak areas within groups of samples (all samples, also outli
 table by grouping or group; the matrix tab shows all groups side by side.
 
 ```{r}
-vis_rsd <- show$vis_rsd_table(raw[["raw"]][vis_rows, smp$sample_id, drop = FALSE],
+vis_rsd <- show$vis_rsd_table(SumExp::metadata(raw)$vis_raw[, smp$sample_id, drop = FALSE],
                               SumExp::row_df(raw)$feature_name[vis_rows], smp)
 ```
 

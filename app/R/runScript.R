@@ -27,9 +27,21 @@ runScriptUI <- function(uiId, label, download=FALSE) {
 
 # Shared implementation --------------------------------------------------------------------
 
+#' Whether a step of the session is running (reading, processing, export or a report), as one
+#' `reactiveVal` shared by all modules of the session: the steps read and write the same files,
+#' so only one runs at a time
+#'
+#' @param session A (module) Shiny session
+#' @export
+session_busy <- function(session) {
+  if (is.null(session$userData$quanta_busy)) session$userData$quanta_busy <- shiny::reactiveVal(FALSE)
+  session$userData$quanta_busy
+}
+
 .runScriptCore <- function(serverId, script_path, what, param_ids, data_info, ws, extra_args,
                            clear = NULL, trigger = NULL) {
   shiny::moduleServer(serverId, function(input, output, session) {
+    busy <- session_busy(session)
     output_txt <- shiny::reactiveVal("")
     proc <- shiny::reactiveVal(NULL)
     done_at <- shiny::reactiveVal(NULL)   # Set every time a run has finished
@@ -42,9 +54,9 @@ runScriptUI <- function(uiId, label, download=FALSE) {
 
     # The run starts on the button, or on `trigger()` (e.g. after a confirmation popup)
     shiny::observeEvent(if (is.null(trigger)) input[["run_button"]] else trigger(), {
-      old <- proc()
-      if (!is.null(old) && old$is_alive()) {
-        output_txt(paste0(output_txt(), "\nA job is already running. Please wait until it finishes.\n"))
+      if (busy()) {
+        output_txt(paste0(output_txt(), "\nAnother step (reading, processing, export or a report) is running. ",
+                          "Please wait until it finishes.\n"))
         return()
       }
       tryCatch({
@@ -75,6 +87,7 @@ runScriptUI <- function(uiId, label, download=FALSE) {
           env = env
         )
         proc(p)
+        busy(TRUE)
         started_at(Sys.time())
         output_txt(paste0(stamp(paste(what, "is running ...")), "\n"))
       }, error = function(e) {
@@ -106,6 +119,7 @@ runScriptUI <- function(uiId, label, download=FALSE) {
                        paste0("Script ended with exit status ", status, ". See the messages above."),
                      paste("Elapsed time:", format_elapsed(started_at())))
           proc(NULL)
+          busy(FALSE)
           done_at(Sys.time())
         }
         if (length(lines) > 0) output_txt(add_log_lines(output_txt(), stamp(lines), lines))
@@ -202,7 +216,7 @@ runScriptServer <- function(serverId, script_path, what, param_ids = NULL, data_
 #' @export
 runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data_info, ws,
                              norm_method) {
-  extra_args <- function() paste0("--norm_method=", shiny::isolate(norm_method()))
+  extra_args <- function() c(paste0("--norm_method=", shiny::isolate(norm_method())), serve_export_args())
   done_at <- .runScriptCore(serverId, script_path, what, param_ids, data_info, ws, extra_args)
 
   # Second module server with the same ID: the outputs share the namespace of the UI

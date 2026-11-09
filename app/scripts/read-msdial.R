@@ -155,20 +155,18 @@ if (!any(util$is_targeted_feature(features$.std_type))) {
 }
 
 # Measured values of the features into a matrix
-raw_df <- msdial$fetch_data_of_columns(FILE$i, i_three_sections[["2nd"]])
-raw_df <- raw_df[i_to_keep, ]
-stopifnot(identical(colnames(raw_df), labelled::remove_labels(sample_info$sample_name)))
-colnames(raw_df) <- rownames(sample_info)     # Update with syntactically valid names
-raw_mat <- lapply(raw_df, as.numeric) |> 
-  as.data.frame(row.names = rownames(features)) |> 
-  as.matrix()
+raw_mat <- msdial$fetch_numeric_matrix(FILE$i, i_three_sections[["2nd"]])
+if (length(i_to_keep) < nrow(raw_mat)) raw_mat <- raw_mat[i_to_keep, , drop = FALSE]
+stopifnot(identical(colnames(raw_mat), labelled::remove_labels(sample_info$sample_name)))
+dimnames(raw_mat) <- list(rownames(features), rownames(sample_info))     # Syntactically valid names
 labelled::label_attribute(raw_mat) <- "Raw"
 # Empty or non-numeric values (not in an export as such, e.g. a file edited by hand): read as 0 (not
 # detected), and listed before processing (missing values would stop the processing)
-na_cells <- is.na(raw_mat)
-missing_values <- tibble::tibble(feature = features$feature_name[row(raw_mat)[na_cells]]) |>
+has_na <- anyNA(raw_mat)
+na_cells <- if (has_na) is.na(raw_mat)
+missing_values <- tibble::tibble(feature = if (has_na) features$feature_name[row(raw_mat)[na_cells]] else features$feature_name[0]) |>
   dplyr::count(feature)
-if (any(na_cells)) {
+if (has_na) {
   raw_mat[na_cells] <- 0
   cat(sum(na_cells), "empty or non-numeric value(s) were read as 0 (not detected), in",
       nrow(missing_values), "feature(s):", paste(utils::head(missing_values$feature, 10), collapse = ", "),
@@ -341,3 +339,8 @@ sumexp <- SumExp::SumExp(
 # Save the "SumExp" object
 saveRDS(sumexp, file = FILE$o)
 cat("`SumExp` object saved to:", FILE$o, "\n")
+# What the app and the reports use of the read data, without the peak areas (they stay in memory
+# for as long as the app runs): the features, samples and metadata, and the peak areas of the vIS
+info <- util$without_values(sumexp)
+SumExp::metadata(info)$vis_raw <- raw_mat[features$.std_type %in% "vIS", , drop = FALSE]
+saveRDS(info, file = msdial$get_raw_data_file_name(user_inputs, suffix = "info"))

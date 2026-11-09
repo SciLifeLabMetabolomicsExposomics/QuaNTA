@@ -14,7 +14,7 @@ format:
     toc-depth: 3
     toc-title: "Contents"
     number-sections: false       # Numbers in the headings: the same as in the app (see below)
-    embed-resources: true
+    embed-resources: false       # Done by scripts/embed_html_resources.R (render_report.R)
     page-layout: full
     fig-width: 10
     fig-height: 5
@@ -162,7 +162,7 @@ theme_set(theme_minimal(base_size = 14) +
 
 # The session's data (paths from the session parameter file)
 user_inputs <- msdial$get_user_input()
-raw <- msdial$read_parsed_msdial_data(user_inputs)
+raw <- msdial$read_parsed_data_info(user_inputs)   # Features, samples, metadata; no peak areas
 tr <- readRDS(msdial$get_raw_data_file_name(user_inputs, suffix = "to_report"))
 stopifnot("Processing NOT completed." = isTRUE(tr[["Completed"]]))
 MAT <- params$norm_method
@@ -512,7 +512,7 @@ All raw peak areas of all features and samples, in linear scale (left) and in lo
 positive values only). Hover over a bar for its range; drag to zoom, double-click to reset.
 
 ```{r}
-show$plotly_value_distribution(raw[["raw"]])
+show$plotly_value_distribution(SumExp::metadata(raw)$value_bins)
 ```
 
 # 3 Quality control and normalization
@@ -743,7 +743,10 @@ cat('<div class="viewer" id="isbar">',
 norm_all <- tr[["normalized"]]
 norm_cd <- tibble::as_tibble(SumExp::col_df(norm_all), rownames = "sample_id") |>
   left_join(select(smp, sample_id, group), by = "sample_id")
-not_is <- !util$is_internal_std(norm_all)
+# All features but the IS of a data version, from its file (only one in memory at a time)
+full_not_is <- function(mm) {
+  msdial$read_full_normalized(user_inputs, tr, mm, keep = \(rd) !util$is_internal_std(rd$.std_type))[[mm]]
+}
 norm_se <- norm_all[util$is_targeted_feature(norm_all), ]
 
 # QC RSD% of the targeted compounds, raw vs normalized
@@ -771,11 +774,13 @@ in_matrix <- norm_cd$group %in% c(study_classes, "QC")
 plot_rla <- function(m) {
   if (!any(in_matrix)) return(note("No study samples or QCs: no relative log abundance."))
   rla <- function(mat) {
-    lx <- log2(ifelse(mat > 0, mat, NA))[, in_matrix, drop = FALSE]   # Also with one sample
+    lx <- mat[, in_matrix, drop = FALSE]   # Also with one sample
+    lx[lx <= 0] <- NA
+    lx <- log2(lx)
     apply(lx - apply(lx, 1, median, na.rm = TRUE), 2, median, na.rm = TRUE)
   }
   d <- bind_rows(lapply(c("raw", m), function(mm) {
-    mutate(norm_cd[in_matrix, ], method = method_label[mm], rla = rla(norm_all[[mm]][not_is, ]))
+    mutate(norm_cd[in_matrix, ], method = method_label[mm], rla = rla(full_not_is(mm)))
   })) |>
     mutate(method = factor(method, levels = method_label[c("raw", m)]))
   p <- ggplot(d, aes(injection_order, rla, color = group, text = paste0(sample_name, " (batch ", batch_id, ")"))) +
@@ -800,7 +805,7 @@ plot_pca <- function(m, by = c("batch", "group")) {
 }
 # PC1 and PC2 of the study samples and QCs of one matrix (`NULL` if a PCA is not possible)
 pca_scores <- function(mm, keep_s) {
-  x <- norm_all[[mm]][not_is, keep_s, drop = FALSE]   # `drop = FALSE`: also with one sample
+  x <- full_not_is(mm)[, keep_s, drop = FALSE]   # `drop = FALSE`: also with one sample
   x <- x[rowSums(is.na(x)) == 0 & apply(x, 1, sd) > 0, , drop = FALSE]
   if (nrow(x) < 2 || ncol(x) < 2) return(NULL)        # A PCA needs 2 samples and 2 features
   pc <- prcomp(t(log1p(x)), scale. = TRUE, rank. = 2)  # Only PC1 and PC2 are needed
@@ -1035,9 +1040,9 @@ The study samples **as one experiment**: groups compared over all batches.
 ## 5.1 PCA
 
 ```{r}
-blk_lst <- tr[["normalized - blank"]]
-m <- do.call(cbind, lapply(blk_lst, \(se) se[[BLK]]))
-cd <- bind_rows(lapply(blk_lst, \(se) tibble::as_tibble(SumExp::col_df(se), rownames = "sample_id")))
+blk_se <- msdial$read_full_blank_subtracted(user_inputs, tr, BLK)   # Also used in 5.2
+m <- blk_se[[BLK]]
+cd <- tibble::as_tibble(SumExp::col_df(blk_se), rownames = "sample_id")
 keep_s <- cd$.ctrl_cat %in% c("", "QC")
 m <- m[, keep_s, drop = FALSE]; cd <- cd[keep_s, ]   # `drop = FALSE`: also with one sample
 m <- m[rowSums(is.na(m)) == 0 & apply(m, 1, sd) > 0, , drop = FALSE]
@@ -1345,33 +1350,12 @@ window.addEventListener('load', function () {
     });
   }
 
-  // ---- QC samples in acquisition order (4.6): one compound, a line per QC group; measured values
-  //      filled, values replaced by the LOD/LLOQ rules open; values without a value are counted ----
+  // ---- QC samples (4.6): the figure of the app (QuantaFigs.qcConc of app/www/quanta_figs.js):
+  //      a control chart or per batch with the CV%; the compound chosen here ----
   var Q = window.QCVIEW;
-  if (Q && document.getElementById('qcv')) {
+  if (Q && document.getElementById('qcv') && window.QuantaFigs) {
     viewer('qcv', Q.comps, function (c) { return c.name; }, function (root) {
-      var c = Q.comps[+root.querySelector('.sel').value], isLog = root.querySelector('.log').checked, traces = [], groups = {}, nf = {};
-      c.s.forEach(function (s, j) {
-        if (c.y[j] === null) { if (c.f[j]) nf[c.f[j]] = (nf[c.f[j]] || 0) + 1; return; }
-        (groups[S.c[s]] = groups[S.c[s]] || []).push(j);
-      });
-      Object.keys(Q.group_colors).forEach(function (g) {
-        var k = groups[g]; if (!k) return;
-        k.sort(function (a, b) { return S.i[c.s[a]] - S.i[c.s[b]]; });
-        var colr = Q.group_colors[g];
-        traces.push({ type: 'scatter', mode: 'lines+markers', name: g, x: k.map(function (j) { return S.i[c.s[j]]; }),
-          y: k.map(function (j) { return c.y[j]; }), line: { color: colr, width: 1 },
-          marker: { size: 8, color: k.map(function (j) { return Q.kinds[c.k[j]] === 'Measured' ? colr : '#fff'; }), line: { color: colr, width: 1.5 } },
-          text: k.map(function (j) { return who(c.s[j]) + '<br>conc. ' + fmt(c.y[j]) + ' ' + Q.unit + ' (' + Q.kinds[c.k[j]] + ')'; }),
-          hovertemplate: '%{text}<extra></extra>' });
-      });
-      var nfTxt = Object.keys(nf).map(function (f) { return f + ' ' + nf[f]; }).join(', ');
-      root.querySelector('.info').innerHTML = nfTxt ? 'Not shown (no value): ' + nfTxt : '';
-      Plotly.react(root.querySelector('.plot'), traces, {
-        title: { text: c.name, x: 0.02 }, hovermode: 'closest', font: font,
-        xaxis: { title: 'Injection order' }, yaxis: { title: 'Concentration [' + Q.unit + ']', type: isLog ? 'log' : 'linear', exponentformat: 'E' },
-        legend: { orientation: 'v', x: 1.02, y: 1, title: { text: 'QC group' } }, margin: { t: 50, r: 20, b: 60, l: 80 }
-      }, { responsive: true, displaylogo: false });
+      QuantaFigs.qcConc(root.querySelector('.plot'), Q.data, Q.comps[+root.querySelector('.sel').value].id);
     });
   }
 

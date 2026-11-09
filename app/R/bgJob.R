@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------------------- #
 # Run an R script as a background (child) process of one session
 #
-# Long tasks (rendering reports, saving / loading session data) must not run in the app's own R
+# Long tasks (rendering reports, decompressing uploads) must not run in the app's own R
 # process: on SciLifeLab Serve that process is shared by all users and R is single-threaded, so a
 # long task would freeze the app for everyone. The child process gets its task as a "job" .rds
 # file in the session's private workspace and writes its log there too.

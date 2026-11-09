@@ -3,47 +3,6 @@
 # ------------------------------------------------------------------------------------------- #
 box::use(util = ./msdial_utils)
 
-#  -----  QC STEPS  ------------------------------------------------------------
-
-##  QC STEPS  ----------------------------------------------
-
-#' Add intermediate data at each step of quality control
-#'
-#' @param name A character string for the name of the intermediate data
-#' @param data The data to be stored with the `name`
-#' @param file A file name to store the intermediate data
-#' @md
-#' @export
-append_to_qc_steps <- function(..., file) {
-  if (!file.exists(file)) stop("Run `initialize_qc_steps` first.")
-  to_report <- readRDS(file)
-  dots <- rlang::list2(...)
-  nms <- names(dots)
-  stopifnot(
-    "Name of the intermediate data must be provided" = !any(sapply(nms, is.null)),
-    "Duplicated names" = anyDuplicated(c(nms, names(to_report))) == 0
-  )
-  for (nm in nms) {
-    to_report[[nm]] <- dots[[nm]]
-  }
-  saveRDS(to_report, file)
-}
-#' @rdname append_to_qc_steps
-#' @export
-initialize_qc_steps <- function(file) {
-  saveRDS(list(), file)
-}
-
-#' Stop without showing error messages
-#'
-#' @export
-stop_quietly <- function() {
-  opt <- options(show.error.messages = FALSE)
-  on.exit(options(opt))
-  stop()
-}
-
-
 #  -----  NORMALIZATION WITH I.S.  ---------------------------------------------
 # Normalize the data using internal standards
 
@@ -725,60 +684,7 @@ identify_min_pt_satisfying <- function(mat_cond) {
   apply(mat_cond, 1, \(.x) min(satisfying_values(.x)))
 }
 
-#' Compute the LLO(Q/D) using the slope and standard deviation
-#'
-#' `s * factor / slope`
-#' , where `s` the standard deviation of the lower-limit concentration point,
-#' `slope` is the slope of the calibration curve at the point, and `factor` is a multiplication
-#' factor.
-#'
-#' @param v A numeric vector of the peak areas of the calibration samples
-#' @param min_conc The lower limit concentration of calibration curve
-#' @param calcurve_model The calibration curve model
-#' @param conc A numeric vector of the concentrations of the calibration samples. It should be
-#'   the same length as the `v`.
-#' @param times Multiplication factor to the mean of the peak area of the `min_conc`
-#'   concentration. Common values are 3 and 10 for LOD and LLOQ, respectively.
-#' @returns A numeric value of the LLO(Q/D)
-#' @md
-#' @export
-compute_llox_using_slope_and_sd <- function(v, conc, min_conc, calcurve_model, times) {
-  stopifnot(length(conc) == length(v))       # Identical concentrations
-  # Standard deviation of the lowest concentration point
-  v <- v[conc == min_conc]
-  s <- stats::sd(v, na.rm = TRUE)
-  # Slope of calibration curve
-  e <- environment(calcurve_model$best_model)
-  slope <- if (grepl("linear", calcurve_model$best_model_name)) {
-    get("b1", envir = e)
-  } else {
-    a <- get("a", envir = e)
-    b <- get("b", envir = e)
-    2 * a * min_conc + b
-  }
-  # Calculate the LLOx
-  (s * times) / slope
-}
-
 ##  WITH DERIVED MIN/MAX CONCENTRATION  --------------------
-
-#' Identify the minimum concentration point for calibration curve
-#'
-#' @param mat_m A matrix of the mean signals per spiked concentration point. The columns are
-#'   the spiked concentration points, which should be sorted in ascending order.
-#' @param lod_signal A numeric vector of the LOD signals
-#' @returns A numeric vector of the minimum concentrations
-#' @md
-min_conc_for_curve_using_lox_signal <- function(mat_m, lod_signal) {
-  stopifnot(nrow(mat_m) == length(lod_signal))
-  # The minimum concentration having higher signal than the LOD
-  out <- apply(mat_m > lod_signal, 1, \(.x) min(satisfying_values(.x)))
-  nm <- names(out)
-  out <- as.numeric(out)         # Lost names by this
-  names(out) <- nm
-  out <- labelled::set_label_attribute(out, "Minimum Concentration")
-  out
-}
 
 #' Identify the maximum concentration point of the calibration samples
 #'
@@ -1237,7 +1143,7 @@ scalir_top <- function(conc, signal, max_resid = 0.01, min_n = 3) {
 #'
 #' @param conc Spiked concentration of each calibration sample
 #' @param signal Signal of the calibration samples of one chemical, in the original scale
-#' @param signal_fit The signal the curve is fitted on (log scale; `NA`: not in the curve)
+#' @param signal_fit The signal the curve is fitted on (original scale; `NA`: not in the curve)
 #' @param model The fitted model of [fit_and_test_calcurve_model()]
 #' @param min_n The minimum number of calibration levels
 #' @param refit A function of `signal_fit` that refits the model
@@ -1285,10 +1191,14 @@ linear_range_of_log_curve <- function(conc, signal, signal_fit, model, min_n, re
 #'   - `1/x2`: Inverse of the concentration squared
 #' @param penalty_quadratic The penalty for the quadratic models
 #' @param linear_only Whether to fit linear models only (no quadratic ones)
+#' @param log_log Whether to fit a straight line in log-log scale (`--log_calibration`; see
+#'   [loglog_calcurve_model()]): then the weight is 1 and there are no quadratic models.
+#'   `conc` and `signal` are always given in the original scale.
 #'
 #' @returns A list with the best model, the name of it, the R2 values of all models, and the
 #'   number of unique concentrations. The best model is chosen as the model with the highest R2
-#'   after applying the penalty to quadratic models.
+#'   after applying the penalty to quadratic models; the penalty is used only for this choice
+#'   (`R2s` are the real R2 values, `R2s_adj` those with the penalty). `NA` without a signal.
 #' @examples
 #' conc <- rep(c(0.1, 0.2, 0.5, 1, 2), 3)
 #' signal <- conc * 5 + rnorm(length(conc))
@@ -1302,10 +1212,20 @@ fit_and_test_calcurve_model <- function(conc,
                                         signal,
                                         weight_method = "largestR2",
                                         penalty_quadratic = 0,
-                                        linear_only = FALSE) {
+                                        linear_only = FALSE,
+                                        log_log = FALSE) {
   # If no signal return NA
   if (all(is.na(signal) | signal == 0)) {
     return(NA)
+  }
+  if (log_log) {
+    m <- loglog_calcurve_model(conc, signal)
+    if (is.null(m)) return(NA)
+    r2 <- c("linear-1" = suppressWarnings(summary(m$inv_mod)$r.squared))
+    return(rlang::list2(
+      "best_model" = m$model, "best_model_name" = "linear-1", "R2s" = r2, "R2s_adj" = r2,
+      "n_conc" = length(unique(conc[!is.na(signal)])), "inv_model" = m$inv_mod
+    ))
   }
 
   # Weight alternatives
@@ -1370,17 +1290,41 @@ linear_calcurve_model <- function(conc, signal, weights) {
   }
   list(model = model, inv_mod = lmfit)
 }
+#' A straight line in log-log scale (`--log_calibration`): ln(signal) = b0 + b1 ln(conc), weight 1,
+#' fitted on the points with a positive signal and concentration (a log of 0 does not exist). The
+#' same scale as SCALiR, which finds the ULOQ of these curves ([scalir_top()]).
+#'
+#' @returns `NULL` with fewer than 2 such points; otherwise `model` (the concentration of a signal,
+#'   both in the original scale; 0 for a signal of 0 or less, which is below the LOD) and `inv_mod`
+#'   (the fit, `lm` of the log signal on `conc` = the log concentration)
+#' @rdname fit_calcurve_model
+loglog_calcurve_model <- function(conc, signal) {
+  ok <- !is.na(signal) & !is.na(conc) & signal > 0 & conc > 0
+  if (sum(ok) < 2) return(NULL)
+  d <- data.frame(conc = log(conc[ok]), signal = log(signal[ok]))
+  lmfit <- stats::lm(signal ~ conc, data = d, model = FALSE)
+  beta <- stats::coef(lmfit)
+  b1 <- beta[["conc"]]
+  b0 <- beta[["(Intercept)"]]
+  model <- function(x) {
+    out <- ifelse(is.na(x), NA_real_, 0)
+    pos <- !is.na(x) & x > 0
+    out[pos] <- exp((log(x[pos]) - b0) / b1)
+    out
+  }
+  list(model = model, inv_mod = lmfit)
+}
 
 #' Compute the concentration of features
 #'
 #' @param sumexp A [`SumExp::SumExp`] object of the samples
-#' @param mat_id The name of a matrix in `sumexp`
-#' @param log_scale Whether to use the logarithmic scale for the signal and concentration.
+#' @param mat_id The name of a matrix in `sumexp` (the signal, in the original scale; also for
+#'   curves fitted in log-log scale, whose models take the original scale)
 #'
 #' @returns A matrix of the concentration of features
 #' @md
 #' @export
-compute_concentration <- function(sumexp, mat_id, log_scale = FALSE) {
+compute_concentration <- function(sumexp, mat_id) {
   mat <- sumexp[[mat_id]]
   models <- SumExp::row_df(sumexp)$calcurve_model
   no_model <- is.na(models)
@@ -1394,9 +1338,6 @@ compute_concentration <- function(sumexp, mat_id, log_scale = FALSE) {
     models[[i_feature]]$best_model(v)
   }) |>
     t()          # Features to rows
-  if (log_scale) {
-    conc <- exp(conc)    # Back transform
-  }
   colnames(conc) <- colnames(mat)
   conc <- labelled::set_label_attribute(conc, "Concentration")
   conc
@@ -1443,19 +1384,17 @@ compute_concentration <- function(sumexp, mat_id, log_scale = FALSE) {
 #'   `avg_signal_at_lloq` of each chemical (`row_df`; signals in the original scale)
 #' @param conc_mat_id The name of the matrix with the calculated concentrations; it is replaced by
 #'   the result
-#' @param log_scale Whether the signal is `log1p()` of the original (log-scale fitting); the
-#'   signals of the limits are then compared in that scale
 #' @returns `sumexp` with the concentrations after the rules
 #' @md
 #' @export
-apply_llox_rules <- function(sumexp, conc_mat_id, log_scale = FALSE) {
+apply_llox_rules <- function(sumexp, conc_mat_id) {
   stopifnot(conc_mat_id %in% names(sumexp))
   conc <- sumexp[[conc_mat_id]]
   signal <- sumexp[[util$src_mat_id_for_conc(sumexp)]]
   rd <- SumExp::row_df(sumexp)
   lloq <- rd[["lloq"]]
-  # Thresholds of each chemical (row) as matrices, in the scale of the signal
-  as_mat <- function(v) matrix(if (log_scale) log1p(v) else v, nrow = nrow(conc), ncol = ncol(conc))
+  # Thresholds of each chemical (row) as matrices (signals in the original scale)
+  as_mat <- function(v) matrix(v, nrow = nrow(conc), ncol = ncol(conc))
   lod_sig <- as_mat(rd[["lod_signal"]])
   lloq_sig <- as_mat(rd[["avg_signal_at_lloq"]])
   # The groups, all from the values before any replacement. A signal of 0 is never detected (also

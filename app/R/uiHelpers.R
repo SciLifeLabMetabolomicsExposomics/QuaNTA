@@ -65,7 +65,9 @@ option_group <- function(...) shiny::div(class = "q-option-group", ...)
 #' @param text The explanation.
 #' @export
 info_tip <- function(text) {
-  bslib::tooltip(shiny::span(class = "q-info", shiny::icon("circle-info")), text, placement = "right")
+  # 20 px from the icon (Bootstrap: 6), so that the mouse pointer (a question mark) does not cover the text
+  bslib::tooltip(shiny::span(class = "q-info", shiny::icon("circle-info")), text, placement = "right",
+                 options = list(offset = c(0, 20)))
 }
 
 #' A label followed by an info icon

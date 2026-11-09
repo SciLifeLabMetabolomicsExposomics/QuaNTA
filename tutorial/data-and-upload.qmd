@@ -139,7 +139,7 @@ desc <- c(
   linear_only = "Fit linear curves only (no quadratic ones).",
   linear_range_tol = "ULOQ of linear curves: top levels whose back-calculated mean deviates more than this (%) are above the linear range.",
   enforce_linear_range = "Cut the curves at their ULOQ and refit them (otherwise they keep their range).",
-  log_calibration = "Fit the curves in log scale (weighting 1 only); the ULOQ is then found by SCALiR.",
+  log_calibration = "Fit each curve as a straight line in log-log scale (weighting 1, no quadratic curves); the ULOQ is then found by SCALiR.",
   weight = "Weighting of the fit: the one with the largest R² (and the model), or a fixed 1, 1/x, 1/x².",
   llox_method = "LOD / LLOQ thresholds from the zero calibrant: 3 / 10 × its mean, or its mean + 3 / 10 SD.",
   use_rsd20 = "The LLOQ level must also have an RSD% of at most 20%.",

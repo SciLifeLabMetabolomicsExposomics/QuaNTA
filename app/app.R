@@ -68,9 +68,13 @@ e_common(
 )
 
 
-spinner <- function(x, size = 1.5) {
-  withSpinner(x, type = 4, color = "#0072B2", size = size,
-              caption = "Loading ... Do not refresh or change tab")
+#' An output with a loading spinner. `once = TRUE`: the spinner only until the output is first
+#' shown; later updates (e.g. another batch) replace it without a spinner or greying (see the
+#' script "Spinners shown once" in the page head)
+spinner <- function(x, size = 1.5, once = FALSE) {
+  out <- withSpinner(x, type = 4, color = "#0072B2", size = size,
+                     caption = "Loading ... Do not refresh or change tab")
+  if (once) div(class = "q-spin-once", out) else out
 }
 # Normalization methods (matrix IDs) and their labels in the UI
 NORM_METHOD_LABELS <- c(
@@ -115,7 +119,12 @@ SECTION_TIPS <- list(
   "4.3" = "Number of chemicals per batch with a valid calibration curve and concentrations in the samples.",
   "4.4" = "The calibration curve of the chemical selected in 4.2, in two modes (buttons, or the arrow keys left / right). Calibration inspection: all calibration points, coloured by their role (within the calibration range, above the ULOQ, at the LOD, Cal0, out of range), one shape per batch. Final calibration model: the fitted curve, the calibration points it was fitted on, and the QCs (blue; the QC group in the hover text) and study samples (by class) at their concentration; values replaced by the LOD/LLOQ rules are open circles. Grey areas below the LOD and the LLOQ, olive above the ULOQ (the actual top of the linear range), each limit labelled in its colour; the parameters of the curve above the plot. For a chemical quantified with the global curve, Curve chooses the calibration points of all batches or of the selected batch only. The title is coloured as the row in 4.2 (red: not valid, orange: kept although not valid, blue: global curve, grey: removed).",
   "4.5" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
-  "4.6" = "The selected chemical in the QC samples of all batches along the injection order, a line per QC group: the values should be stable over the run. Open points: values replaced by the LOD/LLOQ rules."
+  "4.6" = paste("The selected chemical in the QC samples of all batches (each with its own calibration).",
+                "Control chart: the % deviation of each QC from the median of its QC group along the injection order,",
+                "with a band at ±15%, lines at ±30%, a trend line and the QCs beyond ±30% ringed in red.",
+                "Per batch: the QC values of each batch with mean ± SD and CV% (red above 15%); the dashed line is",
+                "the mean of all batches. The chips give the QCs beyond the limits and the CV% per batch and between",
+                "batches (measured values only). Open points: values replaced by the LOD/LLOQ rules.")
 )
 #' A title with its number and the info icon of `SECTION_TIPS`, e.g. tip_title("Features", "2.3")
 tip_title <- function(title, num) tagList(paste0(title, " (", num, ")"), info_tip(SECTION_TIPS[[num]]))
@@ -159,25 +168,24 @@ ui <-
       ),
       span(class = "quanta-brand-divider"),
       tags$img(class = "quanta-brand-partner", src = "SciLifeLab_Logotype_Green_POS.png",
-               alt = "SciLifeLab")
+               alt = "SciLifeLab"),
+      span(class = "quanta-brand-divider"),
+      # Trimmed copy of SU_logotyp_Landscape_1000px.png (the empty margins cropped)
+      tags$img(class = "quanta-brand-partner quanta-brand-su", src = "SU_logotyp_Landscape_trimmed.png",
+               alt = "Stockholm University")
     ),
     window_title = "QuaNTA",   # text in the browser tab; fixes the last warning
     header = tags$head(
-      tags$link(rel = "icon", type = "image/jpeg", href = "QuaNTA_square_2.jpg"),   # Browser tab icon
+      # Browser tab icon (square PNGs made from QuaNTA_square_2.jpg) and the icon on phone home screens
+      tags$link(rel = "icon", type = "image/png", sizes = "32x32", href = "quanta-icon-32.png"),
+      tags$link(rel = "icon", type = "image/png", sizes = "256x256", href = "quanta-icon-256.png"),
+      tags$link(rel = "apple-touch-icon", sizes = "180x180", href = "quanta-icon-180.png"),
       tags$script(src = "split.min.js"),
       tags$link(rel = "stylesheet", href = "fonts/fonts.css"),   # Lato, Oswald, JetBrains Mono (local)
       # The QuaNTA design; "?v=" (the file's modification time) makes browsers load a changed file
       tags$link(rel = "stylesheet",
                 href = paste0("quanta.css?v=", as.integer(file.mtime("www/quanta.css")))),
       shinyjs::useShinyjs(),   # Enable / disable buttons from the server
-      # Start a download from the server: clicks the (hidden) download link with the given ID.
-      # Used when a file is ready after a background task (external report, session data).
-      tags$script(HTML("
-        Shiny.addCustomMessageHandler('quantaClickDownload', function(id) {
-          var a = document.getElementById(id);
-          if (a) a.click();
-        });
-      ")),
       # All plotly plots: a light grey plot area (grid lines: www/quanta.css), as in the internal report
       tags$script(HTML("
         (function () {
@@ -310,25 +318,21 @@ ui <-
           "Input data settings",
           icon_name = "folder-open",
           subtitle = "Provide project information and input files.",
-          # Session data save / load hidden for now (very large files); the code is kept:
-          # sessionLoadUI("session_data"), .hr(),   # Load saved session data (.rds), R/sessionData.R
           msdialInfoUI("data_info")
         ),
         quanta_card(
-          "Data processing settings",
+          "Settings",
           icon_name = "gear",
           subtitle = "Configure processing, quality control and calibration options.",
           # Parameters and processing settings (.yml), in a row of the header under the subtitle:
           # always visible, and the title keeps its full width
           below = bslib::tooltip(
-            msdialInfoDownloadUI("data_info", label = "Download settings (.yml)", class = "btn-sm-quanta"),
+            msdialInfoDownloadUI("data_info", label = "Download parameters", class = "btn-sm-quanta"),
             "Download the project information and all processing settings as a .yml file, to load them again later.",
             placement = "bottom"
           ),
           runReadMsdialUI("read_msdial"),
           runProcessUI("proc")
-          # Session data save hidden for now (very large files); the code is kept:
-          # sessionSaveUI("session_data"),   # Save session data (.rds), R/sessionData.R
         ),
         card(
           class = "q-log",
@@ -405,13 +409,19 @@ ui <-
                               tip_title("Raw RSD%", "3.4"),
                               style = "margin: 0;"
                             ),
-                            spinner(DT::DTOutput("tb_3_4_1")))),
+                            # Drawn in the browser (www/quanta_figs.js) with the data of 3.5
+                            div(id = "is_rsd_table"))),
         #Card
         quanta_card_resize("Figures", "qc-right",
                     # Title with the IS selected in 3.1 (server: title_3_5)
                     section(tagList(textOutput("title_3_5", inline = TRUE), " (3.5)",
                                     info_tip(SECTION_TIPS[["3.5"]])),
-                            spinner(plotlyOutput("ggplot3_1_3", height = "500px")),
+                            # Drawn in the browser (www/quanta_figs.js) from the data of all IS, sent
+                            # once (the message "is_dist_data"): the IS of the row selected in 3.1
+                            htmltools::attachDependencies(
+                              div(id = "is_dist_plot", style = "width: 100%; min-height: 500px;"),
+                              local({ box::use(show = projlib/show); show$plotly_js_dependency() })
+                            ),
                             spinner(uiOutput("remove_failedIS_outlier"))),
                     div(
                       h3(tip_title("Volumetric internal standards", "3.6"), style = "margin: 0 0 8px 0;"),
@@ -557,7 +567,7 @@ ui <-
                         tip_title("Calibration curve samples", "4.1"),
                         style = "margin: 0;"
                       ),
-                      spinner(DT::DTOutput("tb_4_1")),
+                      spinner(DT::DTOutput("tb_4_1"), once = TRUE),
                     ),
                     div(
                       style = "padding: 0;",
@@ -565,7 +575,7 @@ ui <-
                         tip_title("Calibration curve limits", "4.2"),
                         style = "margin: 0;"
                       ),
-                      spinner(DT::DTOutput("tb_4_2")),
+                      spinner(DT::DTOutput("tb_4_2"), once = TRUE),
                     ),
                     div(
                       style = "padding: 0;",
@@ -573,7 +583,7 @@ ui <-
                         tip_title("Removal of chemicals with no measurement samples", "4.3"),
                         style = "margin: 0;"
                       ),
-                      spinner( DT::DTOutput("tb_4_5")),
+                      spinner(DT::DTOutput("tb_4_5"), once = TRUE),
                     )),
         quanta_card_resize("Figures", "cal-right",
                     # The calibration curve of the chemical selected in 4.2, drawn in the browser
@@ -596,23 +606,18 @@ ui <-
                         tip_title("Concentration", "4.5"),
                         style = "margin: 0;"
                       ),
-                      div(
-                        style = "width: 100%;",
-                        # As high as the plot (460 px), so that it does not cover the title of 4.6
-                        spinner(plotlyOutput("ggplot5_1", height = "470px")),
-                      )
+                      # Drawn in the browser (www/quanta_figs.js) from the data sent with the
+                      # calibration curves ("calcurve_data"): the chemical selected in 4.2
+                      div(id = "conc_class_plot", style = "width: 100%; min-height: 470px;")
                     ),
                     div(
                       h3(
-                        tip_title("QC samples in acquisition order", "4.6"),
+                        tip_title("QC samples", "4.6"),
                         style = "margin: 0;"
                       ),
-                      p("The chemical selected in 4.2, in the QC samples of all batches (each with its",
-                        "own calibration), along the injection order."),
-                      div(
-                        style = "width: 100%;",
-                        spinner(plotlyOutput("ggplot4_7", height = "460px")),
-                      )
+                      p("The chemical selected in 4.2 in the QC samples of all batches: as a control chart",
+                        "along the injection order, or per batch with the CV%."),
+                      div(id = "qc_conc_plot", style = "width: 100%; min-height: 500px;")
                     )
                   )
       ),
@@ -631,26 +636,39 @@ ui <-
       # the chemical of the row selected in table 4.2 (by click or arrow keys up / down) shown at
       # once; left / right switch between the two modes
       tags$script(src = "calcurve_viewer.js"),
+      tags$script(src = "quanta_figs.js"),
       tags$script(HTML("
         (function () {
-          var V = null;
-          // The data index of the row selected in table 4.2 (the order of the viewer's chemicals)
-          function selectedRow() {
-            var t = $('#tb_4_2 table.dataTable');
-            if (!t.length || !$.fn.dataTable.isDataTable(t[0])) return null;
-            var r = t.DataTable().rows('.selected').indexes();
+          var V = null, D = null, shown = null;
+          // The data index of the row selected in a table (`id` of the output). A scrolling table
+          // has a copy of its header in a table of its own (also of class 'dataTable', first in
+          // the page): the table with the rows is the one in the scrolling body
+          window.quantaSelectedRow = function (id) {
+            var t = $('#' + id + ' .dataTables_scrollBody table.dataTable')[0] || $('#' + id + ' table.dataTable')[0];
+            if (!t || !$.fn.dataTable.isDataTable(t)) return null;
+            var r = $(t).DataTable().rows('.selected').indexes();
             return r.length ? r[0] : null;
+          };
+          // The row selected in table 4.2 (the order of the viewer's chemicals)
+          function selectedRow() { return quantaSelectedRow('tb_4_2'); }
+          // Figures 4.5 and 4.6 (www/quanta_figs.js) of the chemical shown in 4.4
+          function drawFigs(i) {
+            var c = D && D.compounds[i] ? D.compounds[i].id : null;
+            QuantaFigs.concByClass(document.getElementById('conc_class_plot'), D && D.figs, c, D && D.log_scale);
+            QuantaFigs.qcConc(document.getElementById('qc_conc_plot'), D && D.figs, c);
           }
+          function show(i) { shown = i; V.show(i); drawFigs(i); }
           function sync() {
             if (!V) return;
             var r = selectedRow();
-            if (r !== null && r !== V.state().i) V.show(r);
+            if (r !== null && r !== shown) show(r);
           }
           Shiny.addCustomMessageHandler('calcurve_data', function (json) {
             var d = JSON.parse(json), el = document.getElementById('calcurve_viewer');
+            D = d;
             if (!V) V = QuantaCalViewer(el, d, { keys: true, height: 500 }); else V.setData(d);
             var r = selectedRow();
-            V.show(r === null ? 0 : r);
+            show(r === null ? 0 : r);
           });
           // A row selected in table 4.2 (also when the table is drawn again)
           var pending = false;
@@ -663,50 +681,111 @@ ui <-
             var t = document.getElementById('tb_4_2');
             if (t) obs.observe(t, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
           });
-          // Drawn while page 4 was hidden: fit the plot to its width when the page is shown
-          $(document).on('shown.bs.tab', function () { if (V) setTimeout(V.redraw, 60); });
-          window.addEventListener('resize', function () { if (V) V.redraw(); });
+          // Drawn while the page was hidden: fit the plots to their width when the page is shown
+          var figIds = ['conc_class_plot', 'qc_conc_plot', 'is_dist_plot'];
+          function redrawAll() {
+            if (V) V.redraw();
+            figIds.forEach(function (id) { QuantaFigs.redraw(document.getElementById(id)); });
+          }
+          $(document).on('shown.bs.tab', function () { setTimeout(redrawAll, 60); });
+          window.addEventListener('resize', redrawAll);
+
+          // Figure 3.5: the IS of the row selected in table 3.1, from the data of all IS
+          var IS = null, isShown;
+          function isRow() { return quantaSelectedRow('tb_3_1'); }
+          function isSync(force) {
+            if (!IS) return;
+            var r = isRow();
+            if (force || r !== isShown) {
+              isShown = r;
+              QuantaFigs.isDistribution(document.getElementById('is_dist_plot'), IS, r);
+              QuantaFigs.isRsdTable(document.getElementById('is_rsd_table'), IS, r);
+            }
+          }
+          Shiny.addCustomMessageHandler('is_dist_data', function (json) { IS = JSON.parse(json); isSync(true); });
+          var isPending = false;
+          var isObs = new MutationObserver(function () {
+            if (isPending) return;
+            isPending = true;
+            requestAnimationFrame(function () { isPending = false; isSync(false); });
+          });
+          $(function () {
+            var t = document.getElementById('tb_3_1');
+            if (t) isObs.observe(t, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+          });
+
+          // Spinners shown once (`spinner(once = TRUE)`): after an output was first shown, its
+          // updates come without the spinner and without greying the earlier output
+          $(document).on('shiny:value shiny:error', function (e) {
+            $(e.target).closest('.q-spin-once').addClass('q-loaded');
+          });
+          $(document).on('shiny:outputinvalidated', function (e) {
+            var t = $(e.target);
+            if (!t.closest('.q-spin-once.q-loaded').length) return;
+            t.siblings('.load-container').addClass('shiny-spinner-hidden');
+            t.css('visibility', 'visible');
+          });
         })();
       "))
     ),
     nav_panel(
       title = quanta_step(5, "Report\nexport", last = TRUE),
       value = "reports",
-      # Final normalization method: used by both reports and the exported tables. Nothing is
-      # pre-selected; the generate / export buttons stay disabled until a method is chosen.
-      div(
-        style = "width: 40%; min-width: 320px;",
+      # Top row: the final normalization method (used by both reports and the exported tables;
+      # nothing is pre-selected, the generate / export buttons stay disabled until a method is
+      # chosen), generating the reports, and exporting the tables
+      layout_columns(
+        col_widths = c(5, 3, 4),
+        fill = FALSE,
         quanta_card("Final normalization method",
                     icon_name = "sliders",
                     subtitle = "Used for both reports and the exported tables.",
-                    spinner(uiOutput("final_norm_ui")))
-      ),
-      layout_columns(
-        col_widths = c(9, 3),
+                    spinner(uiOutput("final_norm_ui"))),
         quanta_card(
           "Report",
           icon_name = "file-lines",
           subtitle = "Generate the internal (HTML) and external (PDF) reports.",
-          genReportUI("report"),
-          # Above the report: the rendered report is long and scrolls on its own
-          div(
-            class = "d-flex justify-content-center my-2",
-            downloadButton(
-              outputId = "download_report",
-              label    = "Download HTML Report",
-              class    = "btn btn-sm btn-primary",
-              style    = "font-size:18px; padding:12px 24px;"
-            )
-          ),
-          spinner(uiOutput("the_report"))
+          genReportUI("report")
         ),
-        quanta_card("Export datasets",
+        quanta_card("Export tabular data",
                     icon_name = "table",
                     subtitle = "Export the tables of the final normalization method.",
                     # Exports the normalized, blank-subtracted and concentration tables of the
                     # final normalization method selected at the top of this panel
+                    uiOutput("export_size_note"),
                     runScriptUI("export_data", label = "Export data into tables", download=T)
                   )
+      ),
+      # Second row, the whole width: the generated reports, one tab each (the tab of a report is
+      # shown when it has been generated). The box fills the rest of the window and the report
+      # fills the box, scrolling on its own (`.q-preview` in www/quanta.css): one scroll bar
+      quanta_card(
+        "Preview report",
+        icon_name = "eye",
+        subtitle = "The latest generated report of each kind.",
+        class = "q-preview",
+        navset_underline(
+          id = "report_tabs",
+          nav_panel(
+            "QC/QA report (html)", value = "internal",
+            # The download button in the upper right corner of the tab
+            div(
+              class = "d-flex justify-content-end my-2",
+              downloadButton(outputId = "download_report", label = "Download HTML report",
+                             class = "btn btn-sm btn-primary", style = "font-size:16px; padding:8px 20px;")
+            ),
+            spinner(uiOutput("the_report"))
+          ),
+          nav_panel(
+            "Summary report (pdf)", value = "external",
+            div(
+              class = "d-flex justify-content-end my-2",
+              downloadButton(outputId = "download_external_report", label = "Download PDF report",
+                             class = "btn btn-sm btn-primary", style = "font-size:16px; padding:8px 20px;")
+            ),
+            spinner(uiOutput("the_external_report"))
+          )
+        )
       )
     ),
     # Help icon in the top-right corner; the popup content is in R/helpPopup.R
@@ -813,14 +892,6 @@ server <- function(input, output, session) {
   shiny::observeEvent(input[["proc-run_button"]], {
     bslib::nav_select("log_tabs", "Processing log")
   }, ignoreInit = TRUE)
-  # Save / load the session data (.rds); changes when data has been loaded
-  session_loaded <- sessionDataServer(
-    "session_data",
-    data_info = data_info,
-    ws = ws,
-    processing_params = shiny::reactive(collect_processing_params(input))
-  )
-  
   runScriptServer2(
     "export_data",
     script_path = "scripts/export_data.R",
@@ -829,7 +900,11 @@ server <- function(input, output, session) {
     ws = ws,
     norm_method = final_norm_method_r
   )
-  
+  output$export_size_note <- shiny::renderUI({
+    tr <- tryCatch(to_report_r(), error = function(e) NULL)   # Nothing before the processing
+    export_size_note(tr[["export table values"]], session)
+  })
+
   # ---- 4. Cached data reactives: raw_se_r, to_report_r, proc_r, ... ----
   # Keep whatever mechanism you use today to load this file, but it must run here, i.e. after
   # `ws`, `data_info`, `read_done` and `proc_done` exist.
@@ -845,22 +920,49 @@ server <- function(input, output, session) {
     no_external_reason = shiny::reactive(if (is_target_mode()) NULL else no_calib_msg_r())
   )
 
-  output$the_report <- shiny::renderUI({
-    # Re-reading / a new upload / loading parameters deletes the report (see below / msdialInfo.R):
-    # hide it then
+  # The generated reports in "Preview report", a tab each. Re-reading / a new upload / loading
+  # parameters deletes the reports (see below / msdialInfo.R): hidden then
+  report_frame <- function(path) {
+    if (is.null(path) || !nzchar(path) || !file.exists(path)) {
+      return(div(class = "q-note-line", style = "padding: 24px 0;", "Not generated yet."))
+    }
+    # Relative URL (no leading "/"): keeps working behind a proxy / sub-path. As high as the box
+    # leaves room for (`.q-preview iframe` in www/quanta.css); the report scrolls inside it
+    tags$iframe(src = paste0(ws$prefix, "/", basename(path), "?t=", as.numeric(Sys.time())),
+                class = "q-report-frame")
+  }
+  reports_shown <- function() {
     input[["read_msdial-run_button"]]
     input[["data_info-input_file_upload"]]
     results_reset()
-    shiny::req(report_obj$report_ready())
-    path <- report_obj$report_path()
-    shiny::req(file.exists(path))
-    # Relative URL (no leading "/"): keeps working behind a proxy / sub-path
-    tags$iframe(
-      src = paste0(ws$prefix, "/", basename(path), "?t=", as.numeric(Sys.time())),
-      style = "width:100%; height:3000px; border:none;"
-    )
+  }
+  output$the_report <- shiny::renderUI({
+    reports_shown()
+    report_obj$report_ready()
+    report_frame(report_obj$report_path())
   })
+  output$the_external_report <- shiny::renderUI({
+    reports_shown()
+    report_obj$external_ready()
+    report_frame(report_obj$external_path())   # The browser's PDF viewer
+  })
+  # A report just generated: its tab is shown
+  shiny::observeEvent(report_obj$report_ready(), {
+    bslib::nav_select("report_tabs", "internal")
+  }, ignoreInit = TRUE)
+  shiny::observeEvent(report_obj$external_ready(), {
+    bslib::nav_select("report_tabs", "external")
+  }, ignoreInit = TRUE)
   
+  output$download_external_report <- shiny::downloadHandler(
+    filename = function() basename(report_obj$external_path() %||% "external_report.pdf"),
+    content = function(file) {
+      path <- report_obj$external_path()
+      if (is.null(path) || !file.exists(path)) stop("Generate the report first.")
+      file.copy(path, file, overwrite = TRUE)
+    },
+    contentType = "application/pdf"
+  )
   output$download_report <- shiny::downloadHandler(
     # The name of the generated file, with the time of generation
     filename = function() basename(report_obj$report_path()),
@@ -876,13 +978,17 @@ server <- function(input, output, session) {
   # ---- Re-reading makes earlier processing results outdated: remove them ----
   # The processed data, exported tables and reports of this session are deleted when "Read MS-Dial
   # output files" is clicked (before the read starts: higher priority than the module's observer),
-  # so the QC / Calibration / Reports tabs stay empty until the data is processed again.
+  # so the QC / Calibration / Reports tabs stay empty until the data is processed again. Not while
+  # another step runs: the read is refused then, and that step still needs the files.
   shiny::observeEvent(input[["read_msdial-run_button"]], {
+    if (session_busy(session)()) return()
     f <- data_info[["input_file"]]
     # Also the earlier read data: after a read with input errors, nothing can be processed
     if (!is.null(f) && nzchar(f)) {
       unlink(c(rds_file(""), rds_file("proc"), rds_file("to_report"), rds_file("app")))
-      unlink(Sys.glob(sub("\\.rds$", "*.rds", rds_file("blank_"))))   # The values of 3.11 per method
+      unlink(rds_file("info"))
+      # The values of all features per data version
+      unlink(Sys.glob(sub("\\.rds$", "*.rds", c(rds_file("norm_"), rds_file("blk_")))))
     }
     unlink(file.path(ws$intermediate, "input_errors.txt"))
     unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
@@ -906,17 +1012,18 @@ server <- function(input, output, session) {
   })
 
   # ---- Step buttons are disabled (greyed out) until their input exists ----
-  # - "Read MS-Dial output files": an MS-DIAL file has been uploaded (or restored from a session)
-  # - "Process data": the read data exists (after reading, or restored from a session)
+  # - "Read MS-Dial output files": an MS-DIAL file has been uploaded
+  # - "Process data": the read data exists
+  # Both greyed out while a step of the session runs (they write the files it reads)
   shiny::observe({
     read_done()
-    session_loaded()
     input[["data_info-input_file_upload"]]   # A new upload deletes the earlier read data
+    free <- !session_busy(session)()
     f <- data_info[["input_file"]]
     has_input <- !is.null(f) && nzchar(f) && file.exists(f)
     has_parsed <- has_input && file.exists(rds_file(""))
-    shinyjs::toggleState("read_msdial-run_button", condition = has_input)
-    shinyjs::toggleState("proc-run_button", condition = has_parsed)
+    shinyjs::toggleState("read_msdial-run_button", condition = has_input && free)
+    shinyjs::toggleState("proc-run_button", condition = has_parsed && free)
   }, priority = -10)   # After the upload handler has deleted the earlier data
 
   # ---- Final normalization method (top of the Reports panel) ----
@@ -1048,7 +1155,6 @@ server <- function(input, output, session) {
   # Stops a calibration table or figure with that message in non-target mode
   need_calibration <- function() shiny::validate(shiny::need(is_target_mode(), no_calib_msg_r()))
   MSG_SELECT_CHEMICAL <- "Select a chemical in table 4.2 (left) to show it here."
-  MSG_SELECT_IS <- "Select an internal standard in table 3.1 (left) to show it here."
 
   output$tb_2_1_1 <- DT::renderDataTable({
     # shiny::req(raw_se)
@@ -1336,23 +1442,20 @@ server <- function(input, output, session) {
       "Distribution of intensities of the selected IS feature"
   })
 
-  # The IS selected in table 3.1: box plot per sample group and scatter plot along the injection
-  # order, the same as in the internal report (all samples; outliers drawn as crosses)
-  output$ggplot3_1_3 <- plotly::renderPlotly({
-    se <- internal_std_se_r()
-    shiny::validate(shiny::need(input$tb_3_1_rows_selected, MSG_SELECT_IS))   # Before a row is selected
-    ii <- input$tb_3_1_rows_selected
-    cd <- SumExp::col_df(se)
-    smp <- tibble::as_tibble(cd) |> dplyr::mutate(group = show$sample_group(cd))
-    is_out <- to_report_r()[["is outlier sample"]]
-    show$plotly_is_distribution(
-      y = unname(se[["raw"]][ii, ]),
-      smp = smp,
-      name = SumExp::row_df(se)$feature_name[ii],
-      outlier = if (is.null(is_out)) rep(FALSE, ncol(se)) else unname(is_out[colnames(se)] %in% TRUE),
-      failed = isTRUE(to_report_r()[["is failed internal std."]][[ii]]),
-      height = 480
-    )
+  # Figure 3.5, the IS selected in table 3.1: box plot per sample group and scatter plot along the
+  # injection order, the same as in the internal report (all samples; outliers drawn as crosses).
+  # The data of all IS (rows in the order of table 3.1) is sent once; the browser draws the selected
+  # one at once (www/quanta_figs.js)
+  shiny::observe({
+    se <- shiny::req(tryCatch(internal_std_se_r(), error = function(e) NULL))
+    tr <- to_report_r()
+    # Table 3.4: the RSD% of each IS per QC group and sample class (prepared by process.R; computed
+    # here for data processed by older versions)
+    rsd <- app_data_r()[["is rsd"]]
+    if (is.null(rsd)) rsd <- show$is_rsd_by_group(se)
+    data <- show$is_distribution_data(se, outlier = tr[["is outlier sample"]], failed = tr[["is failed internal std."]],
+                                      rsd = rsd)
+    session$sendCustomMessage("is_dist_data", show$calib_viewer_json(data))
   })
 
 
@@ -1519,69 +1622,7 @@ server <- function(input, output, session) {
   })
 
   ################################################################################################################
-  ### This is for table 3.4
-
-
-  output$tb_3_4_1 <- DT::renderDataTable({
-    # RSD% of each IS per QC group and sample class (prepared by process.R; computed here for data
-    # processed by older versions)
-    prep <- app_data_r()[["is rsd"]]
-    if (is.null(prep)) prep <- show$is_rsd_by_group(shiny::req(internal_std_se_r()))
-    m_rsd <- prep$rsd
-    n_smpl <- prep$n
-
-    shiny::validate(shiny::need(input$tb_3_1_rows_selected, MSG_SELECT_IS))
-    selected <- input$tb_3_1_rows_selected
-
-    m_rsd <- m_rsd[, selected, drop = FALSE]
-    # A fixed column name (the IS is in the caption): a table drawn for another IS would otherwise
-    # ask for a column that no longer exists when the selection changes quickly
-    is_name <- colnames(m_rsd)[1]
-    colnames(m_rsd) <- "RSD%"
-    # Why a group has no RSD%: it needs at least two samples (or values that are not all 0)
-    rsd_v <- m_rsd[, 1]
-    note <- dplyr::case_when(
-      n_smpl < 2 ~ paste0("Too few samples (n = ", n_smpl, "): RSD% needs at least 2"),
-      !is.finite(rsd_v) ~ "Not computable: all values 0 or missing",
-      TRUE ~ ""
-    )
-    m_rsd <- data.frame(m_rsd, n = n_smpl, check.names = FALSE)
-    if (any(nzchar(note))) m_rsd$Note <- note
-
-    DT::datatable(
-      m_rsd,
-      selection = "none",   # Clicking a row has no effect
-      caption = is_name,
-      options = list(
-        scrollX = TRUE,
-        lengthChange = FALSE,
-        searching = FALSE,
-        paging = FALSE, # remove Previous/Next
-        scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
-        info = FALSE, # remove "Showing X to Y of Z entries"
-        dom = "t",
-        headerCallback = JS(
-          "function(thead){",
-          "$(thead).find('th').css({'color': 'green',
-                                            'font-weight': 'bold'});", "}"
-        ),
-        columnDefs = list(
-          list(className = "dt-center", targets = "_all") # <--- centers all text
-        )
-      )
-    ) |>
-      DT::formatStyle(
-        columns = names(m_rsd),
-        color = "#000000",
-        backgroundColor = "#FFFFFF",
-        target = "cell"
-      ) |>
-      DT::formatStyle(
-        names(m_rsd),
-        backgroundColor = "#F8FAFF",
-        target = "row"
-      )
-  })
+  ### Table 3.4 is drawn in the browser (www/quanta_figs.js) with the data of 3.5 (see "Figure 3.5")
 
 
   ################################################################################################################
@@ -1598,13 +1639,14 @@ server <- function(input, output, session) {
     smp <- tibble::as_tibble(cd) |> dplyr::mutate(group = show$sample_group(cd))
     # The plots without the calibration samples unless asked for (the RSD% table has all samples)
     keep <- isTRUE(input$vis_show_calibrants) | cd$.ctrl_cat != "CalCurve"
+    vis_raw <- SumExp::metadata(se)$vis_raw %||% se[["raw"]][vis, , drop = FALSE]
     plots <- lapply(vis, function(i) {
       nm <- SumExp::row_df(se)$feature_name[i]
-      list(name = nm, plot = show$plotly_vis_bars(unname(se[["raw"]][i, keep]), smp[keep, ], nm,
+      list(name = nm, plot = show$plotly_vis_bars(unname(vis_raw[rownames(se)[i], keep]), smp[keep, ], nm,
                                                   colour_by = input$vis_colour %||% "group"))
     })
     # RSD% of the vIS within groups of samples, as in the internal report
-    rsd <- show$vis_rsd_table(se[["raw"]][vis, , drop = FALSE], SumExp::row_df(se)$feature_name[vis], cd) |>
+    rsd <- show$vis_rsd_table(vis_raw, SumExp::row_df(se)$feature_name[vis], cd) |>
       dplyr::mutate(Grouping = factor(Grouping), Group = factor(Group))
     rsd_tbl <- DT::datatable(rsd, rownames = FALSE, filter = "top", selection = "none",
                              options = list(paging = FALSE, scrollY = "400px", scrollCollapse = TRUE, scrollX = TRUE,
@@ -1780,9 +1822,10 @@ server <- function(input, output, session) {
     m <- shiny::req(input$blank_values)
     shiny::req(m %in% b$methods)
     if (!is.null(b$se)) return(b$se[[m]])
-    f <- rds_file(paste0("blank_", m))
+    f <- rds_file(paste0("norm_", m))
     shiny::validate(shiny::need(file.exists(f), MSG_NOT_PROCESSED))
-    readRDS(f)
+    vals <- readRDS(f)
+    vals[rownames(b$row_df), , drop = FALSE]   # Without the internal standards
   })
   # Feature type and label of each feature: names, or "Unk_<m/z>_<RT>" for non-targeted features
   blank_features_r <- shiny::reactive({
@@ -2136,46 +2179,19 @@ server <- function(input, output, session) {
     b <- input$calib_batch
     shiny::req(b %in% names(lst))
     tr <- to_report_r()
-    mat_blk <- util$mat_id_of_blank_subtracted(input$norm_method)
     x <- lst[[b]]
-    rd <- SumExp::row_df(x$calcurve)
-    # Removed before calibration (blank filter / QC RSD% filter), as at the end of table 4.2
-    rem <- tr[["removed features"]]
-    rem <- if (is.null(rem)) rem[0, ] else rem[rem$mat_id == input$norm_method & rem$targeted, ]
-    norm <- tr[["normalized"]]
-    removed_v <- if (nrow(rem) > 0 && !is.null(norm) && input$norm_method %in% names(norm)) {
-      rf <- tr[["qc rsd filter"]]
-      why <- ifelse(rem$reason == "QC RSD%", paste0("QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
-                    "blank filter")
-      show$calib_view_removed(norm, input$norm_method, rem$feature_id, stats::setNames(why, rem$feature_id),
-                              batch = if (b %in% as.character(SumExp::col_df(norm)$batch_id)) b)
-    }
-    # Why the whole batch uses the global curve (saved by process.R), e.g. too few replicates; a
-    # batch with some chemicals on the global curve gives their reasons per chemical
-    reason <- SumExp::metadata(x$concn)$calibration_note
-    whole <- identical(as.character(SumExp::col_df(x$concn)$calibration[1]), "Global")
-    why_global <- if (whole && length(reason) == 1 && !is.na(reason)) paste0(" Reason for the global curve: ", reason, ".") else ""
-    multi <- length(lst) > 1
-    views <- list()
-    if (multi) {
-      views[["All batches (global curve)"]] <- list(
-        parts = list(show$calib_view_all_batches(lst, b, mat_blk)),
-        info = paste0("Concentrations in batch ", b, " were calculated with the global curve, fitted on the ",
-                      "calibration points of all batches shown here.", why_global))
-    }
-    views[[if (multi) paste0("Batch ", b, " only") else "All samples"]] <- list(
-      parts = list(show$calib_view_of_batch(x, mat_blk), removed_v),
-      info = paste0("Only batch ", b, "'s calibration points are shown: the concentrations were calculated with the ",
-                    "global curve, fitted on the calibration points of all batches.", why_global),
-      info_warn = TRUE)
+    cv <- show$calib_views_of_batch(lst, b, tr, input$norm_method)
     data <- show$calib_viewer_data(
-      compounds = data.frame(id = c(rownames(x$calcurve), rem$feature_id), name = c(rd$feature_name, rem$feature_name)),
-      views = views,
+      compounds = cv$compounds,
+      views = cv$views,
       log_scale = isTRUE(tr[["params"]][["log_calibration"]]),
       unit = show$conc_unit(x$concn),
-      y_title = show$label_if_has(x$concn[[util$mat_id_in_calibration(mat_blk)]], "Signal"),
+      y_title = show$label_if_has(x$concn[[util$mat_id_in_calibration(util$mat_id_of_blank_subtracted(input$norm_method))]], "Signal"),
       class_colors = colors_of_classes()
     )
+    # Figures 4.5 and 4.6 of the same chemical (www/quanta_figs.js): its concentrations in the
+    # batch, and in the QCs of all batches
+    data$figs <- show$conc_figs_data(lst, b, colors_of_classes())
     session$sendCustomMessage("calcurve_data", show$calib_viewer_json(data))
   })
 
@@ -2398,87 +2414,8 @@ server <- function(input, output, session) {
 
 
 
-  ################################################################################################################
-  ### This is for Figure 4.5
-
-  output$ggplot5_1 <- renderPlotly({
-    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
-
-    if (shiny::req(is_target_mode())) {
-      log_scale <- isTRUE(to_report_r()[["params"]][["log_calibration"]])
-
-      # ------------------------------------------------------------
-      # Prepare data of the selected batch and chemical (by feature ID, not by name)
-      feature_id <- calib_selected_feature_r()
-      concn_se <- calib_batch_proc_r()$concn   # Evaluated before the S4 method (a `req()` there gives an error message)
-      shiny::req(feature_id %in% rownames(concn_se))
-      df1 <- SumExp::as_tibble(concn_se[feature_id, ])   # The selected chemical only (fast)
-
-      # ------------------------------------------------------------
-      # No concentrations: a message instead of an empty plot
-      # Values below the LOD / LLOQ without a value ("n.d." / "n.q."), when not replaced
-      flag <- if ("conc_flag" %in% names(df1)) df1$conc_flag else NULL
-      if (is.null(df1) || nrow(df1) == 0 || all(is.na(df1$conc))) {
-        n_flag <- sum(!is.na(flag))
-        plotly::plotly_empty(type = "scatter", mode = "markers") |>
-          plotly::layout(
-            xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
-            annotations = list(list(text = if (n_flag > 0) {
-                                      "All values below the LOD / LLOQ (n.d. / n.q.)"
-                                    } else {
-                                      "Not detected / quantified in samples"
-                                    }, x = 0.5, y = 0.5,
-                                    xref = "paper", yref = "paper", showarrow = FALSE,
-                                    font = list(size = 24, color = "gray")))
-          )
-      } else {
-        # ------------------------------------------------------------
-        # Box per class; points of the values replaced by the LOD/LLOQ rules coloured as in
-        # the exported tables. Hover for the sample; Linear/Log buttons
-        hover <- paste0("<b>", df1$sample_name, "</b><br>", df1$Class, " · batch ", df1$batch_id,
-                        " · inj. ", df1$injection_order, "<br>conc. ", show$num_txt(df1$conc),
-                        " (", show$imputed_kind(df1$conc, df1$lloq), ")")
-        show$plotly_conc_by_class(
-          conc = df1$conc, lloq = df1$lloq, cats = as.character(df1$Class),
-          cat_colors = colors_of_classes(), hover = hover, name = df1$feature_name[1],
-          y_title = labelled::get_label_attribute(df1$conc) %||% "Concentration", log = log_scale,
-          flag = flag
-        )
-      }
-    }
-  })
-  ################################################################################################################
-  ### This is for Figure 4.6: the selected chemical in the QC samples of all batches along the
-  ### injection order (each batch with its own calibration), the same as in the internal report
-
-  output$ggplot4_7 <- renderPlotly({
-    to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
-    feature_id <- calib_selected_feature_r()
-    lst_proc <- calib_lst_proc_r()   # Evaluated before the S4 methods (a `req()` there gives an error message)
-    d <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), lst_proc), function(x) {
-      se <- util$extract_ctrl_smpl_cat(x$concn, "QC")
-      if (!feature_id %in% rownames(se) || ncol(se) == 0) return(NULL)
-      se <- se[rownames(se) == feature_id, ]
-      flag <- if ("conc_flag" %in% names(se)) as.character(se[["conc_flag"]][1, ]) else NA_character_
-      cd <- SumExp::col_df(se)
-      tibble::tibble(sample_name = cd$sample_name, Class = as.character(cd$Class),
-                     batch_id = as.character(cd$batch_id), injection_order = cd$injection_order,
-                     conc = unname(se[["conc"]][1, ]), lloq = SumExp::row_df(se)$lloq, flag = flag,
-                     name = SumExp::row_df(se)$feature_name,
-                     unit = labelled::get_label_attribute(se[["conc"]]) %||% "Concentration")
-    }))
-    if (nrow(d) == 0 || all(is.na(d$conc) & is.na(d$flag))) {
-      return(plotly::plotly_empty(type = "scatter", mode = "markers") |>
-        plotly::layout(
-          xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
-          annotations = list(list(text = if (nrow(d) == 0) "No QC samples" else "No concentrations in the QC samples",
-                                  x = 0.5, y = 0.5, xref = "paper", yref = "paper", showarrow = FALSE,
-                                  font = list(size = 24, color = "gray")))
-        ))
-    }
-    d$kind <- show$imputed_kind(d$conc, d$lloq)
-    show$plotly_qc_conc(d, name = d$name[1], y_title = d$unit[1])
-  })
+  # Figures 4.5 and 4.6 are drawn in the browser (www/quanta_figs.js) from the data sent with the
+  # calibration curves (see "Calibration curve viewer (4.4)" above)
 
   ################################################################################################################
   ### This is for table 4.3

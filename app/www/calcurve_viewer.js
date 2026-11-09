@@ -129,13 +129,14 @@
                       yanchor: "middle", showarrow: false, font: { size: 14 } }]
     };
   }
-  // The fitted curve from its coefficients (signal = b0 + b1 x (+ b2 x²); in log scale of
-  // log(conc) and log(signal + 1)), from the start of the curve (LLOQ) to its top
-  function curvePoints(e, log) {
+  // The fitted curve from its coefficients (signal = b0 + b1 x (+ b2 x²); fitted in log scale
+  // (`loglog`): ln(signal) = b0 + b1 ln(conc), a straight line on log axes), from the start of the
+  // curve (LLOQ) to its top. `log`: log axes (points evenly spaced in log scale)
+  function curvePoints(e, log, loglog) {
     var cf = e.coef, from = finite(e.lloq) ? e.lloq : e.min, to = e.top;
-    if (!cf || !cf.length || !finite(from) || !finite(to) || from <= 0 && log || to <= from) return null;
+    if (!cf || !cf.length || !finite(from) || !finite(to) || from <= 0 && (log || loglog) || to <= from) return null;
     var xs = [], n = 120, i;
-    if (log) {
+    if (log || loglog) {
       for (i = 0; i < n; i++) xs.push(Math.exp(Math.log(from) + (Math.log(to) - Math.log(from)) * i / (n - 1)));
     } else {
       // Evenly spaced, and more points at the start (the bend of a quadratic curve near the LLOQ)
@@ -145,9 +146,9 @@
       xs.sort(function (a, b) { return a - b; });
     }
     var ys = xs.map(function (x) {
-      var xx = log ? Math.log(x) : x;
+      var xx = loglog ? Math.log(x) : x;
       var y = cf[0] + cf[1] * xx + (cf.length > 2 ? cf[2] * xx * xx : 0);
-      return log ? Math.exp(y) - 1 : y;
+      return loglog ? Math.exp(y) : y;
     });
     return { x: xs, y: ys };
   }
@@ -277,6 +278,23 @@
       return { x: s.x, y: s.y, kind: s.kind, x0: s.x0, grp: si.grp, cls: si.cls, batch: si.batch, inj: si.inj, name: si.name };
     }
 
+    // The Cal0 points without a signal (0 or less), and on log axes their mark: a red triangle on
+    // the bottom edge, where the Cal0 line would be (a quarter of the lowest concentration), with
+    // the number of such points on hover
+    function cal0Zero(cal) {
+      return idx(cal.x.length).filter(function (j) { return cal.type[j] === "Cal0" && finite(cal.y[j]) && cal.y[j] <= 0; });
+    }
+    function cal0ZeroMark(x) {
+      var cal = calOf(x), k = cal0Zero(cal);
+      var pos = cal.x.filter(function (v, j) { return v > 0 && finite(cal.y[j]); });
+      if (!k.length || !pos.length) return [];
+      var cal0X = Math.min.apply(null, pos) / 4;
+      return [{ x: Math.log10(cal0X), y: 0, xref: "x", yref: "paper", yanchor: "bottom", showarrow: false,
+                text: "▼", font: { color: TYPE_COLORS.Cal0, size: 18 },
+                hovertext: k.length + " Cal0 point" + (k.length > 1 ? "s" : "") + " with signal 0: cannot be shown on a log axis",
+                hoverlabel: { bgcolor: "#fff" } }];
+    }
+
     function inspectTraces(x) {
       var cal = calOf(x), traces = [];
       var batches = [];
@@ -307,6 +325,12 @@
           hoverinfo: "text"
         });
       });
+      // A Cal0 signal of 0 (or less) has no place on a log y axis either: a red triangle on the
+      // bottom edge, at the place of the Cal0 line (`cal0ZeroMark()`), here only in the legend
+      if (state.log && cal0Zero(cal).length && cal0X !== null) {
+        traces.push({ type: "scatter", mode: "markers", x: [null], y: [null], name: "Cal0 signal 0 (▼ at the bottom)",
+                      legendgroup: "Cal0", marker: { color: TYPE_COLORS.Cal0, size: 10, symbol: "triangle-down" }, hoverinfo: "skip" });
+      }
       // The batches (symbols) in the legend, without points of their own
       if (batches.length > 1) {
         batches.forEach(function (b) {
@@ -318,7 +342,7 @@
     }
     function finalTraces(x) {
       var traces = [];
-      var cv = curvePoints(x.e, state.log);
+      var cv = curvePoints(x.e, state.log, !!data.log_scale);
       if (cv) {
         traces.push({ type: "scatter", mode: "lines", name: "Calibration curve", x: cv.x, y: cv.y,
                       hoverinfo: "skip", line: { color: "rgba(95,158,160,0.8)", width: 2 } });
@@ -393,8 +417,9 @@
       if (e.why) html.push(chip(esc(e.why), undefined, e.valid ? "kept" : "warn"));
       if (e.valid && e.src === "Global" && view.info) html.push(chip(esc(view.info), undefined, view.info_warn ? "warn" : undefined));
       if (e.nq) html.push(chip(esc(e.nq), undefined, "kept"));
-      if (e.model) html.push(chip("Model", esc(e.model)));
-      if (finite(e.r2)) html.push(chip("R²", (+e.r2).toFixed(3)));
+      // Curves fitted in log scale: a straight line in log-log scale, with the R² of that fit
+      if (e.model) html.push(chip("Model", data.log_scale ? "Linear in log-log scale" : esc(e.model)));
+      if (finite(e.r2)) html.push(chip(data.log_scale ? "R² (log-log)" : "R²", (+e.r2).toFixed(3)));
       if (finite(e.lod) || finite(e.lloq)) {
         html.push(chip("LOD", finite(e.lod) ? num(e.lod) + u : "–"));
         html.push(chip("LLOQ", finite(e.lloq) ? num(e.lloq) + u : "–"));
@@ -477,7 +502,7 @@
       traces.forEach(function (t) { xs = xs.concat(t.x.filter(finite)); });
       var marks = limitMarks(e.lod, e.lloq, e.valid ? e.uloq : null, log);
       layout.shapes = lloxShapes(e.lod, e.lloq, xs, log).concat(e.valid ? uloqShapes(e.uloq, xs) : [], marks.shapes, band.shapes);
-      layout.annotations = marks.annotations.concat(band.annotations);
+      layout.annotations = marks.annotations.concat(band.annotations, state.mode === "inspect" && log ? cal0ZeroMark(x) : []);
       Plotly.react(plot, traces, layout, config);
     }
 

@@ -10,6 +10,7 @@
 
 .serve_host_regex <- "(^|\\.)serve\\.scilifelab\\.se$"   # Also used in the JavaScript below
 .serve_upload_limit_mb <- 1000
+.serve_xlsx_max_cells <- 5e6     # On Serve, larger tables are exported as CSV only (memory)
 
 #' Whether the app is opened on SciLifeLab Serve
 #'
@@ -18,6 +19,33 @@
 is_on_serve <- function(session = shiny::getDefaultReactiveDomain()) {
   host <- session$clientData$url_hostname
   !is.null(host) && grepl(.serve_host_regex, host, ignore.case = TRUE)
+}
+
+#' Argument of `export_data.R` that limits the size of the Excel files, only on Serve
+#'
+#' @param session The Shiny session.
+#' @returns A character vector (empty outside Serve)
+#' @export
+serve_export_args <- function(session = shiny::getDefaultReactiveDomain()) {
+  if (shiny::isolate(is_on_serve(session))) sprintf("--max_xlsx_cells=%.0f", .serve_xlsx_max_cells) else character()
+}
+
+#' Note in the export box, only on Serve, on the tables that will be exported as CSV only
+#'
+#' @param n_values The numbers of values of the tables (`msdial$export_table_values()`), or `NULL`
+#' @param session The Shiny session.
+#' @returns A help text, or `NULL` if no table is above the limit
+#' @export
+export_size_note <- function(n_values, session = shiny::getDefaultReactiveDomain()) {
+  if (is.null(n_values) || !is_on_serve(session)) return(NULL)
+  over <- n_values[n_values > .serve_xlsx_max_cells]
+  if (length(over) == 0) return(NULL)
+  labels <- c(norm = "normalized", norm_blk = "blank-subtracted")[names(over)]
+  shiny::helpText(sprintf(
+    "On SciLifeLab Serve, tables above %.0f million values are exported as CSV only: here the %s. Run QuaNTA locally for Excel files.",
+    .serve_xlsx_max_cells / 1e6,
+    paste(sprintf("%s table (%.1f million)", labels, over / 1e6), collapse = " and the ")
+  ))
 }
 
 #' JavaScript that stops uploads above the Serve limit (only on Serve) before they start

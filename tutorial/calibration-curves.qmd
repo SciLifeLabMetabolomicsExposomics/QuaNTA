@@ -28,31 +28,9 @@ name.
 # The viewer of the app (app/www/calcurve_viewer.js, copied to assets/ before each render) with the
 # data the app sends for this batch: the batch's curves, and for compounds on the global curve also
 # the calibration points of all batches; the compounds removed before calibration last
-rd <- SumExp::row_df(x$calcurve)
-rem <- tr[["removed features"]]
-rem <- rem[rem$mat_id == best & rem$targeted, ]
-rf <- tr[["qc rsd filter"]]
-why <- ifelse(rem$reason == "QC RSD%", paste0("QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"), "blank filter")
-norm <- tr[["normalized"]]
-removed <- if (nrow(rem) > 0) {
-  show$calib_view_removed(norm, best, rem$feature_id, stats::setNames(why, rem$feature_id),
-                          batch = if (b %in% as.character(SumExp::col_df(norm)$batch_id)) b)
-}
-views <- list()
-if (length(lst) > 1) {
-  views[["All batches (global curve)"]] <- list(
-    parts = list(show$calib_view_all_batches(lst, b, mat_id)),
-    info = paste0("Concentrations in batch ", b, " were calculated with the global curve, fitted on the ",
-                  "calibration points of all batches shown here."))
-}
-views[[if (length(lst) > 1) paste0("Batch ", b, " only") else "All samples"]] <- list(
-  parts = list(show$calib_view_of_batch(x, mat_id), removed),
-  info = paste0("Only batch ", b, "'s calibration points are shown: the concentrations were calculated with the ",
-                "global curve, fitted on the calibration points of all batches."),
-  info_warn = TRUE)
+cv <- show$calib_views_of_batch(lst, b, tr, best)
 cv_data <- show$calib_viewer_data(
-  compounds = data.frame(id = c(rownames(x$calcurve), rem$feature_id), name = c(rd$feature_name, rem$feature_name)),
-  views = views, log_scale = isTRUE(tr$params$log_calibration),
+  compounds = cv$compounds, views = cv$views, log_scale = isTRUE(tr$params$log_calibration),
   unit = show$conc_unit(x$concn),
   y_title = show$label_if_has(x$concn[[util$mat_id_in_calibration(mat_id)]], "Signal"),
   class_colors = tut$class_colors

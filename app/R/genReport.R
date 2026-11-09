@@ -14,15 +14,13 @@ genReportUI <- function(uiId) {
   ns <- shiny::NS(uiId)
   # One group per report (button, progress bar, message): the card spaces the groups only
   shiny::tagList(
-    # External report (PDF): downloaded directly once generated, not shown in the app
+    # External report (PDF): shown in the app when generated ("Preview report", app.R, with its
+    # download button)
     shiny::div(
       class = "q-gen-group",
       shiny::actionButton(inputId = ns("gen_external"), label = "Summary report (pdf)", class = "q-gen-btn"),
       shiny::uiOutput(ns("progress_external")),   # Progress bar while rendering
-      shiny::textOutput(ns("gen_external_out")),
-      # Hidden link that the server "clicks" (message `quantaClickDownload`, defined in app.R) to
-      # start the download when the PDF is ready
-      shiny::downloadLink(ns("download_external"), label = "", style = "display: none;")
+      shiny::textOutput(ns("gen_external_out"))
     ),
     shiny::div(
       class = "q-gen-group",
@@ -86,14 +84,16 @@ progress_bar_ui <- function(p) {
 #'   generated (e.g. no calibration in non-target mode), `NULL` when it can.
 #'
 #' @returns A list with the reactives `report_path` (absolute path of the latest internal report,
-#'   `""` before the first one; its file name includes the time of generation) and `report_ready`
-#'   (changes every time a report was rendered).
+#'   `""` before the first one; its file name includes the time of generation), `report_ready`
+#'   (changes every time an internal report was rendered), `external_path` and `external_ready`
+#'   (the same for the external PDF report; `NULL` before the first one), and `reset()`.
 #' @export
 genReportServer <- function(serverId, data_info, ws, norm_method, no_external_reason = NULL) {
   shiny::moduleServer(serverId, function(input, output, session) {
     msg <- shiny::reactiveVal("")
     report_ready <- shiny::reactiveVal(NULL)
-    rendering <- shiny::reactiveVal(FALSE)   # One render at a time per session
+    # One step at a time per session: a report reads the files that reading and processing write
+    rendering <- session_busy(session)
     # Progress of the rendering (bar under its button), `NULL` when not rendering
     progress <- list(internal = shiny::reactiveVal(NULL), external = shiny::reactiveVal(NULL))
     output$progress_internal <- shiny::renderUI(progress_bar_ui(progress$internal()))
@@ -112,7 +112,7 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
     # Start rendering a report in the background; `on_done(path)` / `on_error(message)` follow
     render_report <- function(qmd, out_name, output_format, what, on_done, on_error, time) {
       if (shiny::isolate(rendering())) {
-        on_error("A report is already being generated. Please wait until it has finished.")
+        on_error("Another step (reading, processing, export or a report) is running. Please wait until it has finished.")
         return(invisible())
       }
       params_file <- tryCatch(
@@ -180,9 +180,10 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
     })
     output$gen_internal_out <- shiny::renderText(msg())
 
-    # ---- External report (PDF), downloaded directly when generated ----
+    # ---- External report (PDF), shown in the app when generated ----
     msg_external <- shiny::reactiveVal("")
     external_path <- shiny::reactiveVal(NULL)
+    external_ready <- shiny::reactiveVal(NULL)   # Changes every time a PDF report was rendered
     shiny::observeEvent(input$gen_external, {
       shiny::req(norm_method())
       msg_external("")
@@ -202,21 +203,13 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
           old <- shiny::isolate(external_path())
           if (!is.null(old) && !identical(old, path)) unlink(old)   # Keep only the latest
           external_path(path)
-          # Start the download in the browser
-          session$sendCustomMessage("quantaClickDownload", session$ns("download_external"))
-          msg_external(paste0("External report `", out_name, "` generated and downloaded."))
+          external_ready(Sys.time())   # Shown in the "External report" tab of the app
+          msg_external(paste0("External report `", out_name, "` generated."))
         },
         on_error = function(e) msg_external(paste("Error:", e))
       )
     })
     output$gen_external_out <- shiny::renderText(msg_external())
-    output$download_external <- shiny::downloadHandler(
-      filename = function() basename(shiny::req(external_path())),
-      content = function(file) file.copy(shiny::req(external_path()), file, overwrite = TRUE),
-      contentType = "application/pdf"
-    )
-    # The link is hidden; without this Shiny would not give it a download URL
-    shiny::outputOptions(output, "download_external", suspendWhenHidden = FALSE)
 
     # Forget the reports (their files are removed with all results, e.g. when a parameters file is
     # loaded): no report shown or downloaded until a new one is generated
@@ -224,10 +217,12 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
       report_path("")
       report_ready(NULL)
       external_path(NULL)
+      external_ready(NULL)
       msg("")
       msg_external("")
     }
 
-    list(report_path = report_path, report_ready = report_ready, reset = reset)
+    list(report_path = report_path, report_ready = report_ready, external_path = external_path,
+         external_ready = external_ready, reset = reset)
   })
 }

@@ -20,7 +20,7 @@ in_log <- isTRUE(tr$params$log_calibration)
 
 The last two figures of page 4 show the **result**: the concentrations of the chosen compound
 (here **`r rd[fid, "feature_name"]`**, batch `r names(lst)[1]`) in all samples, and its stability
-in the QC samples over the whole run.
+and precision in the QC samples over the whole run.
 
 ## 4.5 Concentration per class
 
@@ -58,33 +58,35 @@ buttons for the scale.
   average is then driven by the replacement values, so look at the measured values only (the
   exported statistics and report 4.5.1 use measured values only).
 
-## 4.6 QC samples in acquisition order
+## 4.6 QC samples
 
 ```{r}
 #| label: figure-4-6
-d <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), lst), function(x) {
-  se <- util$extract_ctrl_smpl_cat(x$concn, "QC")
-  if (!fid %in% rownames(se) || ncol(se) == 0) return(NULL)
-  se <- se[rownames(se) == fid, ]
-  cd <- SumExp::col_df(se)
-  tibble::tibble(sample_name = cd$sample_name, Class = as.character(cd$Class), batch_id = as.character(cd$batch_id),
-                 injection_order = cd$injection_order, conc = unname(se[["conc"]][1, ]), lloq = SumExp::row_df(se)$lloq,
-                 flag = if ("conc_flag" %in% names(se)) as.character(se[["conc_flag"]][1, ]) else NA_character_)
-}))
-d$kind <- show$imputed_kind(d$conc, d$lloq)
-show$plotly_qc_conc(d, name = rd[fid, "feature_name"],
-                    y_title = paste0("Concentration [", SumExp::metadata(batch$concn)$concentration_unit, "]"))
+# The figure of the app (app/www/quanta_figs.js, copied to assets/ before each render)
+show$qc_conc_html("qc-figure", show$conc_figs_data(lst), compound = fid, script_src = "assets/quanta_figs.js")
 ```
 
-The compound in the QC samples of **all batches** along the injection order (each batch quantified
-with its own calibration), a line per QC group. Open points are values replaced by the LOD/LLOQ
-rules.
+The compound in the QC samples of **all batches** (each batch quantified with its own calibration),
+in two views; switch with the buttons above the plot:
+
+- **Control chart**: each QC as its % deviation from the median of its QC group, along the
+  injection order. The green band is ±15%, the dashed lines ±30%; the batches are shaded, the purple
+  line is the trend (a moving mean within each batch), and QCs beyond ±30% are ringed in red.
+- **Per batch**: the QC values of each batch with their mean ± SD and CV% (red above 15%); the
+  dashed line is the mean of all batches. **Linear / Log** switch the scale.
+
+The chips next to the buttons count the QCs beyond ±15% and ±30%, and give per QC group the CV% in
+each batch and between the batches. Only measured values count for the median, the means and the
+CV%; open points are values replaced by the LOD/LLOQ rules.
 
 **How to read it**
 
-- **A flat line per QC group** means the whole procedure (normalization, blank subtraction,
-  calibration) gives the same concentration from the start to the end of the run.
-- **A step between batches** points to a batch effect in the calibration (e.g. a calibration
-  curve of one batch that differs from the others); compare the batches' curves in 4.4.
-- **A drift within a batch** that normalization did not remove points to a compound that its
-  internal standard does not follow well (see 3.8).
+- **Points within the green band** from the start to the end of the run mean the whole procedure
+  (normalization, blank subtraction, calibration) gives the same concentration throughout.
+- **A step between batches** (the trend jumps, or a high CV% between batches) points to a batch
+  effect in the calibration, e.g. a calibration curve of one batch that differs from the others;
+  compare the batches' curves in 4.4.
+- **A drift within a batch** (the trend slopes) that normalization did not remove points to a
+  compound that its internal standard does not follow well (see 3.8).
+- **A high CV% within a batch** means the compound is not measured precisely there, even if its
+  mean is right.
