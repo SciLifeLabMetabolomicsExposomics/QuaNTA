@@ -43,6 +43,7 @@ a:hover { color: var(--q-blue-hover); }
    QuaNTA logo */
 .quanta-brand { display: flex; align-items: center; gap: 16px; line-height: 1; }
 .quanta-brand-main { position: relative; display: block; }
+.quanta-brand a { display: block; }   /* The logos are links: no extra space around the images */
 .quanta-brand-main img { height: 46px; width: auto; object-fit: contain; display: block; }
 .quanta-brand-divider { width: 1px; height: 34px; background: var(--q-border); }
 .quanta-brand img.quanta-brand-partner { height: 26px; width: auto; display: block; }

@@ -70,18 +70,19 @@ The compound in the QC samples of **all batches** (each batch quantified with it
 in two views; switch with the buttons above the plot:
 
 - **Control chart**: each QC as its % deviation from the median of its QC group, along the
-  injection order. The green band is ±15%, the dashed lines ±30%; the batches are shaded, the purple
-  line is the trend (a moving mean within each batch), and QCs beyond ±30% are ringed in red.
+  injection order. The area is green within the limit of the QC RSD% filter for targeted compounds
+  (30% if that filter is not used) and red outside it; the batches are shaded and the purple line
+  is the trend (a moving mean within each batch).
 - **Per batch**: the QC values of each batch with their mean ± SD and CV% (red above 15%); the
   dashed line is the mean of all batches. **Linear / Log** switch the scale.
 
-The chips next to the buttons count the QCs beyond ±15% and ±30%, and give per QC group the CV% in
+The chips next to the buttons count the QCs beyond the limit, and give per QC group the CV% in
 each batch and between the batches. Only measured values count for the median, the means and the
 CV%; open points are values replaced by the LOD/LLOQ rules.
 
 **How to read it**
 
-- **Points within the green band** from the start to the end of the run mean the whole procedure
+- **Points within the green area** from the start to the end of the run mean the whole procedure
   (normalization, blank subtraction, calibration) gives the same concentration throughout.
 - **A step between batches** (the trend jumps, or a high CV% between batches) points to a batch
   effect in the calibration, e.g. a calibration curve of one batch that differs from the others;

@@ -73,6 +73,15 @@ embed_html_resources <- function(html_file) {
     st <- tags[i]
     ln <- attr(tags, "match.length")[i]
     tag <- rawToChar(page[st:(st + ln - 1L)])
+    # An inline script that the report kept out of Pandoc (see report-internal.qmd): its content
+    inl <- regmatches(tag, regexec("\\bdata-quanta-inline=\"([^\"]+)\"", tag))[[1]]
+    if (length(inl) == 2 && file.exists(inl[2])) {
+      writeBin(page[seq.int(from, length.out = st - from)], con)
+      writeBin(c(charToRaw(sub("\\s*\\bdata-quanta-inline=\"[^\"]+\"", "", tag)), readBin(inl[2], "raw", file.size(inl[2]))), con)
+      from <- st + ln
+      used <- c(used, inl[2])
+      next
+    }
     m <- regexec("\\b(src|href)=(\"|')([^\"']+)\\2", tag, perl = TRUE, useBytes = TRUE)
     hit <- regmatches(tag, m)[[1]]
     if (length(hit) == 0) next

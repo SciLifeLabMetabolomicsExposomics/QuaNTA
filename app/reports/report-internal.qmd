@@ -153,6 +153,32 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
 options(box.path = Sys.getenv("R_BOX_PATH", "app/"))
 box::use(SumExp, util = projlib/msdial_utils, proc = projlib/proc, show = projlib/show,
          msdial = projlib/msdial, history = projlib/history, ggplot2[...])
+
+# Pandoc needs many times the size of the page in memory, and most of the page is the data of the
+# viewers (large inline <script>s). These are written to files here and put back into the page
+# after Pandoc, by scripts/embed_html_resources.R (`data-quanta-inline`)
+local({
+  dir <- file.path(getwd(), "inline_scripts")
+  dir.create(dir, showWarnings = FALSE)
+  old <- knitr::knit_hooks$get("document")
+  knitr::knit_hooks$set(document = function(x) {
+    if (is.function(old)) x <- old(x)
+    x <- enc2utf8(paste(x, collapse = "\n"))
+    # Inline scripts: plain ones and those of the widgets (`<script type="application/json" ...>`)
+    m <- gregexpr("(?s)<script(?![^>]*\\bsrc=)[^>]*>.*?</script>", x, perl = TRUE)
+    if (m[[1]][1] < 0) return(x)
+    scripts <- regmatches(x, m)[[1]]
+    big <- which(nchar(scripts, "bytes") > 50000)
+    for (i in big) {
+      open <- regmatches(scripts[i], regexpr("^<script[^>]*>", scripts[i]))
+      f <- tempfile("script", tmpdir = dir, fileext = ".js")
+      writeBin(charToRaw(enc2utf8(sub("</script>$", "", substring(scripts[i], nchar(open) + 1L, nchar(scripts[i]))))), f)
+      scripts[i] <- paste0(sub(">$", "", open), ' data-quanta-inline="', normalizePath(f, winslash = "/"), '"></script>')
+    }
+    regmatches(x, m) <- list(scripts)
+    x
+  })
+})
 library(dplyr, warn.conflicts = FALSE)
 # Light grey plot area with grey grid lines (as the interactive plots, see the styles above)
 theme_set(theme_minimal(base_size = 14) +
@@ -319,6 +345,38 @@ id2name <- setNames(smp$sample_name, smp$sample_id)
 if (!is.null(cal_avg) && nrow(cal_avg) > 0) id2name <- c(id2name, setNames(cal_avg$sample_name, cal_avg$sample_id))
 to_json <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na = "null", digits = NA,
                                         dataframe = "columns")
+# The rows of a matrix in blocks (large matrices are worked on a block at a time, so that no copy
+# of the whole matrix is needed)
+row_blocks <- function(n, size = 2000) split(seq_len(n), ceiling(seq_len(n) / size))
+# PC1 and PC2 of the samples `cols` of `x` (features in rows; `rows`: the features used): the PCA of log(value + 1) with each
+# feature scaled to unit variance, of the features without missing values and with variation, as
+# `prcomp(t(log1p(x)), scale. = TRUE)`. Computed from the samples' cross-product matrix, one block of
+# features at a time. The sign of a PC is arbitrary: here the sample farthest from 0 is positive.
+# Returns `x` (PC1, PC2), `ve` (% variance explained), `n_samples`, `n_features`; `x` is `NULL`
+# with fewer than 2 samples or features.
+pca_2 <- function(x, cols, rows = seq_len(nrow(x))) {
+  n <- length(cols)
+  G <- matrix(0, n, n)
+  p <- 0L
+  for (r in row_blocks(length(rows))) {
+    b <- x[rows[r], cols, drop = FALSE]
+    b <- b[rowSums(is.na(b)) == 0 & apply(b, 1, sd) > 0, , drop = FALSE]
+    if (nrow(b) == 0) next
+    b <- log1p(b)
+    b <- (b - rowMeans(b)) / apply(b, 1, sd)
+    G <- G + crossprod(b)
+    p <- p + nrow(b)
+  }
+  out <- list(x = NULL, ve = NULL, n_samples = n, n_features = p)
+  if (n < 2 || p < 2) return(out)
+  e <- eigen(G, symmetric = TRUE)
+  ev <- pmax(e$values, 0)
+  sc <- e$vectors[, 1:2, drop = FALSE] %*% diag(sqrt(ev[1:2]))
+  flip <- apply(sc, 2, function(v) if (v[which.max(abs(v))] < 0) -1 else 1)
+  out$x <- sweep(sc, 2, flip, "*")
+  out$ve <- round(100 * ev / sum(ev), 1)
+  out
+}
 ```
 
 # 1 Overview
@@ -743,9 +801,11 @@ cat('<div class="viewer" id="isbar">',
 norm_all <- tr[["normalized"]]
 norm_cd <- tibble::as_tibble(SumExp::col_df(norm_all), rownames = "sample_id") |>
   left_join(select(smp, sample_id, group), by = "sample_id")
-# All features but the IS of a data version, from its file (only one in memory at a time)
+# The values of a data version from its file (only one in memory at a time), and its rows of all
+# features but the IS (`rows`; the matrix is used as it is, without a copy of these rows)
 full_not_is <- function(mm) {
-  msdial$read_full_normalized(user_inputs, tr, mm, keep = \(rd) !util$is_internal_std(rd$.std_type))[[mm]]
+  list(m = readRDS(msdial$full_matrix_file(user_inputs, "norm", mm)),
+       rows = which(!util$is_internal_std(tr[["full data"]]$norm_rows$.std_type)))
 }
 norm_se <- norm_all[util$is_targeted_feature(norm_all), ]
 
@@ -773,11 +833,15 @@ plot_rsd <- function(m) {
 in_matrix <- norm_cd$group %in% c(study_classes, "QC")
 plot_rla <- function(m) {
   if (!any(in_matrix)) return(note("No study samples or QCs: no relative log abundance."))
-  rla <- function(mat) {
-    lx <- mat[, in_matrix, drop = FALSE]   # Also with one sample
-    lx[lx <= 0] <- NA
-    lx <- log2(lx)
-    apply(lx - apply(lx, 1, median, na.rm = TRUE), 2, median, na.rm = TRUE)
+  # The feature medians a block of features at a time, then one sample at a time (no copies of the
+  # whole matrix)
+  rla <- function(fx) {
+    cols <- which(in_matrix)
+    rows <- fx$rows
+    lg <- function(v) { v[v <= 0] <- NA; log2(v) }
+    med <- numeric(length(rows))
+    for (r in row_blocks(length(rows))) med[r] <- apply(lg(fx$m[rows[r], cols, drop = FALSE]), 1, median, na.rm = TRUE)
+    vapply(cols, function(j) median(lg(fx$m[rows, j]) - med, na.rm = TRUE), numeric(1))
   }
   d <- bind_rows(lapply(c("raw", m), function(mm) {
     mutate(norm_cd[in_matrix, ], method = method_label[mm], rla = rla(full_not_is(mm)))
@@ -805,13 +869,12 @@ plot_pca <- function(m, by = c("batch", "group")) {
 }
 # PC1 and PC2 of the study samples and QCs of one matrix (`NULL` if a PCA is not possible)
 pca_scores <- function(mm, keep_s) {
-  x <- full_not_is(mm)[, keep_s, drop = FALSE]   # `drop = FALSE`: also with one sample
-  x <- x[rowSums(is.na(x)) == 0 & apply(x, 1, sd) > 0, , drop = FALSE]
-  if (nrow(x) < 2 || ncol(x) < 2) return(NULL)        # A PCA needs 2 samples and 2 features
-  pc <- prcomp(t(log1p(x)), scale. = TRUE, rank. = 2)  # Only PC1 and PC2 are needed
-  ve <- round(100 * pc$sdev^2 / sum(pc$sdev^2), 1)
-  mutate(norm_cd[keep_s, ], PC1 = pc$x[, 1], PC2 = if (ncol(pc$x) > 1) pc$x[, 2] else 0,
-         method = sprintf("%s (PC1 %s%%, PC2 %s%%)", method_label[mm], ve[1], ve[2]))
+  fx <- full_not_is(mm)
+  pc <- pca_2(fx$m, which(keep_s), fx$rows)
+  rm(fx)
+  if (is.null(pc$x)) return(NULL)                     # A PCA needs 2 samples and 2 features
+  mutate(norm_cd[keep_s, ], PC1 = pc$x[, 1], PC2 = pc$x[, 2],
+         method = sprintf("%s (PC1 %s%%, PC2 %s%%)", method_label[mm], pc$ve[1], pc$ve[2]))
 }
 pca_draw <- function(d, by) {
   if (nrow(d) == 0) {
@@ -1041,18 +1104,16 @@ The study samples **as one experiment**: groups compared over all batches.
 
 ```{r}
 blk_se <- msdial$read_full_blank_subtracted(user_inputs, tr, BLK)   # Also used in 5.2
-m <- blk_se[[BLK]]
 cd <- tibble::as_tibble(SumExp::col_df(blk_se), rownames = "sample_id")
 keep_s <- cd$.ctrl_cat %in% c("", "QC")
-m <- m[, keep_s, drop = FALSE]; cd <- cd[keep_s, ]   # `drop = FALSE`: also with one sample
-m <- m[rowSums(is.na(m)) == 0 & apply(m, 1, sd) > 0, , drop = FALSE]
+cd <- cd[keep_s, ]
+pca <- pca_2(blk_se[[BLK]], which(keep_s))
 # A PCA needs at least 2 samples and 2 features (without missing values, with variation)
-PCA_MSG <- sprintf("No PCA: it needs at least 2 samples and 2 features without missing values; there are %d samples and %d features.", ncol(m), nrow(m))
-pca_ok <- ncol(m) >= 2 && nrow(m) >= 2
+PCA_MSG <- sprintf("No PCA: it needs at least 2 samples and 2 features without missing values; there are %d samples and %d features.", pca$n_samples, pca$n_features)
+pca_ok <- !is.null(pca$x)
 if (pca_ok) {
-  pca <- prcomp(t(log1p(m)), scale. = TRUE, rank. = 2)   # Only PC1 and PC2 are needed
-  ve <- round(100 * pca$sdev^2 / sum(pca$sdev^2), 1)
-  pc <- tibble(PC1 = pca$x[, 1], PC2 = if (ncol(pca$x) > 1) pca$x[, 2] else 0, cd) |>
+  ve <- pca$ve
+  pc <- tibble(PC1 = pca$x[, 1], PC2 = pca$x[, 2], cd) |>
     mutate(group = ifelse(.ctrl_cat == "QC", "QC", Class))
 }
 ```

@@ -221,11 +221,12 @@
   // 4.6: the QCs of all batches (each with its own calibration), in two views (buttons above the
   // plot; the choice is kept per element, `el._qfMode`):
   // - "Control chart": the % deviation of each QC from the median of its QC group, along the
-  //   injection order, with a band at ±15% and lines at ±30%, the batches shaded, a trend (moving
-  //   mean of the deviations within each batch) and the QCs beyond ±30% ringed in red;
+  //   injection order, green within ±the limit (`d.qc_limit`: the QC RSD% filter limit of targeted
+  //   compounds, else 30%) and red outside it, the batches shaded and a trend (moving mean of the
+  //   deviations within each batch);
   // - "Per batch": the QC values of each batch and QC group, with mean ± SD, the CV% above
   //   (red above 15%), and the mean of all batches as a dashed line (Log / Linear buttons).
-  // Chips above: QCs beyond ±15% / ±30%, and per QC group the CV% per batch and between batches.
+  // Chips above: QCs beyond the limit, and per QC group the CV% per batch and between batches.
   // Only measured values count for the median, the means, SD and CV%; values replaced by the
   // LOD/LLOQ rules are shown open, values without one ("n.d." / "n.q.") are counted in the title.
   var QC_BAND = 15, QC_LIMIT = 30;
@@ -324,11 +325,10 @@
 
     // Chips: QCs beyond the limits; per QC group the CV% per batch and between the batch means
     var m = v.filter(function (x) { return measured(x) && finite(x.dev); });
-    var n15 = m.filter(function (x) { return Math.abs(x.dev) > QC_BAND; }).length;
-    var n30 = m.filter(function (x) { return Math.abs(x.dev) > QC_LIMIT; }).length;
+    var limit = finite(d.qc_limit) ? d.qc_limit : QC_LIMIT;
+    var nOut = m.filter(function (x) { return Math.abs(x.dev) > limit; }).length;
     var chip = function (html, warn) { return '<span class="qf-chip' + (warn ? " warn" : "") + '">' + html + "</span>"; };
-    var html = [chip("Beyond ±" + QC_BAND + "%: <b>" + n15 + " / " + m.length + "</b>", false),
-                chip("Beyond ±" + QC_LIMIT + "%: <b>" + n30 + "</b>", n30 > 0)];
+    var html = [chip("Beyond ±" + limit + "%: <b>" + nOut + " / " + m.length + "</b>", nOut > 0)];
     var stats = {}, between = {};
     groups.forEach(function (g) {
       stats[g] = {};
@@ -424,10 +424,10 @@
                                          text: "Batch " + esc(b), showarrow: false, font: { size: 11, color: "#667085" } });
       });
       var x0 = edges[0][0], x1 = edges[edges.length - 1][1];
-      shapes.push({ type: "rect", xref: "x", yref: "y", x0: x0, x1: x1, y0: -QC_BAND, y1: QC_BAND, layer: "below",
-                    fillcolor: "rgba(0,158,115,0.12)", line: { width: 0 } });
-      [-QC_LIMIT, QC_LIMIT].forEach(function (y) {
-        shapes.push({ type: "line", xref: "x", yref: "y", x0: x0, x1: x1, y0: y, y1: y, line: { color: "#888780", width: 1, dash: "dash" } });
+      var ext = Math.max(limit + 10, Math.max.apply(null, v.filter(function (x) { return finite(x.dev); }).map(function (x) { return Math.abs(x.dev); })) * 1.08);
+      // Green within the limit, red outside it
+      [[-limit, limit, "rgba(0,158,115,0.14)"], [limit, ext, "rgba(227,73,72,0.14)"], [-ext, -limit, "rgba(227,73,72,0.14)"]].forEach(function (b) {
+        shapes.push({ type: "rect", xref: "x", yref: "y", x0: x0, x1: x1, y0: b[0], y1: b[1], layer: "below", fillcolor: b[2], line: { width: 0 } });
       });
       shapes.push({ type: "line", xref: "x", yref: "y", x0: x0, x1: x1, y0: 0, y1: 0, line: { color: "#52514e", width: 1 } });
       // Trend: the mean of the deviations of the 5 measured QCs before and after, within each batch
@@ -443,14 +443,7 @@
       });
       if (m.length > 2) traces.push({ type: "scatter", mode: "lines", name: "Trend", x: tx, y: ty, hoverinfo: "skip",
                                       line: { color: "#6250d6", width: 2 }, connectgaps: false });
-      // The QCs beyond ±30% ringed in red
-      var out = m.filter(function (x) { return Math.abs(x.dev) > QC_LIMIT; });
-      if (out.length) traces.push({ type: "scatter", mode: "markers", name: "Beyond ±" + QC_LIMIT + "%", x: out.map(function (x) { return x.inj; }),
-                                    y: out.map(function (x) { return x.dev; }), hoverinfo: "skip",
-                                    // An open symbol takes its line colour from `color`
-                                    marker: { color: "#e34948", size: 17, symbol: "circle-open", line: { width: 1.6 } } });
       traces = traces.concat(pointTraces(function (x) { return x.inj; }, function (x) { return x.dev; }, function (x) { return finite(x.dev); }));
-      var ext = Math.max(QC_LIMIT + 10, Math.max.apply(null, v.filter(function (x) { return finite(x.dev); }).map(function (x) { return Math.abs(x.dev); })) * 1.08);
       layout.margin.t = order.length > 1 ? 75 : 60;
       layout.xaxis = { title: { text: "Injection order" }, range: [x0, x1], zeroline: false };
       layout.yaxis = { title: { text: "Deviation from the QC median (%)" }, range: [-ext, ext], zeroline: false, ticksuffix: "%" };

@@ -22,12 +22,19 @@ cmp_t <- study_long |> filter(Class %in% grp) |>
   ) |>
   mutate(Type = "Targeted (concentration)")
 # Non-targeted features, all batches together (`drop = FALSE`: also with a single feature)
-keep_f <- rowSums(!is.na(nt_m)) > 0 & rowMeans(nt_m[, g1 | g2, drop = FALSE] > 0, na.rm = TRUE) >= 0.5
+# (A block of features at a time: no copies of the whole matrix)
+keep_f <- unlist(lapply(row_blocks(nrow(nt_m)), function(r) {
+  b <- nt_m[r, , drop = FALSE]
+  rowSums(!is.na(b)) > 0 & rowMeans(b[, g1 | g2, drop = FALSE] > 0, na.rm = TRUE) >= 0.5
+}), use.names = FALSE)
 nt_m <- nt_m[keep_f, , drop = FALSE]
+row_medians <- function(cols) unlist(lapply(row_blocks(nrow(nt_m)), function(r) {
+  apply(nt_m[r, cols, drop = FALSE], 1, median, na.rm = TRUE)
+}), use.names = FALSE)
 cmp_nt <- tibble(
   Feature = feat$label[match(rownames(nt_m), feat$feature_id)],
-  med1 = apply(nt_m[, g1, drop = FALSE], 1, median, na.rm = TRUE),
-  med2 = apply(nt_m[, g2, drop = FALSE], 1, median, na.rm = TRUE),
+  med1 = row_medians(g1),
+  med2 = row_medians(g2),
   p = vapply(seq_len(nrow(nt_m)), \(i) tryCatch(wilcox.test(nt_m[i, g1], nt_m[i, g2])$p.value,
                                                  error = \(e) NA_real_), numeric(1)),
   Type = "Non-targeted (intensity)"

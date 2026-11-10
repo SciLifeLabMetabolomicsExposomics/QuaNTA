@@ -121,7 +121,8 @@ SECTION_TIPS <- list(
   "4.5" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
   "4.6" = paste("The selected chemical in the QC samples of all batches (each with its own calibration).",
                 "Control chart: the % deviation of each QC from the median of its QC group along the injection order,",
-                "with a band at ±15%, lines at ±30%, a trend line and the QCs beyond ±30% ringed in red.",
+                "green within the limit of the QC RSD% filter for targeted compounds (30% if that filter is not used)",
+                "and red outside it, with a trend line.",
                 "Per batch: the QC values of each batch with mean ± SD and CV% (red above 15%); the dashed line is",
                 "the mean of all batches. The chips give the QCs beyond the limits and the CV% per batch and between",
                 "batches (measured values only). Open points: values replaced by the LOD/LLOQ rules.")
@@ -156,6 +157,11 @@ ARROW_KEYS_SELECTIZE <- I("function() {
 ######################################## UI ####################################################
 ################################################################################################
 
+# A logo in the header as a link; in a new tab, so that the session in the app is not lost
+brand_link <- function(href, title, img) {
+  tags$a(href = href, target = "_blank", rel = "noopener", title = title, img)
+}
+
 ui <-
   page_navbar(
     theme = custom_theme,
@@ -163,16 +169,21 @@ ui <-
       class = "quanta-brand",
       div(
         class = "quanta-brand-main",
-        tags$img(src = "QuaNTA.jpg", alt = "QuaNTA"),
+        # To the tutorial for now; to the preprint when there is one
+        brand_link("https://exposomics-scilifelab.github.io/QuaNTA/", "QuaNTA tutorial",
+                   tags$img(src = "QuaNTA.jpg", alt = "QuaNTA")),
         span(class = "quanta-tagline", "Quantitative & Nontargeted Analysis")
       ),
       span(class = "quanta-brand-divider"),
-      tags$img(class = "quanta-brand-partner", src = "SciLifeLab_Logotype_Green_POS.png",
-               alt = "SciLifeLab"),
+      brand_link("https://www.scilifelab.se/units/exposomics/", "Exposomics unit, SciLifeLab",
+                 tags$img(class = "quanta-brand-partner", src = "SciLifeLab_Logotype_Green_POS.png",
+                          alt = "SciLifeLab")),
       span(class = "quanta-brand-divider"),
       # Trimmed copy of SU_logotyp_Landscape_1000px.png (the empty margins cropped)
-      tags$img(class = "quanta-brand-partner quanta-brand-su", src = "SU_logotyp_Landscape_trimmed.png",
-               alt = "Stockholm University")
+      brand_link("https://www.su.se/english/divisions/department-of-environmental-science",
+                 "Department of Environmental Science, Stockholm University",
+                 tags$img(class = "quanta-brand-partner quanta-brand-su",
+                          src = "SU_logotyp_Landscape_trimmed.png", alt = "Stockholm University"))
     ),
     window_title = "QuaNTA",   # text in the browser tab; fixes the last warning
     header = tags$head(
@@ -2191,7 +2202,7 @@ server <- function(input, output, session) {
     )
     # Figures 4.5 and 4.6 of the same chemical (www/quanta_figs.js): its concentrations in the
     # batch, and in the QCs of all batches
-    data$figs <- show$conc_figs_data(lst, b, colors_of_classes())
+    data$figs <- show$conc_figs_data(lst, b, colors_of_classes(), show$qc_chart_limit(to_report_r()[["qc rsd filter"]]))
     session$sendCustomMessage("calcurve_data", show$calib_viewer_json(data))
   })
 

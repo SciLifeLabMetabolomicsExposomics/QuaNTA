@@ -729,9 +729,10 @@ is_distribution_data <- function(se, outlier = NULL, failed = NULL, rsd = NULL) 
 #' @param batch The batch of figure 4.5 (`NULL`: no data for 4.5, e.g. figure 4.6 alone in the
 #'   internal report and the tutorial)
 #' @param class_colors The colours of the classes (named), for 4.5
+#' @param qc_limit The limit (%) of the green area of 4.6, see [qc_chart_limit()]
 #' @returns A list, for [calib_viewer_json()]
 #' @export
-conc_figs_data <- function(lst, batch = NULL, class_colors = character()) {
+conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_limit = 30) {
   kinds <- .calib_conc_kinds()
   part <- function(se) {
     conc <- se[["conc"]]
@@ -764,10 +765,20 @@ conc_figs_data <- function(lst, batch = NULL, class_colors = character()) {
   list(
     names = as.list(stats::setNames(nms[keep], ids[keep])),   # Compound ID -> name (plot titles)
     kinds = I(kinds), kind_colors = .hex_colors(imputed_colors), class_colors = .hex_colors(class_colors),
-    qc_colors = .hex_colors(hue_colors(qc_groups)), y_title = unit_label,
+    qc_colors = .hex_colors(hue_colors(qc_groups)), y_title = unit_label, qc_limit = qc_limit,
     samples = if (!is.null(batch)) part(lst[[batch]]$concn),
     qc = unname(lapply(qcs, part))
   )
+}
+
+#' The limit (%) of the green area of figure 4.6: the limit of the QC RSD% filter for targeted
+#' compounds if that filter was used, otherwise 30
+#'
+#' @param rf The `qc rsd filter` element of the `to_report` list of `process.R`
+#' @returns A number
+#' @export
+qc_chart_limit <- function(rf) {
+  if (isTRUE(rf$enabled) && !isTRUE(rf$skipped) && isTRUE(!is.na(rf$max_targeted))) rf$max_targeted else 30
 }
 
 #' The compounds with a value in the QC samples (any batch), from [conc_figs_data()]: the

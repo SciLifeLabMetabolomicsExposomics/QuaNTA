@@ -277,13 +277,13 @@ One compound at a time in the QC samples of all batches (each batch with its own
 the app, in two views:
 
 - **Control chart**: the % deviation of each QC from the median of its QC group along the injection
-  order, with a band at ±15%, lines at ±30%, the batches shaded, a trend line (a moving mean within
-  each batch) and the QCs beyond ±30% ringed in red. Drift within a batch and steps between batches
-  show here.
+  order, green within the limit of the QC RSD% filter for targeted compounds (30% if that filter is
+  not used) and red outside it, the batches shaded and a trend line (a moving mean within each
+  batch). Drift within a batch and steps between batches show here.
 - **Per batch**: the QC values of each batch with mean ± SD and their CV% (red above 15%); the dashed
   line is the mean of all batches.
 
-The chips above give the QCs beyond ±15% and ±30%, and per QC group the CV% per batch and between
+The chips above give the QCs beyond the limit, and per QC group the CV% per batch and between
 batches. Only measured values count for the median, the means and the CV%; open points are values
 replaced by the LOD/LLOQ rules. Choose the compound in the dropdown or search; hover over a point for
 the sample.
@@ -291,7 +291,7 @@ the sample.
 ```{r}
 #| results: asis
 # The figure of the app (app/www/quanta_figs.js), with the data of all compounds
-qc_figs <- show$conc_figs_data(lst)
+qc_figs <- show$conc_figs_data(lst, qc_limit = show$qc_chart_limit(tr[["qc rsd filter"]]))
 qc_comps <- show$conc_figs_qc_compounds(qc_figs)
 if (!has_qc) note(NO_QC) else if (nrow(qc_comps) == 0) note("No concentrations in the QC samples.") else {
   # As raw HTML (not markdown: the script has blank lines and characters such as `*`)

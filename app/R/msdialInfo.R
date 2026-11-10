@@ -167,6 +167,7 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
             data_info$input_file <- res$path
             data_info$input_file_name <- res$name
             shiny::showNotification(paste("Decompressed", up$name, "to", res$name), type = "message")
+            warn_if_large_upload(res$path, session)
           }
         )
         return()
@@ -177,6 +178,7 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       file.copy(up$datapath, dest, overwrite = TRUE)
       data_info$input_file <- normalizePath(dest, winslash = "/", mustWork = TRUE)
       data_info$input_file_name <- up$name
+      warn_if_large_upload(data_info$input_file, session)
     }, priority = 100)   # Before the outputs re-read the (deleted) data files
     output$upload_hint <- shiny::renderUI(upload_hint(session))
     # The dataset saved in a loaded parameters file; otherwise the uploaded file (also shown in the
