@@ -46,7 +46,7 @@ msdialInfoUI <- function(uiId) {
     shiny::textInput(ns("project_title"), "Project title", value = "", width = "100%"),
     shiny::textInput(ns("user"), "User", value = "", width = "100%"),
     shiny::textInput(ns("university"), "University", value = "", width = "100%"),
-    shiny::textAreaInput(ns("free_text"), "Free text to the external report",
+    shiny::textAreaInput(ns("free_text"), "Comments (used for reports)",
                          value = "", width = "100%"),
     .hr(),
     shiny::textInput(ns("concentration_unit"), "Concentration unit", value = "", width = "100%"),
@@ -72,10 +72,14 @@ msdialInfoUI <- function(uiId) {
 #' file" reads), for placement outside the module's UI
 #'
 #' @inheritParams msdialInfoUI
+#' @param where "settings" (the processing settings, page 2) or "export" (the export box, page 5):
+#'   the same file, one button in each place
 #' @export
 msdialInfoDownloadUI <- function(uiId, label = "Download parameters and processing settings (.yml)",
-                                 class = NULL) {
-  shiny::downloadButton(shiny::NS(uiId)("download_params"), label, class = class)
+                                 class = NULL, where = c("settings", "export")) {
+  where <- match.arg(where)
+  id <- if (where == "settings") "download_params" else "download_params_export"
+  shiny::downloadButton(shiny::NS(uiId)(id), label, class = class)
 }
 
 #' MS-DIAL User Information Server for Shiny
@@ -92,9 +96,12 @@ msdialInfoDownloadUI <- function(uiId, label = "Download parameters and processi
 #'   (`""` if none).
 #' @param on_params_loaded `NULL`, or a function called when a parameters file has been loaded
 #'   (e.g. to remove the earlier results, which no longer match the settings)
+#' @param export_params A reactive returning the export options as a list (the `export:` section
+#'   of the file; their defaults until the user changes them). `data_info$loaded_export` is set
+#'   when a loaded parameters file has an `export:` section.
 #' @export
 msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(list()),
-                             on_params_loaded = NULL) {
+                             on_params_loaded = NULL, export_params = shiny::reactive(NULL)) {
   shiny::moduleServer(serverId, function(input, output, session) {
     init <- lapply(rlang::set_names(.user_param_ids), function(x) "")
     init$intermediate_dir <- ws$intermediate
@@ -241,6 +248,10 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
         # The nonce makes loading the same file twice trigger the observer again
         data_info$loaded_processing <- c(p[["processing"]], list(.nonce = as.numeric(Sys.time())))
       }
+      # The export options: used when the export box is shown (after the processing)
+      if (is.list(p[["export"]])) {
+        data_info$loaded_export <- c(p[["export"]], list(.nonce = as.numeric(Sys.time())))
+      }
       shiny::showNotification(
         paste("Parameters loaded from", shiny::isolate(input$load_params$name),
               "- read and process the data file (again)."),
@@ -248,17 +259,21 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       )
     }
 
-    # Download the current parameters
-    output$download_params <- shiny::downloadHandler(
-      filename = function() paste0("quanta_parameters_", format(Sys.Date(), "%Y%m%d"), ".yml"),
+    # Download the current parameters: the user information, the processing settings and the
+    # export options (the same file from page 2 and from the export box of page 5)
+    params_download <- function() shiny::downloadHandler(
+      filename = function() paste0("quanta_parameters_", format_client_time(session, "%Y%m%d"), ".yml"),
       content = function(file) {
         info <- shiny::reactiveValuesToList(data_info)
         p <- info[c(.text_param_ids, .textarea_param_ids)]
         # The name of the uploaded dataset, if any (shown when the file is loaded again)
         if (isTRUE(nzchar(info$input_file)) && isTRUE(nzchar(info$input_file_name))) p$dataset <- info$input_file_name
-        yaml::write_yaml(c(p, list(processing = processing_params())), file)
+        ex <- export_params()
+        yaml::write_yaml(c(p, list(processing = processing_params()), if (!is.null(ex)) list(export = ex)), file)
       }
     )
+    output$download_params <- params_download()
+    output$download_params_export <- params_download()
 
     data_info
   })

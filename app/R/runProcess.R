@@ -312,7 +312,7 @@ runProcessUI <- function(uiId) {
     option_group(
     shiny::checkboxInput(
       inputId = ns("enforce_linear_range"),
-      label = label_tip("Enforce linear range (cut the curves at the ULOQ)",
+      label = label_tip("Enforce ULOQ",
                         paste("Ticked: each curve is cut at its ULOQ and refitted; higher concentrations are",
                               "extrapolated. A curve keeps at least the minimum number of levels, so it can end",
                               "above its ULOQ: the levels between are marked as above the linear range. Unticked: the curves keep their range; concentrations between the",
@@ -327,7 +327,7 @@ runProcessUI <- function(uiId) {
     option_group(
     shiny::checkboxInput(
       inputId = ns("r2_filter"),
-      label = label_tip("Minimum R² of the calibration curves",
+      label = label_tip("Minimum R²",
                         paste("A compound whose calibration curve has a lower R² is considered failed:",
                               "no concentrations, not exported (kept and marked with 'Keep all",
                               "calibration curves'). The reports and tables show the reason. Greyed out when the data has no targeted (Quant) features.")),

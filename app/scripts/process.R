@@ -863,7 +863,11 @@ for (ii in seq_along(to_blk_subt)) {
   }
 }
 to_report[["qc rsd filter"]] <- rsd_filter
-to_report[["removed features"]] <- dplyr::bind_rows(c(removed_blank, removed_rsd))
+# With its columns also when nothing was removed (no blank or QC RSD% filter): an empty
+# `bind_rows()` has no columns at all, which the readers (e.g. figure 2.4) cannot subset
+to_report[["removed features"]] <- dplyr::bind_rows(
+  c(list(removed_tbl(NA_character_, rep(FALSE, nrow(shell)), NA_character_)), removed_blank, removed_rsd)
+)
 rm(shell, later, removed_blank, removed_rsd)
 invisible(gc(FALSE))
 

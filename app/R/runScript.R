@@ -46,8 +46,8 @@ session_busy <- function(session) {
     proc <- shiny::reactiveVal(NULL)
     done_at <- shiny::reactiveVal(NULL)   # Set every time a run has finished
     started_at <- shiny::reactiveVal(NULL)   # To report the elapsed time
-    # Log time in front of each non-empty line
-    stamp <- function(lines) ifelse(nzchar(trimws(lines)), paste0(format(Sys.time(), "[%H:%M:%S]  "), lines), "")
+    # Log time in front of each non-empty line (in the time zone of the user's browser)
+    stamp <- function(lines) ifelse(nzchar(trimws(lines)), paste0(format_client_time(session, "[%H:%M:%S]  "), lines), "")
 
     # "Clear log" (a reactive from the app, e.g. a button); a running job keeps logging
     if (!is.null(clear)) shiny::observeEvent(clear(), output_txt(""), ignoreInit = TRUE)
@@ -138,6 +138,25 @@ session_busy <- function(session) {
   })
 }
 
+#' A time formatted in the time zone of the user's browser
+#'
+#' The page sends its time zone (`input$quanta_tz`, e.g. "Europe/Stockholm") when it connects
+#' (script in the page head, app.R), so that users anywhere see their own time, not the server's
+#' (on SciLifeLab Serve, the zone of the container). The server's zone until then, or for an
+#' unknown zone.
+#'
+#' @param session A (module) Shiny session
+#' @param fmt A format for [format.POSIXct()]
+#' @param time A `POSIXct` time
+#' @export
+format_client_time <- function(session, fmt, time = Sys.time()) {
+  tz <- tryCatch(shiny::isolate(session$rootScope()$input$quanta_tz), error = function(e) NULL)
+  if (is.null(.known_tz$names)) .known_tz$names <- OlsonNames()
+  if (!is.character(tz) || length(tz) != 1 || !tz %in% .known_tz$names) tz <- ""
+  format(time, fmt, tz = tz)
+}
+.known_tz <- new.env()
+
 #' Add lines to a log text. A progress bar line ("[####------]  40%", e.g. of process.R) replaces
 #' the progress bar line just before it, so that the bar advances in place.
 #'
@@ -208,31 +227,42 @@ runScriptServer <- function(serverId, script_path, what, param_ids = NULL, data_
                  clear = clear, trigger = trigger)
 }
 
-#' Same as [runScriptServer()] for the export script, with the normalization method and a zip download
+#' Same as [runScriptServer()] for the export script, with the normalization methods, the layout
+#' of the tables and a zip download
 #'
 #' @inheritParams runScriptServer
-#' @param norm_method A reactive with the matrix ID of the normalization method to export
-#'   (e.g. `"loess_norm"`), or `"auto"` for the best one determined by `process.R`
+#' @param norm_methods A reactive with the matrix IDs of the normalization methods to export
+#'   (e.g. `c("loess_norm", "raw")`)
+#' @param layout_args A reactive with the script arguments of the injections and their order
+#'   (`--keep_qc=...`, `--group_by_type=...`, ...; see scripts/export_data.R)
 #' @export
 runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data_info, ws,
-                             norm_method) {
-  extra_args <- function() c(paste0("--norm_method=", shiny::isolate(norm_method())), serve_export_args())
+                             norm_methods, layout_args) {
+  exported <- NULL   # The methods of the latest export (in the zip file name)
+  extra_args <- function() {
+    m <- shiny::isolate(norm_methods())
+    exported <<- m
+    # A new export replaces the earlier one (also its methods and options): the session's
+    # private tables folder is emptied first, so that the zip has the latest tables only
+    unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
+    c(paste0("--norm_method=", paste(m, collapse = ",")), shiny::isolate(layout_args()), serve_export_args())
+  }
   done_at <- .runScriptCore(serverId, script_path, what, param_ids, data_info, ws, extra_args)
 
   # Second module server with the same ID: the outputs share the namespace of the UI
   shiny::moduleServer(serverId, function(input, output, session) {
     output$download_tables <- shiny::downloadHandler(
       filename = function() {
-        paste0("QuaNTA_tables_", norm_method(), "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip")
+        paste0("QuaNTA_tables_", paste(sub("_norm$", "", exported), collapse = "_"), "_",
+               format_client_time(session, "%Y%m%d_%H%M%S"), ".zip")
       },
       content = function(file) {
-        # Only the tables of the selected method:
-        # "(base name).(method).(norm|norm_blk|conc|conc_all|history).xlsx" and their CSV copies
-        # "(base name).(method).(norm|norm_blk|conc|conc_all|history).(sheet).csv"
-        method <- sub("_norm$", "", norm_method())
-        pattern <- paste0("\\.", method, "\\.(norm|norm_blk|conc|conc_all|history)(\\.[^.]+)?\\.(xlsx|csv)$")
+        # The tables of the latest export:
+        # "(base name).(method).(norm|norm_blk|conc|history).xlsx" and their CSV copies
+        # "(base name).(method).(norm|norm_blk|conc|history).(sheet).csv"
+        pattern <- "\\.(norm|norm_blk|conc|history)(\\.[^.]+)?\\.(xlsx|csv)$"
         files <- list.files(ws$tables, pattern = pattern, full.names = TRUE)
-        if (length(files) == 0) stop("No exported tables of this method yet. Run the export first.")
+        if (length(files) == 0) stop("No exported tables yet. Run the export first.")
         zip::zip(zipfile = file, files = files, mode = "cherry-pick")
       }
     )

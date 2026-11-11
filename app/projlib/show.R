@@ -391,7 +391,7 @@ calib_model_label <- function(name) {
 #' @noRd
 .calib_sample_info <- function(col_df, is_qc) {
   data.frame(name = col_df$sample_name, cls = as.character(col_df$Class), qc = is_qc,
-             batch = as.character(col_df$batch_id), inj = col_df$injection_order, stringsAsFactors = FALSE)
+             batch = measured_batch(col_df), inj = col_df$injection_order, stringsAsFactors = FALSE)
 }
 
 #' One curve of the calibration curve viewer (a view): its compounds, calibration points and samples
@@ -429,7 +429,7 @@ calib_view_of_batch <- function(x, mat_blk) {
   calib_view(
     rd = .calib_view_rd(SumExp::row_df(cs)),
     cal = list(sig = cc[[mat_blk]], used = !is.na(cc[[mat_cal]]), conc = util$spiked_conc_pts(cc),
-               info = data.frame(name = ccd$sample_name, batch = as.character(ccd$batch_id), inj = ccd$injection_order)),
+               info = data.frame(name = ccd$sample_name, batch = measured_batch(ccd), inj = ccd$injection_order)),
     smp = list(conc = cs[["conc"]], conc0 = cs[["conc0"]],
                flag = if ("conc_flag" %in% names(cs)) cs[["conc_flag"]] else NULL, sig = cs[[mat_cal]],
                info = .calib_sample_info(SumExp::col_df(cs), util$ctrl_smpl_cat(cs) == "QC"))
@@ -460,7 +460,7 @@ calib_view_all_batches <- function(lst, batch, mat_blk) {
     ccd <- SumExp::col_df(cc)[new, , drop = FALSE]
     sig <- cc[[mat_blk]][match(ids, rownames(cc)), new, drop = FALSE]
     parts[[b]] <- list(sig = sig, conc = util$spiked_conc_pts(cc)[new],
-                       info = data.frame(name = ccd$sample_name, batch = as.character(ccd$batch_id), inj = ccd$injection_order))
+                       info = data.frame(name = ccd$sample_name, batch = measured_batch(ccd), inj = ccd$injection_order))
   }
   sig <- do.call(cbind, lapply(parts, `[[`, "sig"))
   conc <- unlist(lapply(parts, `[[`, "conc"), use.names = FALSE)
@@ -502,7 +502,7 @@ calib_view_of_global <- function(gcal, samples) {
     rd = .calib_view_rd(rd, batch_view = FALSE),
     cal = list(sig = gcal$cal_signal[ids, , drop = FALSE], used = gcal$cal_used[ids, , drop = FALSE],
                conc = unname(gcal$cal_conc[pts]),
-               info = data.frame(name = info(pts)$sample_name, batch = as.character(info(pts)$batch_id),
+               info = data.frame(name = info(pts)$sample_name, batch = measured_batch(info(pts)),
                                  inj = info(pts)$injection_order)),
     smp = list(conc = (gcal$conc %||% gcal$conc0)[ids, , drop = FALSE], conc0 = gcal$conc0[ids, , drop = FALSE],
                flag = if (is.null(gcal$conc_flag)) NULL else gcal$conc_flag[ids, , drop = FALSE],
@@ -531,7 +531,7 @@ calib_view_removed <- function(se, mat_id, ids, reasons, batch = NULL) {
   v$why <- paste("Removed before calibration:", reasons[match(ids, names(reasons))])
   v$fill <- "#D9D9D9"   # Grey, as their rows in table 4.2
   calib_view(v, list(sig = sig, used = matrix(FALSE, nrow(sig), ncol(sig)), conc = util$spiked_conc_pts(se)[keep],
-                     info = data.frame(name = cd$sample_name[keep], batch = as.character(cd$batch_id[keep]),
+                     info = data.frame(name = cd$sample_name[keep], batch = measured_batch(cd)[keep],
                                        inj = cd$injection_order[keep])))
 }
 
@@ -707,7 +707,7 @@ is_distribution_data <- function(se, outlier = NULL, failed = NULL, rsd = NULL) 
     names = I(SumExp::row_df(se)$feature_name),
     failed = I(if (is.null(failed)) rep(FALSE, nrow(se)) else unname(failed) %in% TRUE),
     y = lapply(seq_len(nrow(y)), \(i) I(.r6(y[i, ]))),
-    smp = list(name = I(cd$sample_name), cls = I(as.character(cd$Class)), batch = I(as.character(cd$batch_id)),
+    smp = list(name = I(cd$sample_name), cls = I(as.character(cd$Class)), batch = I(measured_batch(cd)),
                inj = I(cd$injection_order), grp = I(grp), out = I(out)),
     colors = .hex_colors(sample_group_colors(grp)),
     # Table 3.4: the groups, their number of samples, and the RSD% of each IS (a column each)
@@ -748,7 +748,7 @@ conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_lim
     })
     names(entries) <- rownames(se)
     cd <- SumExp::col_df(se)
-    list(info = list(name = I(cd$sample_name), cls = I(as.character(cd$Class)), batch = I(as.character(cd$batch_id)),
+    list(info = list(name = I(cd$sample_name), cls = I(as.character(cd$Class)), batch = I(measured_batch(cd)),
                      inj = I(cd$injection_order)),
          c = entries)
   }
@@ -1040,6 +1040,19 @@ coord_zoom_in_by_cc <- function(n_cc = 4,
 
 #  -----  SHARED INTERACTIVE PLOTS (app and internal report)  ----------------------------------
 
+#' The batch in which each injection was measured: its batch ID, or, when all batches were
+#' processed together (batch `all`), the batch given in the data file (`org_batch_id`). For the
+#' colours and hover texts of the batches.
+#'
+#' @param col_df The `col_df` of a [`SumExp::SumExp`] object
+#' @returns A character vector
+#' @export
+measured_batch <- function(col_df) {
+  b <- as.character(col_df$batch_id)
+  if ("org_batch_id" %in% names(col_df)) b <- dplyr::coalesce(as.character(col_df$org_batch_id), b)
+  b
+}
+
 #' Sample groups for plots: the class of study samples, otherwise the control category
 #'
 #' @param col_df The `col_df` of a [`SumExp::SumExp`] object (with `Class` and `.ctrl_cat`)
@@ -1091,7 +1104,7 @@ plotly_is_bars <- function(is_se, mat_id, colour_by = c("group", "batch", "is"),
   v[is.na(v)] <- 0
   io <- cd$injection_order
   tot <- colSums(v)
-  who <- paste0("<b>", cd$sample_name, "</b><br>", cd$Class, " · batch ", cd$batch_id, " · inj. ", io,
+  who <- paste0("<b>", cd$sample_name, "</b><br>", cd$Class, " · batch ", measured_batch(cd), " · inj. ", io,
                 "<br>total ", sci_txt(tot))
   p <- plotly::plot_ly(height = height)
   if (colour_by == "is") {
@@ -1103,7 +1116,7 @@ plotly_is_bars <- function(is_se, mat_id, colour_by = c("group", "batch", "is"),
                             textposition = "none", hoverinfo = "text")
     }
   } else {
-    key <- if (colour_by == "batch") paste("Batch", cd$batch_id) else sample_group(cd)
+    key <- if (colour_by == "batch") paste("Batch", measured_batch(cd)) else sample_group(cd)
     col <- if (colour_by == "batch") hue_colors(sort(unique(key))) else sample_group_colors(key)
     for (g in names(col)[names(col) %in% key]) {
       k <- key == g
@@ -1114,7 +1127,7 @@ plotly_is_bars <- function(is_se, mat_id, colour_by = c("group", "batch", "is"),
   fit <- tryCatch(stats::loess(tot ~ io, span = 0.3), error = function(e) NULL)
   if (!is.null(fit)) {
     o <- order(io)
-    p <- plotly::add_lines(p, x = io[o], y = stats::predict(fit)[o], name = "Trend (LOESS)",
+    p <- plotly::add_lines(p, x = io[o], y = stats::predict(fit)[o], name = "Trend",
                            line = list(color = "#2F5BEA", width = 3), hoverinfo = "skip")
   }
   plotly::layout(p, title = list(text = title, x = 0.02), barmode = "stack", bargap = 0,
@@ -1139,14 +1152,14 @@ plotly_is_bars <- function(is_se, mat_id, colour_by = c("group", "batch", "is"),
 plotly_vis_bars <- function(y, smp, name, colour_by = c("group", "batch"), switchable = FALSE,
                             height = 420) {
   colour_by <- match.arg(colour_by)
-  txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", smp$batch_id,
+  txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", measured_batch(smp),
                 " · inj. ", smp$injection_order, "<br>peak area ", sci_txt(y))   # Scientific, as 3.5
   # Colours and groups of both colourings (as in the plots of the internal standards)
-  batch <- paste("Batch", smp$batch_id)
+  batch <- paste("Batch", measured_batch(smp))
   sets <- list(
     group = list(key = smp$group, col = sample_group_colors(smp$group)),
     batch = list(key = batch,
-                 col = hue_colors(paste("Batch", stringr::str_sort(unique(as.character(smp$batch_id)), numeric = TRUE))))
+                 col = hue_colors(paste("Batch", stringr::str_sort(unique(measured_batch(smp)), numeric = TRUE))))
   )
   shown <- if (switchable) names(sets) else colour_by
   p <- plotly::plot_ly(height = height)
@@ -1227,7 +1240,7 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
             setdiff(names(col), c("Blank", "QC", "Calibrant")) |> intersect(smp$group),
             intersect("Calibrant", smp$group))
   threshold <- factor * mean(y[smp$group == "Blank"], na.rm = TRUE)
-  txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", smp$batch_id,
+  txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", measured_batch(smp),
                 " · inj. ", smp$injection_order, "<br>", num_txt(y))
   p <- plotly::plot_ly(height = height)
   if (view == "groups") {
@@ -1503,7 +1516,7 @@ vis_rsd_table <- function(mat, names, smp) {
     list("Sample type", as.character(smp$sample_type), TRUE),
     list("Class", as.character(smp$Class), cat == ""),
     list("QC group", as.character(smp$Class), cat == "QC"),
-    list("Batch", paste("Batch", smp$batch_id), TRUE)
+    list("Batch", paste("Batch", measured_batch(smp)), TRUE)
   )
   purrr::map_dfr(groupings, function(g) {
     keys <- unique(g[[2]][g[[3]]])
@@ -1543,7 +1556,9 @@ mz_rt_outcome <- function(row_df, calib_rows = NULL, removed = NULL) {
   res <- calib_rows |>
     dplyr::group_by(feature_id) |>
     dplyr::summarise(quantified = any(to_export %in% TRUE), valid = any(has_proper_range %in% TRUE))
-  rem <- if (is.null(removed)) tibble::tibble(feature_id = character(), reason = character()) else
+  # No columns (data processed without any filter by older versions): nothing removed
+  no_rem <- is.null(removed) || !all(c("feature_id", "reason") %in% names(removed))
+  rem <- if (no_rem) tibble::tibble(feature_id = character(), reason = character()) else
     dplyr::distinct(removed[, c("feature_id", "reason")], feature_id, .keep_all = TRUE)
   out |>
     dplyr::left_join(res, by = "feature_id") |>
@@ -1611,7 +1626,7 @@ plotly_mz_rt_map <- function(df, height = 520) {
 #' @export
 plotly_is_distribution <- function(y, smp, name, outlier = rep(FALSE, length(y)), failed = FALSE,
                                    colors = sample_group_colors(smp$group), height = 480) {
-  txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", smp$batch_id,
+  txt <- paste0("<b>", smp$sample_name, "</b><br>", smp$Class, " · batch ", measured_batch(smp),
                 " · inj. ", smp$injection_order, "<br>peak area ", sci_txt(y),
                 ifelse(outlier, "<br><b>outlier sample</b>", ""))
   p <- plotly::plot_ly(height = height)

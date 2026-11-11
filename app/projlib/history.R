@@ -152,10 +152,11 @@ feature_history <- function(tr, lst_proc = NULL) {
         issue <- dplyr::coalesce(rd$range_issue, "no valid range")
         col[i] <- dplyr::case_when(
           !(!is.na(rd$has_proper_range) & rd$has_proper_range) ~ paste0("Not quantified: ", issue),
-          !is.na(rd$kept_calcurve) & rd$kept_calcurve ~ paste0(dplyr::coalesce(rd$src_calcurve, "Batch"),
+          !is.na(rd$kept_calcurve) & rd$kept_calcurve ~ paste0(util$calibration_label(dplyr::coalesce(rd$src_calcurve, "Batch"), length(cal)),
                                                                " curve kept although not valid: ", issue),
           rd$src_calcurve %in% "Global" & !is.na(rd$range_issue) ~ paste0("Global curve (", rd$range_issue, " in the batch)"),
           rd$src_calcurve %in% "Global" ~ "Global curve",
+          length(cal) == 1 ~ "Global curve",   # One batch only: its curve is the global curve
           TRUE ~ "Batch curve"
         )
         to_exp <- !is.na(rd$to_export) & rd$to_export
@@ -297,6 +298,7 @@ sample_history <- function(tr) {
       cat == "Blank" ~ "Not subtracted (blank sample)",
       cat == "CalCurve" ~ "Not subtracted (calibration sample)",
       batch %in% tr[["batches without blank"]] ~ "Blank mean of all batches (no blank in the batch)",
+      length(unique(batch)) == 1 ~ "Blank mean of all blanks",
       TRUE ~ "Blank mean of its batch"
     )
   )
@@ -306,8 +308,10 @@ sample_history <- function(tr) {
     for (mb in unique(cpb$mat_id)) {
       m <- sub("_blk$", "", mb)
       x <- cpb[cpb$mat_id == mb, ]
+      # One batch only: its curve is the global curve
+      lab <- util$calibration_label(x$calibration, nrow(x))
       txt <- ifelse(is.na(x$calibration), "Not calibrated",
-                    ifelse(is.na(x$note), x$calibration, paste0(x$calibration, " (", x$note, ")")))
+                    ifelse(is.na(x$note), lab, paste0(lab, " (", x$note, ")")))
       val <- unname(stats::setNames(txt, x$batch_id)[batch])
       tbl[[paste0("Calibration (", dplyr::coalesce(version_labels[m], m), ")")]] <- ifelse(is_out, "", val)
     }

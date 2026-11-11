@@ -76,6 +76,8 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   /* Tables with column filters keep room for a whole filter dropdown (at most 200px before it
      scrolls), also when filtered down to a row or two: the scroll area would clip it */
   .dataTables_scrollHead:has(.form-group) + .dataTables_scrollBody { min-height: 215px; }
+  /* The viewer that answers the arrow keys (clicked last): a thin outline */
+  .q-keys.q-active { outline: 1.5px solid #1A0DF2; outline-offset: 3px; border-radius: 8px; }
   .viewer .chip { display: inline-block; background: #EEF4FE; border-radius: 4px; padding: 1px 7px; margin: 0 6px 3px 0; }
   /* QuaNTA and SciLifeLab logos at the top right of the title block */
   .report-logos { float: right; display: flex; align-items: center; gap: 14px; margin: -8px 0 12px 24px; }
@@ -138,6 +140,36 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
       if (Object.keys(upd).length) Plotly.relayout(el, upd);
     });
   }, 1000);
+  // The arrow keys of the viewers (3.5, 3.8, 3.11, 4.4, 4.5, 4.6): only the viewer clicked last
+  // answers them (outlined, `.q-keys.q-active`), each with its own keys (registered by the viewer:
+  // `QuantaActive.register(element, function (key) { ...; return handled; })`). A click outside
+  // all viewers makes none active. Left / right in a text field move its cursor.
+  window.QuantaActive = (function () {
+    var active = null;
+    function set(el) {
+      if (active === el) return;
+      if (active) active.classList.remove('q-active');
+      active = el;
+      if (el) el.classList.add('q-active');
+    }
+    document.addEventListener('mousedown', function (e) {
+      set(e.target && e.target.closest ? e.target.closest('.q-keys') : null);
+    }, true);
+    document.addEventListener('keydown', function (e) {
+      if (!active || !active._qKeys || active.offsetParent === null) return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
+      var t = e.target, text = t && t.matches && t.matches('input[type=search], input[type=text], textarea');
+      if (text && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
+      if (active._qKeys(e.key)) e.preventDefault();
+    });
+    return {
+      register: function (el, handler) {
+        el.classList.add('q-keys');
+        el._qKeys = handler;
+      }
+    };
+  })();
   // Plots in tabs that were hidden at load time get their full width when the tab is opened
   document.addEventListener('shown.bs.tab', () => window.dispatchEvent(new Event('resize')));
   // The logos into the title block (built by Quarto)
@@ -230,7 +262,10 @@ feat <- SumExp::row_df(raw) |>
 smp <- SumExp::col_df(raw) |>
   tibble::as_tibble(rownames = "sample_id") |>
   mutate(category = ifelse(.ctrl_cat == "", "Study sample", .ctrl_cat),
-         group = show$sample_group(SumExp::col_df(raw)))
+         group = show$sample_group(SumExp::col_df(raw)),
+         # The batch of the measurement, also when all batches were processed together (batch
+         # `all`): the colours and hover texts of the batches
+         ms_batch = show$measured_batch(SumExp::col_df(raw)))
 study_classes <- sort(unique(smp$Class[smp$category == "Study sample"]))
 # Colours shared with the app (projlib/show.R)
 group_colors <- show$sample_group_colors(smp$group)
@@ -328,7 +363,7 @@ FAILED_BG <- "#F8D0D0"   # Background of table rows with a failed IS or calibrat
 KEPT_BG <- "#FFE3B3"     # Background of calibration curves kept although not valid
 # Shared sample table for the viewers; points refer to it by index (keeps the embedded data small)
 s_tab <- smp |> transmute(n = sample_name, c = Class, g = group, k = category,
-                          b = as.character(batch_id), i = injection_order)
+                          b = ms_batch, i = injection_order)
 # Averaged calibration points (option "average calibration replicates per batch"): not samples of
 # the data file, added so that the viewers can show them (ID = name, e.g. "CalAvg_B1_0.5")
 AVERAGE_CAL <- isTRUE(tr$params$average_cal_reps)
@@ -338,7 +373,7 @@ cal_avg <- if (HAS_CALIB) {
 }
 if (!is.null(cal_avg) && nrow(cal_avg) > 0) {
   s_tab <- bind_rows(s_tab, transmute(cal_avg, n = sample_name, c = paste("Average of", n_averaged %||% NA, "replicates"),
-                                      g = "Calibrant", k = "CalCurve", b = as.character(batch_id), i = injection_order))
+                                      g = "Calibrant", k = "CalCurve", b = show$measured_batch(cal_avg), i = injection_order))
 }
 s_idx <- setNames(seq_len(nrow(s_tab)) - 1L, s_tab$n)
 id2name <- setNames(smp$sample_name, smp$sample_id)
@@ -432,8 +467,10 @@ cpb <- cpb[cpb$mat_id == BLK, ]
 tibble(
   Batch = batch_label(batch_ids),
   `Blank samples` = vapply(batch_ids, \(b) sum(norm_cd$batch_id == b & norm_cd$.ctrl_cat == "Blank"), integer(1)),
-  `Blank subtracted` = ifelse(batch_ids %in% tr[["batches without blank"]], "Average of all batches", "Batch"),
-  Calibration = coalesce(cpb$calibration[match(batch_ids, cpb$batch_id)], "None"),
+  # With one batch only, its own curve / blank mean is the global one (`util$calibration_label()`)
+  `Blank subtracted` = util$blank_source_label(ifelse(batch_ids %in% tr[["batches without blank"]], "Average of all batches", "Batch"),
+                                               length(batch_ids)),
+  Calibration = util$calibration_label(coalesce(cpb$calibration[match(batch_ids, cpb$batch_id)], "None"), length(batch_ids)),
   Note = coalesce(as.character(cpb$note[match(batch_ids, cpb$batch_id)]), "")
 ) |> dt()
 ```
@@ -516,7 +553,7 @@ smp |>
 
 ```{r}
 smp |>
-  count(Batch = batch_id, group) |>
+  count(Batch = ms_batch, group) |>
   tidyr::pivot_wider(names_from = group, values_from = n, values_fill = 0) |>
   dt()
 ```
@@ -774,7 +811,8 @@ is_methods <- intersect(c("raw", "closest_norm", "loess_norm", "mvis_norm"), nam
 isbar <- list(
   names = SumExp::row_df(is_se)$feature_name,
   is_colors = unname(show$hue_colors(SumExp::row_df(is_se)$feature_name)),   # As in the app
-  batch_colors = as.list(show$hue_colors(paste("Batch", sort(unique(as.character(SumExp::col_df(is_se)$batch_id)))))),
+  # The batches of the measurements (also when processed together), as `b` of the sample table
+  batch_colors = as.list(show$hue_colors(paste("Batch", stringr::str_sort(unique(show$measured_batch(SumExp::col_df(is_se))), numeric = TRUE)))),
   group_order = names(group_colors),
   s = unname(s_idx[SumExp::col_df(is_se)$sample_name]),
   methods = unname(method_label[is_methods]),
@@ -847,7 +885,8 @@ plot_rla <- function(m) {
     mutate(norm_cd[in_matrix, ], method = method_label[mm], rla = rla(full_not_is(mm)))
   })) |>
     mutate(method = factor(method, levels = method_label[c("raw", m)]))
-  p <- ggplot(d, aes(injection_order, rla, color = group, text = paste0(sample_name, " (batch ", batch_id, ")"))) +
+  d$ms_batch <- show$measured_batch(d)
+  p <- ggplot(d, aes(injection_order, rla, color = group, text = paste0(sample_name, " (batch ", ms_batch, ")"))) +
     geom_hline(yintercept = 0, color = "grey60") +
     geom_point(size = 1.4, alpha = .8) +
     facet_wrap(~method, ncol = 1) +
@@ -881,7 +920,9 @@ pca_draw <- function(d, by) {
     return(note("No PCA: it needs at least 2 study samples or QCs and 2 features without missing values."))
   }
   if (by == "batch") {
-    ggplot(d, aes(PC1, PC2, color = factor(batch_id), shape = group == "QC")) +
+    # The batches of the measurements, also when processed together (batch `all`)
+    d$ms_batch <- factor(show$measured_batch(d), levels = stringr::str_sort(unique(show$measured_batch(d)), numeric = TRUE))
+    ggplot(d, aes(PC1, PC2, color = ms_batch, shape = group == "QC")) +
       geom_point(size = 2, alpha = .8) +
       facet_wrap(~method, scales = "free") +
       scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 17), labels = c(`FALSE` = "Study sample", `TRUE` = "QC"), name = NULL) +
@@ -1115,6 +1156,8 @@ if (pca_ok) {
   ve <- pca$ve
   pc <- tibble(PC1 = pca$x[, 1], PC2 = pca$x[, 2], cd) |>
     mutate(group = ifelse(.ctrl_cat == "QC", "QC", Class))
+  # The batches of the measurements, also when processed together (batch `all`)
+  pc$ms_batch <- factor(show$measured_batch(pc), levels = stringr::str_sort(unique(show$measured_batch(pc)), numeric = TRUE))
 }
 ```
 
@@ -1125,7 +1168,7 @@ if (pca_ok) {
 ```{r}
 #| fig-height: 5.5
 if (!pca_ok) note(PCA_MSG) else {
-p_pca <- ggplot(pc, aes(PC1, PC2, color = group, text = paste0(sample_name, " (batch ", batch_id, ")"))) +
+p_pca <- ggplot(pc, aes(PC1, PC2, color = group, text = paste0(sample_name, " (batch ", ms_batch, ")"))) +
   geom_point(size = 2, alpha = .8) +
   scale_color_manual(values = group_colors) +
   labs(x = paste0("PC1 (", ve[1], "%)"), y = paste0("PC2 (", ve[2], "%)"), color = NULL)
@@ -1138,7 +1181,7 @@ plotly::ggplotly(p_pca, tooltip = "text", height = 520)
 ```{r}
 #| fig-height: 5.5
 if (!pca_ok) note(PCA_MSG) else {
-p_pcab <- ggplot(pc, aes(PC1, PC2, color = factor(batch_id), text = sample_name)) +
+p_pcab <- ggplot(pc, aes(PC1, PC2, color = ms_batch, text = sample_name)) +
   geom_point(size = 2, alpha = .8) +
   labs(x = paste0("PC1 (", ve[1], "%)"), y = paste0("PC2 (", ve[2], "%)"), color = "Batch")
 plotly::ggplotly(p_pcab, tooltip = "text", height = 520)
@@ -1210,8 +1253,10 @@ window.addEventListener('load', function () {
   var who = function (s) { return '<b>' + S.n[s] + '</b><br>' + S.c[s] + ' · batch ' + S.b[s] + ' · inj. ' + S.i[s]; };
   var font = { family: 'Lato, Segoe UI, sans-serif' };
 
-  // A viewer: dropdown of items, previous / next buttons and redraw on any control change
-  function viewer(id, items, label, draw) {
+  // A viewer: dropdown of items, previous / next buttons and redraw on any control change. The
+  // arrow keys (when the viewer was clicked last): up / down the previous / next item; left / right
+  // `modes(root, -1 | 1)` if the viewer has modes (e.g. the two of 4.6), otherwise also the item
+  function viewer(id, items, label, draw, modes) {
     var root = document.getElementById(id); if (!root) return;
     var sel = root.querySelector('.sel'), search = root.querySelector('.search'), labels = items.map(label);
     // Options matching the search text (case-insensitive); the current item stays selected if it matches
@@ -1231,6 +1276,15 @@ window.addEventListener('load', function () {
     root.querySelectorAll('select, input:not(.search)').forEach(function (el) { el.addEventListener('change', function () { if (sel.options.length) draw(root); }); });
     root.querySelector('.prev').addEventListener('click', function () { if (sel.selectedIndex > 0) { sel.selectedIndex--; draw(root); } });
     root.querySelector('.next').addEventListener('click', function () { if (sel.selectedIndex < sel.options.length - 1) { sel.selectedIndex++; draw(root); } });
+    var step = function (d) {
+      var i = sel.selectedIndex + d;
+      if (i >= 0 && i < sel.options.length) { sel.selectedIndex = i; draw(root); }
+    };
+    if (window.QuantaActive) QuantaActive.register(root, function (key) {
+      var d = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : -1;
+      if ((key === 'ArrowLeft' || key === 'ArrowRight') && modes) modes(root, d); else step(d);
+      return true;
+    });
     draw(root);
   }
 
@@ -1286,7 +1340,7 @@ window.addEventListener('load', function () {
         });
       }
       var tr = B.trend[m];
-      if (tr) traces.push({ type: 'scatter', mode: 'lines', x: tr.x, y: tr.y, name: 'Trend (LOESS)', line: { color: '#2F5BEA', width: 3 }, hoverinfo: 'skip' });
+      if (tr) traces.push({ type: 'scatter', mode: 'lines', x: tr.x, y: tr.y, name: 'Trend', line: { color: '#2F5BEA', width: 3 }, hoverinfo: 'skip' });
       Plotly.react(bar.querySelector('.plot'), traces, {
         title: { text: 'Internal standards — ' + m, x: 0.02 }, barmode: 'stack', bargap: 0, hovermode: 'closest', font: font,
         xaxis: { title: 'Injection order' }, yaxis: { title: 'Summed IS peak area', exponentformat: 'E' },
@@ -1366,6 +1420,13 @@ window.addEventListener('load', function () {
     ['.sel', '.view', '.cal', '.log'].forEach(function (c) { q(c).addEventListener('change', drawB); });
     q('.prev').addEventListener('click', function () { if (bsel.selectedIndex > 0) { bsel.selectedIndex--; drawB(); } });
     q('.next').addEventListener('click', function () { if (bsel.selectedIndex < bsel.options.length - 1) { bsel.selectedIndex++; drawB(); } });
+    // Arrow keys (when clicked last): up / down the feature, left / right the view (groups, samples)
+    if (window.QuantaActive) QuantaActive.register(bv, function (key) {
+      var d = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : -1;
+      var s = (key === 'ArrowLeft' || key === 'ArrowRight') ? q('.view') : bsel, i = s.selectedIndex + d;
+      if (i >= 0 && i < s.options.length) { s.selectedIndex = i; drawB(); }
+      return true;
+    });
     fillB(); drawB();
   }
 
@@ -1417,6 +1478,10 @@ window.addEventListener('load', function () {
   if (Q && document.getElementById('qcv') && window.QuantaFigs) {
     viewer('qcv', Q.comps, function (c) { return c.name; }, function (root) {
       QuantaFigs.qcConc(root.querySelector('.plot'), Q.data, Q.comps[+root.querySelector('.sel').value].id);
+    }, function (root, d) {
+      // Left / right: the first / second mode (control chart, per batch), as its buttons
+      var b = root.querySelectorAll('.qf-group button');
+      if (b.length > 1) b[d < 0 ? 0 : b.length - 1].click();
     });
   }
 

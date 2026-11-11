@@ -9,24 +9,28 @@
 #' A Shiny UI module to generate a report
 #'
 #' @param uiId A string that identifies the UI module.
+#' @param downloads `NULL`, or a list of the download buttons of the reports (`internal`,
+#'   `external`; outputs of the app), shown next to their generate buttons
 #' @export
-genReportUI <- function(uiId) {
+genReportUI <- function(uiId, downloads = NULL) {
   ns <- shiny::NS(uiId)
-  # One group per report (button, progress bar, message): the card spaces the groups only
+  # One group per report (buttons, progress bar, message): the card spaces the groups only
   shiny::tagList(
-    # External report (PDF): shown in the app when generated ("Preview report", app.R, with its
-    # download button)
     shiny::div(
       class = "q-gen-group",
-      shiny::actionButton(inputId = ns("gen_external"), label = "Summary report (pdf)", class = "q-gen-btn"),
-      shiny::uiOutput(ns("progress_external")),   # Progress bar while rendering
-      shiny::textOutput(ns("gen_external_out"))
+      shiny::div(class = "q-gen-buttons",
+                 shiny::actionButton(inputId = ns("gen_internal"), label = "QC/QA report (html)", class = "q-gen-btn"),
+                 downloads$internal),
+      shiny::uiOutput(ns("progress_internal")),
+      shiny::textOutput(ns("gen_internal_out"))
     ),
     shiny::div(
       class = "q-gen-group",
-      shiny::actionButton(inputId = ns("gen_internal"), label = "QC/QA report (html)", class = "q-gen-btn"),
-      shiny::uiOutput(ns("progress_internal")),
-      shiny::textOutput(ns("gen_internal_out"))
+      shiny::div(class = "q-gen-buttons",
+                 shiny::actionButton(inputId = ns("gen_external"), label = "Summary report (pdf)", class = "q-gen-btn"),
+                 downloads$external),
+      shiny::uiOutput(ns("progress_external")),   # Progress bar while rendering
+      shiny::textOutput(ns("gen_external_out"))
     )
   )
 }
@@ -104,7 +108,7 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
     report_name <- function(type, time) {
       shiny::req(data_info[["input_file"]], nzchar(data_info[["input_file"]]), norm_method())
       base <- tools::file_path_sans_ext(basename(data_info[["input_file"]]), compression = TRUE)
-      paste0(base, "-", norm_method(), "-", sub("\\.", paste0("_", format(time, "%Y%m%d_%H%M%S"), "."), type))
+      paste0(base, "-", norm_method(), "-", sub("\\.", paste0("_", format_client_time(session, "%Y%m%d_%H%M%S", time), "."), type))
     }
     # The latest internal report of this session (shown in the app and downloaded)
     report_path <- shiny::reactiveVal("")
@@ -137,8 +141,9 @@ genReportServer <- function(serverId, data_info, ws, norm_method, no_external_re
           norm_method = shiny::isolate(norm_method()),
           interactive_plot = FALSE,
           project_title = shiny::isolate(data_info[["project_title"]]),
-          # The same time as in the file name, shown at the top of the report
-          generated_at = format(time, "%Y-%m-%d %H:%M:%S %Z"),
+          # The same time as in the file name, shown at the top of the report (the time zone
+          # of the user's browser)
+          generated_at = format_client_time(session, "%Y-%m-%d %H:%M:%S %Z", time),
           # Generated on SciLifeLab Serve: the reports acknowledge the hosting
           on_serve = shiny::isolate(is_on_serve(session))
         )

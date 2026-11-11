@@ -192,11 +192,20 @@ ui <-
       tags$link(rel = "icon", type = "image/png", sizes = "256x256", href = "quanta-icon-256.png"),
       tags$link(rel = "apple-touch-icon", sizes = "180x180", href = "quanta-icon-180.png"),
       tags$script(src = "split.min.js"),
+      # Lists ordered by dragging (the groups of the exported tables)
+      tags$script(src = paste0("quanta_order.js?v=", as.integer(file.mtime("www/quanta_order.js")))),
       tags$link(rel = "stylesheet", href = "fonts/fonts.css"),   # Lato, Oswald, JetBrains Mono (local)
       # The QuaNTA design; "?v=" (the file's modification time) makes browsers load a changed file
       tags$link(rel = "stylesheet",
                 href = paste0("quanta.css?v=", as.integer(file.mtime("www/quanta.css")))),
       shinyjs::useShinyjs(),   # Enable / disable buttons from the server
+      # The time zone of the browser (e.g. "Europe/Stockholm"): the times in the logs, the reports
+      # and the file names are the user's, not the server's (`format_client_time()`, R/runScript.R)
+      tags$script(HTML("
+        $(document).on('shiny:connected', function () {
+          try { Shiny.setInputValue('quanta_tz', Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (e) {}
+        });
+      ")),
       # All plotly plots: a light grey plot area (grid lines: www/quanta.css), as in the internal report
       tags$script(HTML("
         (function () {
@@ -293,6 +302,38 @@ ui <-
             lastTable = tr.closest('.dataTables_wrapper');
             e.stopPropagation();
           }, true);
+          // Arrow keys of 3.11: a click in the figure (`.q-key-area`, outlined) gives it the keys,
+          // up / down the feature and left / right the view; a click elsewhere gives them back
+          // to the tables (3.1: the IS of 3.5)
+          var keyArea = null;
+          document.addEventListener('mousedown', function (e) {
+            var a = e.target.closest ? e.target.closest('.q-key-area') : null;
+            if (keyArea && keyArea !== a) keyArea.classList.remove('q-active');
+            keyArea = a;
+            if (a) a.classList.add('q-active');
+          }, true);
+          function stepSelectize(id, d) {
+            var el = document.getElementById(id), s = el && el.selectize;
+            if (!s) return;
+            var vals = Object.values(s.options).sort(function (a, b) { return a.$order - b.$order; })
+              .map(function (o) { return String(o[s.settings.valueField]); });
+            var i = vals.indexOf(String(s.getValue())) + d;
+            if (s.isOpen) s.close();
+            if (i >= 0 && i < vals.length) s.setValue(vals[i]);
+          }
+          $(document).on('keydown', function (e) {
+            if (!keyArea || !document.body.contains(keyArea) || $(keyArea).is(':hidden')) return;
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+            // Typing in a box (e.g. searching a feature): its own keys
+            var t = e.target;
+            if ($(t).is('textarea, [contenteditable]') || ($(t).is('input') && (t.value || '') !== '')) return;
+            if ($(t).is('input') && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && $(t).closest('.selectize-control').length) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') stepSelectize('blank_feature', e.key === 'ArrowDown' ? 1 : -1);
+            else stepSelectize('blank_view', e.key === 'ArrowRight' ? 1 : -1);
+          });
           $(document).on('keydown', function (e) {
             if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
             if ($(e.target).is('input, textarea, select, [contenteditable]')) return;
@@ -496,14 +537,19 @@ ui <-
                       ),
                       shiny::uiOutput("removed_note"),
                       spinner(DT::DTOutput("tb_3_2_4")),
-                      # QC/QA: one feature in the blanks compared to the other sample groups
+                      # QC/QA: one feature in the blanks compared to the other sample groups. A
+                      # click in it (outlined then) gives it the arrow keys: up / down the feature,
+                      # left / right the view; a click elsewhere gives them back to table 3.1 (the
+                      # IS of 3.5). Script "Arrow keys of 3.11" below
+                      div(id = "blank_section", class = "q-key-area",
                       h3(tip_title("Blanks compared to samples", "3.11"), style = "margin: 16px 0 4px 0;"),
                       p("One feature at a time: the (method) blanks in red next to the QCs, study",
                         "samples and calibrants, with the threshold of the blank filter (only the study",
                         "samples are compared with it, not the QCs or calibrants). The values are",
                         "normalized but before blank filtering and blank subtraction. Type in the feature",
-                        "box to search; in the Feature, Normalization and View boxes, the arrow keys up /",
-                        "down switch to the previous / next choice.",
+                        "box to search. After a click in this figure (outlined then), the arrow keys up /",
+                        "down switch to the previous / next feature and left / right switch the view; a",
+                        "click elsewhere on the page gives the keys back to the internal standards (3.1, 3.5).",
                         "Internal standards are not blank-filtered (see 3.1 and 3.5)."),
                       div(
                         class = "q-controls-row",   # Labels at the same height (www/quanta.css)
@@ -533,6 +579,7 @@ ui <-
                       # How many features of the chosen kind the blank filter removed
                       uiOutput("blank_removed_count"),
                       spinner(plotlyOutput("ggplot3_3", height = "500px"))
+                      )
                     )
                   )
       ),
@@ -742,61 +789,45 @@ ui <-
     nav_panel(
       title = quanta_step(5, "Report\nexport", last = TRUE),
       value = "reports",
-      # Top row: the final normalization method (used by both reports and the exported tables;
-      # nothing is pre-selected, the generate / export buttons stay disabled until a method is
-      # chosen), generating the reports, and exporting the tables
+      # A third of the width each, the last third empty; each box as high as its content
+      # (`.q-report-box` / `.q-export-box` in www/quanta.css):
+      # - the reports, with the normalization method they use (nothing is pre-selected: the
+      #   generate buttons stay disabled until a method is chosen)
+      # - exporting the tables, with their own normalization methods (several at once) and the
+      #   layout of the tables
       layout_columns(
-        col_widths = c(5, 3, 4),
+        col_widths = c(4, 4, 4),
         fill = FALSE,
-        quanta_card("Final normalization method",
-                    icon_name = "sliders",
-                    subtitle = "Used for both reports and the exported tables.",
-                    spinner(uiOutput("final_norm_ui"))),
         quanta_card(
           "Report",
           icon_name = "file-lines",
-          subtitle = "Generate the internal (HTML) and external (PDF) reports.",
-          genReportUI("report")
+          subtitle = "Generate the QC/QA (HTML) and summary (PDF) reports.",
+          class = "q-report-box",
+          spinner(uiOutput("final_norm_ui")),
+          genReportUI(
+            "report",
+            downloads = list(
+              internal = downloadButton(outputId = "download_report", label = "Download HTML report",
+                                        class = "btn btn-sm btn-primary q-gen-download"),
+              external = downloadButton(outputId = "download_external_report", label = "Download PDF report",
+                                        class = "btn btn-sm btn-primary q-gen-download")
+            )
+          )
         ),
         quanta_card("Export tabular data",
                     icon_name = "table",
-                    subtitle = "Export the tables of the final normalization method.",
-                    # Exports the normalized, blank-subtracted and concentration tables of the
-                    # final normalization method selected at the top of this panel
+                    subtitle = "The normalized, blank-subtracted and concentration tables.",
+                    class = "q-export-box",
+                    uiOutput("export_options_ui"),
                     uiOutput("export_size_note"),
-                    runScriptUI("export_data", label = "Export data into tables", download=T)
-                  )
-      ),
-      # Second row, the whole width: the generated reports, one tab each (the tab of a report is
-      # shown when it has been generated). The box fills the rest of the window and the report
-      # fills the box, scrolling on its own (`.q-preview` in www/quanta.css): one scroll bar
-      quanta_card(
-        "Preview report",
-        icon_name = "eye",
-        subtitle = "The latest generated report of each kind.",
-        class = "q-preview",
-        navset_underline(
-          id = "report_tabs",
-          nav_panel(
-            "QC/QA report (html)", value = "internal",
-            # The download button in the upper right corner of the tab
-            div(
-              class = "d-flex justify-content-end my-2",
-              downloadButton(outputId = "download_report", label = "Download HTML report",
-                             class = "btn btn-sm btn-primary", style = "font-size:16px; padding:8px 20px;")
-            ),
-            spinner(uiOutput("the_report"))
-          ),
-          nav_panel(
-            "Summary report (pdf)", value = "external",
-            div(
-              class = "d-flex justify-content-end my-2",
-              downloadButton(outputId = "download_external_report", label = "Download PDF report",
-                             class = "btn btn-sm btn-primary", style = "font-size:16px; padding:8px 20px;")
-            ),
-            spinner(uiOutput("the_external_report"))
-          )
-        )
+                    runScriptUI("export_data", label = "Export data into tables", download=T),
+                    # The same parameters file as on page 2, with these export options in it
+                    div(class = "q-export-params",
+                        msdialInfoDownloadUI("data_info", label = "Download parameters (.yml)", where = "export"),
+                        helpText("The parameters file has the user information, the processing settings and",
+                                 "these export options; \"Load parameters file\" (page 1) sets them again."))
+                  ),
+        div()   # The last third: empty
       )
     ),
     # Help icon in the top-right corner; the popup content is in R/helpPopup.R
@@ -839,6 +870,8 @@ server <- function(input, output, session) {
     "data_info",
     ws = ws,
     processing_params = shiny::reactive(collect_processing_params(input)),
+    # The export options (page 5; defined below, reactives are evaluated lazily)
+    export_params = shiny::reactive(export_params_r()),
     on_params_loaded = remove_all_results
   )
   # Settings of a loaded parameters file that were not valid (set to their default): shown when
@@ -909,7 +942,9 @@ server <- function(input, output, session) {
     what = "Export data into tables",
     data_info = data_info,
     ws = ws,
-    norm_method = final_norm_method_r
+    # Defined below with the export options (reactives are evaluated lazily)
+    norm_methods = shiny::reactive(export_methods_r()),
+    layout_args = shiny::reactive(export_layout_args_r())
   )
   output$export_size_note <- shiny::renderUI({
     tr <- tryCatch(to_report_r(), error = function(e) NULL)   # Nothing before the processing
@@ -931,40 +966,19 @@ server <- function(input, output, session) {
     no_external_reason = shiny::reactive(if (is_target_mode()) NULL else no_calib_msg_r())
   )
 
-  # The generated reports in "Preview report", a tab each. Re-reading / a new upload / loading
-  # parameters deletes the reports (see below / msdialInfo.R): hidden then
-  report_frame <- function(path) {
-    if (is.null(path) || !nzchar(path) || !file.exists(path)) {
-      return(div(class = "q-note-line", style = "padding: 24px 0;", "Not generated yet."))
-    }
-    # Relative URL (no leading "/"): keeps working behind a proxy / sub-path. As high as the box
-    # leaves room for (`.q-preview iframe` in www/quanta.css); the report scrolls inside it
-    tags$iframe(src = paste0(ws$prefix, "/", basename(path), "?t=", as.numeric(Sys.time())),
-                class = "q-report-frame")
-  }
-  reports_shown <- function() {
+  # The download buttons of the reports are greyed out until the report has been generated (and
+  # again when re-reading / a new upload / loading parameters deletes the reports)
+  shiny::observe({
     input[["read_msdial-run_button"]]
     input[["data_info-input_file_upload"]]
     results_reset()
-  }
-  output$the_report <- shiny::renderUI({
-    reports_shown()
     report_obj$report_ready()
-    report_frame(report_obj$report_path())
-  })
-  output$the_external_report <- shiny::renderUI({
-    reports_shown()
     report_obj$external_ready()
-    report_frame(report_obj$external_path())   # The browser's PDF viewer
-  })
-  # A report just generated: its tab is shown
-  shiny::observeEvent(report_obj$report_ready(), {
-    bslib::nav_select("report_tabs", "internal")
-  }, ignoreInit = TRUE)
-  shiny::observeEvent(report_obj$external_ready(), {
-    bslib::nav_select("report_tabs", "external")
-  }, ignoreInit = TRUE)
-  
+    has <- function(p) !is.null(p) && nzchar(p) && file.exists(p)
+    shinyjs::toggleState("download_report", condition = has(report_obj$report_path()))
+    shinyjs::toggleState("download_external_report", condition = has(report_obj$external_path()))
+  }, priority = -10)   # After the reports have been deleted
+
   output$download_external_report <- shiny::downloadHandler(
     filename = function() basename(report_obj$external_path() %||% "external_report.pdf"),
     content = function(file) {
@@ -1037,19 +1051,27 @@ server <- function(input, output, session) {
     shinyjs::toggleState("proc-run_button", condition = has_parsed && free)
   }, priority = -10)   # After the upload handler has deleted the earlier data
 
-  # ---- Final normalization method (top of the Reports panel) ----
-  output$final_norm_ui <- shiny::renderUI({
+  # ---- Normalization method of the reports (Reports panel) ----
+  # The labels of the computed methods, with their median RSD% (the reports and the export)
+  norm_labels_r <- shiny::reactive({
     ids <- available_norm_r()
-    best <- best_norm_r()
     rsd <- to_report_r()[["median RSD% per normalization"]]
-    basis <- to_report_r()[["median RSD% basis"]]
-    label_of <- function(id) {
+    stats::setNames(vapply(ids, function(id) {
       nm <- names(NORM_METHOD_LABELS)[match(id, NORM_METHOD_LABELS)]
       if (is.na(nm)) nm <- id
       if (!is.null(rsd) && !is.na(rsd[id])) {
         nm <- paste0(nm, " (median RSD ", round(rsd[id], 1), "%)")
       }
       nm
+    }, character(1)), ids)
+  })
+  output$final_norm_ui <- shiny::renderUI({
+    ids <- available_norm_r()
+    best <- best_norm_r()
+    basis <- to_report_r()[["median RSD% basis"]]
+    label_of <- function(id) {
+      l <- norm_labels_r()
+      if (id %in% names(l)) l[[id]] else id
     }
     basis_txt <- if (is.null(basis) || is.na(basis)) {
       paste("could not be determined (no replicate QC or calibration samples, or data processed",
@@ -1072,8 +1094,7 @@ server <- function(input, output, session) {
       )),
       shiny::radioButtons(
         inputId = "final_norm_method",
-        label = paste("Choose the normalization method used for the internal and external reports",
-                      "and the exported tables"),
+        label = "Normalization method of the reports (QC/QA and summary report)",
         choices = choices,
         selected = selected,
         inline = FALSE,
@@ -1087,16 +1108,155 @@ server <- function(input, output, session) {
       if (!"mvis_norm" %in% ids) {
         shiny::helpText("Multivariate (PCA) normalization could not be computed for this data;",
                         "see the processing messages.")
-      }
+      },
+      # Room between the explanation and the report buttons
+      shiny::br(), shiny::br()
     )
   })
 
-  # Report and export buttons are disabled (greyed out) until a final method has been chosen
+  # Report buttons are disabled (greyed out) until the method of the reports has been chosen;
+  # the export button until at least one method to export is ticked
   shiny::observe({
     chosen <- isTRUE(tryCatch(final_norm_chosen_r(), error = function(e) FALSE))
-    for (id in c("report-gen_external", "report-gen_internal", "export_data-run_button")) {
+    for (id in c("report-gen_external", "report-gen_internal")) {
       shinyjs::toggleState(id, condition = chosen)
     }
+    shinyjs::toggleState("export_data-run_button",
+                         condition = length(tryCatch(export_methods_r(), error = function(e) NULL)) > 0)
+  })
+
+  # ---- Export options (right column of the Reports panel) ----
+  # The injection types of the read data, in their default order: QCs, the study sample groups,
+  # blanks, calibration points (values as for `--group_order` of scripts/export_data.R)
+  export_types_r <- shiny::reactive({
+    cd <- SumExp::col_df(shiny::req(raw_se_r()))
+    cat <- as.character(cd$.ctrl_cat)
+    cat[is.na(cat)] <- ""
+    groups <- stringr::str_sort(unique(as.character(cd$Class[cat == ""])), numeric = TRUE)
+    types <- c(
+      if (any(cat == "QC")) c(QC = "QC"),
+      stats::setNames(paste0("grp:", groups), groups),
+      if (any(cat == "Blank")) c(Blanks = "Blank"),
+      if (any(cat == "CalCurve")) c("Calibration points" = "CalCurve")
+    )
+    types
+  })
+  # The export options: their defaults, changed by the user in the export box or by a loaded
+  # parameters file (its `export:` section), and saved in the downloaded parameters file
+  EXPORT_DEFAULTS <- list(norm_methods = "best", group_by_type = TRUE, group_by_batch = FALSE,
+                          group_order = c("QC", "Samples", "Blank", "CalCurve"),
+                          keep = c("QC", "Blank", "CalCurve"))
+  export_settings <- shiny::reactiveVal(EXPORT_DEFAULTS)
+  set_export <- function(name, value) {
+    s <- shiny::isolate(export_settings())
+    s[[name]] <- value
+    export_settings(s)
+  }
+  export_params_r <- shiny::reactive({
+    s <- export_settings()
+    # Lists in the file also with one element
+    list(norm_methods = as.list(s$norm_methods), group_by_type = s$group_by_type,
+         group_by_batch = s$group_by_batch, group_order = as.list(s$group_order), keep = as.list(s$keep))
+  })
+  # A loaded parameters file: its export options (missing or invalid ones keep their defaults)
+  shiny::observeEvent(data_info$loaded_export, {
+    p <- data_info$loaded_export
+    chr <- function(x) if (is.null(x)) NULL else as.character(unlist(x))
+    lgl <- function(x, def) if (length(x) == 1 && is.logical(x) && !is.na(x)) x else def
+    export_settings(list(
+      norm_methods = chr(p$norm_methods) %||% EXPORT_DEFAULTS$norm_methods,
+      group_by_type = lgl(p$group_by_type, EXPORT_DEFAULTS$group_by_type),
+      group_by_batch = lgl(p$group_by_batch, EXPORT_DEFAULTS$group_by_batch),
+      group_order = chr(p$group_order) %||% EXPORT_DEFAULTS$group_order,
+      keep = intersect(chr(p$keep) %||% EXPORT_DEFAULTS$keep, c("QC", "Blank", "CalCurve"))
+    ))
+  }, ignoreNULL = TRUE)
+  # The user's changes in the export box
+  shiny::observeEvent(input$export_norm_methods, set_export("norm_methods", as.character(input$export_norm_methods)),
+                      ignoreNULL = FALSE, ignoreInit = TRUE)
+  shiny::observeEvent(input$export_group_type, set_export("group_by_type", isTRUE(input$export_group_type)), ignoreInit = TRUE)
+  shiny::observeEvent(input$export_group_batch, set_export("group_by_batch", isTRUE(input$export_group_batch)), ignoreInit = TRUE)
+  shiny::observeEvent(input$export_order, set_export("group_order", as.character(unlist(input$export_order))), ignoreInit = TRUE)
+  shiny::observeEvent(input$export_keep, set_export("keep", as.character(input$export_keep)),
+                      ignoreNULL = FALSE, ignoreInit = TRUE)
+
+  # The order of the groups of the read data: the saved order, with "Samples" standing for the
+  # study sample groups not named; groups not in it after the others (in their default order)
+  export_order_r <- shiny::reactive({
+    def <- unname(export_types_r())
+    want <- export_settings()$group_order
+    named <- intersect(want, def)
+    out <- character()
+    for (v in want) {
+      if (v == "Samples") out <- c(out, setdiff(def[startsWith(def, "grp:")], named))
+      else if (v %in% def) out <- c(out, v)
+    }
+    unique(c(out, def))
+  })
+  # The methods of the settings that were computed ("best": the best method), or the best one
+  export_selected_methods_r <- shiny::reactive({
+    ids <- available_norm_r()
+    m <- export_settings()$norm_methods
+    m <- unique(ifelse(m == "best", best_norm_r(), m))
+    intersect(m, ids)
+  })
+  output$export_options_ui <- shiny::renderUI({
+    ids <- available_norm_r()
+    best <- best_norm_r()
+    labs <- norm_labels_r()
+    types <- export_types_r()
+    s <- shiny::isolate(export_settings())
+    sel <- shiny::isolate(export_selected_methods_r())
+    keep_choices <- c(QCs = "QC", Blanks = "Blank", "Calibration points" = "CalCurve")
+    keep_choices <- keep_choices[keep_choices %in% types]
+    order <- shiny::isolate(export_order_r())
+    shiny::tagList(
+      shiny::checkboxGroupInput(
+        "export_norm_methods", "Normalization methods (one set of tables each)",
+        choices = stats::setNames(ids, ifelse(ids == best, paste0(labs[ids], " (best)"), labs[ids])),
+        selected = sel, width = "100%"
+      ),
+      shiny::div(
+        class = "q-export-layout",
+        shiny::tags$label(class = "control-label", "Columns of the tables"),
+        shiny::checkboxInput("export_group_type", "Group per injection type", value = s$group_by_type),
+        # The groups as columns, dragged into their order: the first is the leftmost group
+        shiny::conditionalPanel(
+          "input.export_group_type",
+          shiny::div(class = "q-order-hint", "Drag the groups into their order (left: first columns of the tables):"),
+          shiny::div(
+            class = "q-order", `data-input` = "export_order",
+            lapply(order, function(v) {
+              shiny::div(class = "q-order-item", draggable = "true", `data-value` = v,
+                         title = names(types)[match(v, types)],
+                         shiny::span(names(types)[match(v, types)]))
+            })
+          )
+        ),
+        shiny::checkboxInput("export_group_batch", "Group per batch (then by injection order within each batch)",
+                             value = s$group_by_batch)
+      ),
+      if (length(keep_choices) > 0) {
+        shiny::checkboxGroupInput(
+          "export_keep", "Keep in the tables (the study samples are always in them)",
+          choices = keep_choices, selected = intersect(s$keep, keep_choices), width = "100%"
+        )
+      },
+      shiny::helpText("Blanks are never in the blank-subtracted tables.")
+    )
+  })
+  # The methods to export (matrix IDs), the computed ones only
+  export_methods_r <- shiny::reactive(intersect(input$export_norm_methods, available_norm_r()))
+  # The script arguments of the layout of the tables (scripts/export_data.R)
+  export_layout_args_r <- shiny::reactive({
+    s <- export_settings()
+    keep <- s$keep
+    c(paste0("--group_by_type=", isTRUE(s$group_by_type)),
+      paste0("--group_by_batch=", isTRUE(s$group_by_batch)),
+      paste0("--group_order=", jsonlite::toJSON(export_order_r())),
+      paste0("--keep_qc=", "QC" %in% keep),
+      paste0("--keep_blank=", "Blank" %in% keep),
+      paste0("--keep_cal=", "CalCurve" %in% keep))
   })
 
   # Calibration tab: offer only the computed methods; start from the best one after processing
@@ -2324,8 +2484,12 @@ server <- function(input, output, session) {
           # ✅ flags for coloring
           is_bad = !has_proper_range,
           is_global = src_calcurve == "Global",
-          # Calibration curve used for quantification: "Batch", "Global" or "None"
-          calibration = dplyr::coalesce(src_calcurve, "None"),
+          # Calibration curve used for quantification: "Batch", "Global" or "None" (one batch
+          # only: its curve is the global curve)
+          calibration = util$calibration_label(
+            dplyr::coalesce(src_calcurve, "None"),
+            length(unique(as.character(SumExp::col_df(raw_se_r())$batch_id)))
+          ),
           max_c = dplyr::case_when(
             max_c == -9 ~ "No valid max",
             max_c == 0 | is.na(max_c) ~ "",

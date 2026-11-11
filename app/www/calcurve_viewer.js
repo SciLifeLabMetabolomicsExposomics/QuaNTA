@@ -232,10 +232,22 @@
       fill("");
     }
 
-    // Keys (`opts.keys`): left / right the mode; with `nav` up / down the compound. Not while
-    // typing in a field (but up / down in the search box go through its matches), nor when the
-    // viewer is hidden (e.g. on another page of the app)
-    if (opts.keys) {
+    // Keys (`opts.keys`): left / right the mode; with `nav` up / down the compound. In a page with
+    // `QuantaActive` (the internal report), only when the viewer was clicked last (outlined), as
+    // the other viewers of the page. Otherwise (the app, the tutorial) anywhere on the page: not
+    // while typing in a field (but up / down in the search box go through its matches), nor when
+    // the viewer is hidden (e.g. on another page of the app)
+    if (opts.keys && global.QuantaActive) {
+      global.QuantaActive.register(el, function (key) {
+        if (key === "ArrowLeft" || key === "ArrowRight") {
+          api.setMode(key === "ArrowLeft" ? "inspect" : "final");
+          return true;
+        }
+        if (!nav) return false;
+        api.step(key === "ArrowDown" ? 1 : -1);
+        return true;
+      });
+    } else if (opts.keys) {
       document.addEventListener("keydown", function (e) {
         if (!document.body.contains(el) || el.offsetParent === null) return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;

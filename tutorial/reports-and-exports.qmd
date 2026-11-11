@@ -10,12 +10,13 @@ best <- tr[["best normalization"]]
 conc_file <- grep("\\.conc\\.xlsx$", tut$table_files, value = TRUE)[1]
 ```
 
-Page 5 of the app, **Report export**, gives you the results to keep: two reports and the tables
-of the data. Everything on this page uses one **final normalization method**.
+Page 5 of the app, **Report export**, gives you the results to keep: two reports (the box
+**Report**, left) and the tables of the data (the box **Export tabular data**, next to it). The
+reports use one normalization method; the tables can be exported for several.
 
-## Final normalization method
+## Normalization method of the reports
 
-Choose the method first; the buttons stay greyed out until you do. **Best** is the method with the
+Choose the method first; the report buttons stay greyed out until you do. **Best** is the method with the
 lowest median RSD% among the QC replicates (here `r tut$method_labels[[best]]`), and each option shows
 its median RSD%:
 
@@ -36,24 +37,43 @@ you are most interested in.
 | **QC/QA report (html)** | the internal report: all quality-control steps, tables and interactive figures, as on pages 2–4 of the app | checking and documenting the processing |
 | **Summary report (pdf)** | the external report: the project, the methods and the results in a few pages | sharing the results |
 
-The buttons are in the box **Report** at the top of the page, next to the normalization method. A
-progress bar shows how far the report is. When it is ready, it is shown in **Preview report**, the
-wide box below, in its own tab: *QC/QA report (html)* or *Summary report (pdf)*, each with its download
-button in the upper right corner (**Download HTML report**, **Download PDF report**). The reports
-name the settings that were used, so they document the processing.
+The buttons are in the box **Report**, under the normalization method. A progress bar shows how far
+the report is. When it is ready, its download button next to it (**Download HTML report**,
+**Download PDF report**) is no longer greyed out. The reports name the settings that were used, so
+they document the processing.
+
+In the QC/QA report, click a figure with a compound list (e.g. 4.4 or 4.5) to use the arrow keys
+there: it gets a thin blue outline, and up / down go to the previous / next compound. Left / right
+switch the modes where a figure has two (4.4, 4.6, and the view in 3.11), otherwise they also go
+through the compounds. Only the outlined figure reacts to the keys.
 
 ## Exported tables
 
-**Export data into tables**, in the box **Export tabular data** at the top right, writes five Excel files for the final method (and each of their sheets
-as a `.csv` file), ready to download:
+**Export data into tables**, in the box **Export tabular data**, writes four Excel files for each
+ticked normalization method (and each of their sheets as a `.csv` file), ready to download as one
+`.zip` file:
 
 | File | Content |
 |---|---|
 | `….norm.xlsx` | normalized peak areas of all features (also non-targeted) |
-| `….norm_blk.xlsx` | the same after blank subtraction |
-| `….conc.xlsx` | concentrations of the targeted compounds: QCs, study samples and blanks |
-| `….conc_all.xlsx` | the same with all samples, including the calibration samples |
+| `….norm_blk.xlsx` | the same after blank subtraction (never with the blanks) |
+| `….conc.xlsx` | concentrations of the targeted compounds |
 | `….history.xlsx` | what the processing did with each feature and sample (see [Processing history](#processing-history)) |
+
+The options of the box choose the columns of the tables:
+
+- **Normalization methods**: one set of files per ticked method (the best one is ticked at first).
+- **Group per injection type** (ticked at first): the QCs together, the blanks together, the
+  calibration points together and each study sample group together. Drag the groups (shown as
+  columns) into the order you want: the leftmost is the first group of the table. At first: QCs,
+  the study sample groups, blanks, calibration points.
+- **Group per batch**: the batches one after the other, by injection order within each batch (with
+  the grouping above too: by type within each batch).
+- **Keep in the tables**: the QCs, blanks and calibration points (all ticked at first). The study
+  samples are always in the tables.
+
+**Download parameters (.yml)** under the export saves these options with the processing settings, in
+the same file as on page 1; loading the file sets them again.
 
 On SciLifeLab Serve, very large tables (more than 5 million values, e.g. tens of thousands of
 non-targeted features) are written as `.csv` files only, with the same layout, since an Excel file
@@ -141,6 +161,7 @@ if (!is.na(hist_file)) {
 
 ::: {.callout-tip}
 ## Reuse the processing
-Save the settings with **Download settings (.yml)** on page 1. Loading the file later, in the app or
-with `run_quanta.R` on the command line, processes new data the same way.
+Save the settings with **Download parameters** on page 1 or **Download parameters (.yml)** on page 5
+(also with the export options). Loading the file later, in the app or with `run_quanta.R` on the
+command line, processes new data the same way.
 :::

@@ -26,7 +26,8 @@ outliers, and how stable they are over the run.
 ## 3.1 Internal standards
 All internal standards with their retention time, m/z, the RSD% of their raw peak areas over all
 samples, and the number of samples where they were not found (zero). **Failed** IS are red. In the
-app, select a row (or use the arrow keys ↑ / ↓) to show that IS in 3.4 and 3.5.
+app, select a row (or use the arrow keys ↑ / ↓) to show that IS in 3.4 and 3.5 (unless figure 3.11
+was clicked last: it then has the arrow keys).
 ```{r}
 #| label: table-3-1
 d <- tibble::tibble(

@@ -359,6 +359,33 @@ calib_notes <- function(row_df, batch_view = TRUE, detection = NULL) {
   )
 }
 
+#' The calibration of a batch as shown (tables, exports, history)
+#'
+#' With one batch only (all injections together, e.g. not processed per batch: batch `all`), the
+#' curve of the batch is fitted on all samples, i.e. it is the global curve: "Batch" (and "Batch +
+#' Global") are shown as "Global". The stored values are not changed (they mean "the batch's own
+#' curve" for the processing and the notes).
+#'
+#' @param x Calibrations, e.g. "Batch", "Global", "Batch + Global", `NA`
+#' @param n_batches The number of batches of the data
+#' @returns `x` as text, relabelled for a single batch
+#' @export
+calibration_label <- function(x, n_batches) {
+  x <- as.character(x)
+  if (isTRUE(n_batches == 1)) x[x %in% c("Batch", "Batch + Global")] <- "Global"
+  x
+}
+
+#' The blank subtraction of a batch as shown: with one batch only, "Batch" (the blank mean of its
+#' batch) is the mean of all blanks
+#' @inheritParams calibration_label
+#' @export
+blank_source_label <- function(x, n_batches) {
+  x <- as.character(x)
+  if (isTRUE(n_batches == 1)) x[x %in% "Batch"] <- "Average of all blanks"
+  x
+}
+
 #' The notes of [calib_notes()] as one text per chemical (`""`: none)
 #' @export
 calib_notes_text <- function(notes) {

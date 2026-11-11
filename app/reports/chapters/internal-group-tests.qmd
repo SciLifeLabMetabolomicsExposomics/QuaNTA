@@ -76,16 +76,25 @@ plotly::toWebGL(plotly::ggplotly(p_v, tooltip = "text", height = 560))
 
 ### Table
 
-The features that differ significantly (q &lt; 0.05); all compared features are in the plot.
+All compared features, the significant ones (q &lt; 0.05) first, and the targeted compounds that were
+not tested (a valid concentration in fewer than half of the study samples of the two groups). Choose
+*Yes* in the filter of the column **Significant** for the significant features only; **CSV** or
+**Copy** gives the rows shown by the filters.
 
 ```{r}
-# Significant features only (all of them would make the report very large with many features)
-cmp_sig <- filter(cmp, !is.na(q), q < 0.05)
-if (nrow(cmp_sig) == 0) note("No feature differs significantly (q < 0.05).") else
-cmp_sig |> transmute(Feature, Type = factor(Type), !!paste("Median", grp[1]) := signif(med1, 3),
-                     !!paste("Median", grp[2]) := signif(med2, 3),
-                     `log2 FC` = round(log2fc, 2), p = signif(p, 2), q = signif(q, 2)) |>
-  arrange(q) |> dt()
+# The targeted compounds that were not tested (too few valid concentrations), and those whose test
+# gave no p-value
+not_tested <- study_long |> filter(Class %in% grp) |> group_by(Feature = feature_name) |>
+  summarise(v = mean(status == "Valid"), .groups = "drop") |> filter(v < 0.5)
+cmp_all <- bind_rows(cmp, tibble(Feature = not_tested$Feature, Type = rep("Targeted (concentration)", nrow(not_tested)))) |>
+  mutate(Significant = factor(case_when(is.na(p) ~ "Not tested", !is.na(q) & q < 0.05 ~ "Yes", TRUE ~ "No"),
+                              levels = c("Yes", "No", "Not tested")))
+if (nrow(cmp_all) == 0) note("No features to compare.") else
+cmp_all |> arrange(Significant, q, Feature) |>
+  transmute(Feature, Type = factor(Type), Significant, !!paste("Median", grp[1]) := signif(med1, 3),
+            !!paste("Median", grp[2]) := signif(med2, 3),
+            `log2 FC` = round(log2fc, 2), p = signif(p, 2), q = signif(q, 2)) |>
+  dt()
 ```
 
 :::

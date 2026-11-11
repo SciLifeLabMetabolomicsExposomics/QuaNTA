@@ -88,7 +88,8 @@ lim_tbl <- purrr::map_dfr(cal_data, function(cd) {
   purrr::map_dfr(names(cd$v), function(nm) {
     v <- cd$v[[nm]]
     if (is.null(v) || startsWith(cd$note, "Removed")) return(NULL)
-    tibble(Compound = cd$name, Curve = nm, `Curve used` = v$src,
+    # One batch only: its curve is the global curve
+    tibble(Compound = cd$name, Curve = nm, `Curve used` = util$calibration_label(v$src, length(batch_ids)),
            Status = if (v$src == "None") "Not valid" else if (isTRUE(v$kept)) "Kept (not valid)" else
              if (nm != "Global" && v$src == "Global") "Global curve used" else "Valid",
            LOD = v$lod %||% NA, LLOQ = v$lloq %||% NA, ULOQ = v$uloq %||% NA,
@@ -178,8 +179,9 @@ points it was fitted on, and the QCs (blue; the QC group in the hover text) and 
 class) at their concentration, values replaced by the LOD/LLOQ rules as open circles. Grey areas are
 below the LOD and the LLOQ, the olive area above the ULOQ; the parameters of the curve are shown
 above the plot. `r if (multi_batch) "Choose the curve: **Global** (all batches) or a batch, which shows the curve used for that batch (its own, or the global one if the batch fell back to it) with its calibration points and samples. " else ""`Search a compound by
-name; the arrow keys up / down go to the previous / next compound, left / right switch between the
-modes. Click legend entries to hide or show groups; hover over a point for its details. On log axes,
+name. After a click on the viewer (outlined then), the arrow keys up / down go to the previous / next
+compound, left / right switch between the modes; the other viewers of the report work the same way
+(left / right also go through the compounds where there are no modes). Click legend entries to hide or show groups; hover over a point for its details. On log axes,
 the zero calibrant (Cal0) is drawn as a short line at the left edge.
 
 ```{r}

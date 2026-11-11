@@ -578,34 +578,89 @@ export_table_values <- function(tr) {
   invisible(file)
 }
 
-#' Remove calibration curve samples
-.remove_calcurve_samples <- function(sumexp) {
-  sumexp[, !util$is_calcurve_sample(sumexp)]
+#' How the injections of the exported tables are chosen and ordered
+#'
+#' @param by_type Group the columns by injection type, in the order of `order`
+#' @param by_batch Group the columns by batch first (then by injection type, if `by_type`)
+#' @param order The injection types in their order: "QC", "Blank", "CalCurve" (calibration
+#'   standards) and the study sample groups, as "grp:<Class>". "Samples" stands for all study
+#'   sample groups not named (by name). Types not in `order` come last.
+#' @param keep Whether to keep the QCs, blanks and calibration standards (the study samples are
+#'   always kept; the blank-subtracted tables never have blanks)
+#' @returns A list for [export_data_with_feature_table_xlsx()] and [export_concentration_xlsx()]
+#' @export
+export_layout <- function(by_type = TRUE, by_batch = FALSE, order = c("QC", "Samples", "Blank", "CalCurve"),
+                          keep = c(QC = TRUE, Blank = TRUE, CalCurve = TRUE)) {
+  types <- c("QC", "Blank", "CalCurve")
+  list(by_type = isTRUE(by_type), by_batch = isTRUE(by_batch), order = as.character(order),
+       keep = stats::setNames(keep[types] %in% TRUE, types))
 }
 
-#' Batch IDs as sortable numbers ("2" before "10")
+#' The calibration and blank subtraction of the injections as shown, for data of one batch only
+#' (rows "Calibration" and "Blank subtracted" of the tables; see [util$calibration_label()])
+.label_single_batch <- function(sumexp, n_batches) {
+  cd <- SumExp::col_df(sumexp)
+  if ("calibration" %in% names(cd)) cd[["calibration"]] <- util$calibration_label(cd[["calibration"]], n_batches)
+  if ("blank_source" %in% names(cd)) cd[["blank_source"]] <- util$blank_source_label(cd[["blank_source"]], n_batches)
+  SumExp::col_df(sumexp) <- cd
+  sumexp
+}
+
+#' The injections of `sumexp` that `layout` keeps (from [export_layout()])
+.keep_samples <- function(sumexp, layout) {
+  drop <- names(layout$keep)[!layout$keep]
+  sumexp[, !as.character(util$ctrl_smpl_cat(sumexp)) %in% drop]
+}
+
+#' The injections of `sumexp` in the order of `layout` (from [export_layout()])
+#'
+#' - by injection type: the types in the order of `layout$order`, within a type by batch and
+#'   injection order
+#' - by batch: by batch, then by injection order (with `by_type` too: batch, type, injection order)
+#' - neither: by injection order (then batch)
+.order_samples <- function(sumexp, layout) {
+  cd <- SumExp::col_df(sumexp)
+  cat <- as.character(cd$.ctrl_cat)
+  cat[is.na(cat)] <- ""
+  key <- ifelse(cat == "", paste0("grp:", as.character(cd$Class)), cat)
+  type_rank <- rep(0, length(key))
+  if (layout$by_type) {
+    n <- length(layout$order)
+    type_rank <- as.numeric(match(key, layout$order))
+    # Types not named: the study sample groups at "Samples" (or last), the others last; by name
+    miss <- is.na(type_rank)
+    if (any(miss)) {
+      extra <- sort(unique(key[miss]))
+      sub <- match(key, extra) / (length(extra) + 1)
+      at_samples <- match("Samples", layout$order)
+      base <- ifelse(cat == "" & !is.na(at_samples), at_samples, n + 1)
+      type_rank[miss] <- (base + sub)[miss]
+    }
+  }
+  batch <- .batch_rank(sumexp)
+  inj <- .injection_order(sumexp)
+  ord <- if (layout$by_batch) {
+    order(batch, type_rank, inj)
+  } else if (layout$by_type) {
+    order(type_rank, batch, inj)
+  } else {
+    order(inj, batch)
+  }
+  sumexp[, ord]
+}
+
+#' Batch IDs as sortable numbers ("2" before "10"); the batches of the measurements, also when
+#' all batches were processed together (batch `all`: the batch given in the data file)
 .batch_rank <- function(sumexp) {
-  b <- as.character(SumExp::col_df(sumexp)[["batch_id"]])
+  cd <- SumExp::col_df(sumexp)
+  b <- as.character(cd[["batch_id"]])
+  if ("org_batch_id" %in% names(cd)) b <- dplyr::coalesce(as.character(cd[["org_batch_id"]]), b)
   match(b, stringr::str_sort(unique(b), numeric = TRUE))
 }
 
 #' Injection order as numbers
 .injection_order <- function(sumexp) {
   suppressWarnings(as.numeric(as.character(SumExp::col_df(sumexp)[["injection_order"]])))
-}
-
-#' Reorder the samples as QCs first (leftmost columns), then the study samples and the blanks
-#' last (rightmost columns); within each, by batch and injection order
-.reorder_samples_as_qc_first <- function(sumexp) {
-  cat <- util$ctrl_smpl_cat(sumexp)
-  rank_cat <- ifelse(cat == "QC", 1L, ifelse(cat == "Blank", 3L, 2L))
-  ord <- order(rank_cat, .batch_rank(sumexp), .injection_order(sumexp))
-  sumexp[, ord]
-}
-
-#' Reorder the samples by batch and injection order (the order of the measurements)
-.reorder_samples_by_injection <- function(sumexp) {
-  sumexp[, order(.batch_rank(sumexp), .injection_order(sumexp))]
 }
 
 #' Export data with the feature table to a Excel `xlsx` file
@@ -618,13 +673,15 @@ export_table_values <- function(tr) {
 #' @param out_file Path to the output file
 #' @param is_closest_norm A logical value indicating whether the data is closest internal standard normalized
 #' @param max_xlsx_cells Tables with more values are written as CSV only (`Inf`: always Excel)
+#' @param layout Which injections are kept and their order, from [export_layout()]
 #' @export
 export_data_with_feature_table_xlsx <- function(sumexp_lst,
                                                 mat_id,
                                                 org_feature_table,
                                                 out_file,
                                                 is_closest_norm = FALSE,
-                                                max_xlsx_cells = Inf) {
+                                                max_xlsx_cells = Inf,
+                                                layout = export_layout()) {
   stopifnot(inherits(sumexp_lst, "SumExp") || is.list(sumexp_lst))
   
   #' Prepare feature table for export
@@ -642,11 +699,15 @@ export_data_with_feature_table_xlsx <- function(sumexp_lst,
     return(feat_tbl)
   }
 
+  # The number of batches of the data (one SumExp with all batches, or one per batch)
+  n_batches <- if (inherits(sumexp_lst, "SumExp")) {
+    length(unique(as.character(SumExp::col_df(sumexp_lst)$batch_id)))
+  } else {
+    length(sumexp_lst)
+  }
   #' Filter and reorder the samples
   filter_and_reorder_samples <- function(sumexp) {
-    sumexp |> 
-      .remove_calcurve_samples() |> 
-      .reorder_samples_as_qc_first()
+    .label_single_batch(.order_samples(.keep_samples(sumexp, layout), layout), n_batches)
   }
 
   # Very large tables: as CSV only (one per worksheet, as the CSV copies of the other tables).
@@ -1136,7 +1197,8 @@ measured_conc <- function(sumexp) {
 #'
 #' @param sumexp The quantified samples, for the summary of the chemicals
 #' @param data_se The data to write (the same chemicals), with the `imputed` matrix
-.write_one_sumexp_to_new_worksheet <- function(wb, sheetName, sumexp, is_closest_norm, data_se) {
+#' @param n_batches The number of batches of the data (one: the batch's curve is the global one)
+.write_one_sumexp_to_new_worksheet <- function(wb, sheetName, sumexp, is_closest_norm, data_se, n_batches = 2L) {
   # Drop all features that are not to be exported per batch
   to_export <- SumExp::row_df(sumexp)$to_export
   se <- sumexp[to_export, ]
@@ -1145,6 +1207,9 @@ measured_conc <- function(sumexp) {
   # Prepare the chemical summary table per batch
   chem_col <- .per_batch_summary_chemical_table(se, is_closest_norm) |>
     .append_slope()
+  if ("Calibration" %in% names(chem_col)) {
+    chem_col[["Calibration"]] <- util$calibration_label(chem_col[["Calibration"]], n_batches)
+  }
 
   .write_data_to_new_worksheet(
     wb = wb,
@@ -1163,14 +1228,14 @@ measured_conc <- function(sumexp) {
 #' @param file Path to the output file
 #' @param is_closest_norm A logical value indicating whether to include the closest internal
 #'   standard information in the exported table.
-#' @param calcurve_lst `NULL` for the samples without the calibration samples, in the order QCs,
-#'   study samples, blanks. Or a list of the calibration samples of each batch (as `sumexp_lst`),
-#'   for all samples including the calibration samples, in the order of injection.
+#' @param calcurve_lst `NULL` (no calibration standards in the table), or a list of the
+#'   calibration samples of each batch (as `sumexp_lst`)
 #' @param blank_lst `NULL`, or a list of the quantified blank samples of each batch (as
 #'   `sumexp_lst`; `NULL` for a batch without blanks)
+#' @param layout Which injections are kept and their order, from [export_layout()]
 #' @export
 export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE, calcurve_lst = NULL,
-                                      blank_lst = NULL) {
+                                      blank_lst = NULL, layout = export_layout()) {
 
   stopifnot(is.list(sumexp_lst))
   for (ii in seq_along(sumexp_lst)) {
@@ -1180,8 +1245,10 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE,
            "The ", ii, "-th element is a ", class(se), ".")
     }
   }
+  if (!layout$keep[["CalCurve"]]) calcurve_lst <- NULL
+  if (!layout$keep[["Blank"]]) blank_lst <- NULL
   with_calibrants <- !is.null(calcurve_lst)
-  reorder <- if (with_calibrants) .reorder_samples_by_injection else .reorder_samples_as_qc_first
+  reorder <- function(se) .order_samples(.keep_samples(se, layout), layout)
   # Leave only the features to export in any batch
   in_any <- sapply(sumexp_lst, \(se) SumExp::row_df(se)$to_export)
   in_any <- rowSums(in_any) > 0L
@@ -1202,7 +1269,8 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE,
       sheetName = paste("Batch", names(sumexp_lst)[1L]),
       sumexp = sumexp_lst[[1L]],
       is_closest_norm = is_closest_norm,
-      data_se = data_lst[[1L]]
+      data_se = .label_single_batch(data_lst[[1L]], 1L),
+      n_batches = 1L
     )
   } else {  # Multiple batches
     # Summary table for all batches
