@@ -15,7 +15,7 @@
 //   v.show(i); v.setMode("inspect" | "final"); v.setLog(true | false); v.setData(data); v.redraw();
 //
 // Options: `nav` (a search box, the compound list and previous / next buttons: the internal report
-// and the tutorial; in the app, table 4.2 chooses the compound), `keys` (left / right: the mode;
+// and the tutorial; in the app, table 4.1 chooses the compound), `keys` (left / right: the mode;
 // with `nav` also up / down: the compound), `height` (of the plot, in pixels).
 // ------------------------------------------------------------------------------------------- //
 (function (global) {
@@ -51,6 +51,8 @@
     ".qcv-chip { display: inline-block; background: #EEF4FE; border-radius: 4px; padding: 1px 7px; margin: 0 6px 3px 0; }",
     ".qcv-chip.warn { background: #FDECEA; color: #c23636; font-weight: 600; }",
     ".qcv-chip.kept { background: #FFF1D6; color: #8A5300; font-weight: 600; }",
+    ".qcv-params { min-height: 1.6em; }",
+    ".qcv-notes { margin-top: 2px; }",
     ".qcv-msg { color: #667085; padding: 40px 0; text-align: center; font-size: 1.1rem; }"
   ].join("\n");
   function addStyle() {
@@ -120,13 +122,21 @@
     if (ok(uloq)) mark(uloq, "ULOQ", LIMIT.uloq, true, 0.99, false);
     return { shapes: shapes, annotations: ann };
   }
-  // The name of the compound as a band over the plot, coloured by the state of its curve
+  // The state of a curve by the colour of its row in table 4.1 (`fill` of the data): a text in
+  // that colour after the name; nothing for a valid curve of its own
+  var STATE = {
+    lightcoral: ["not valid", "#c23636"],
+    "#FFD9A0": ["kept although not valid", "#B26A00"],
+    lightblue: ["global curve used", "#0072B2"],
+    "#D9D9D9": ["removed before calibration", "#667085"]
+  };
+  // The name of the compound as the plot title, left-aligned as in the other figures (3.5, 4.5,
+  // 4.6), with the state of its curve in colour
   function titleBand(title, fill) {
+    var s = STATE[fill];
     return {
-      shapes: [{ type: "rect", xref: "paper", yref: "paper", x0: 0, x1: 1, y0: 1.01, y1: 1.09,
-                 fillcolor: fill, line: { width: 0 } }],
-      annotations: [{ text: esc(title), xref: "paper", yref: "paper", x: 0.5, y: 1.05, xanchor: "center",
-                      yanchor: "middle", showarrow: false, font: { size: 14 } }]
+      title: { text: esc(title) + (s ? " <span style='color:" + s[1] + "'>(" + s[0] + ")</span>" : ""), x: 0.02 },
+      shapes: [], annotations: []
     };
   }
   // The fitted curve from its coefficients (signal = b0 + b1 x (+ b2 x²); fitted in log scale
@@ -184,6 +194,7 @@
     var viewLabel = document.createElement("label");
     viewLabel.className = "qcv-view";
     viewLabel.innerHTML = "Curve <select></select>";
+    viewLabel.title = "The curve shown (key B: the next one)";
     var viewSel = viewLabel.querySelector("select");
     // The curve chosen by the user is kept for the next compounds that have it; otherwise each
     // compound starts with its first curve (in the app: the one used for its concentrations)
@@ -238,6 +249,7 @@
     // while typing in a field (but up / down in the search box go through its matches), nor when
     // the viewer is hidden (e.g. on another page of the app)
     if (opts.keys && global.QuantaActive) {
+      el._qB = function () { return api.nextView(); };   // Key B (QuantaActive of the report)
       global.QuantaActive.register(el, function (key) {
         if (key === "ArrowLeft" || key === "ArrowRight") {
           api.setMode(key === "ArrowLeft" ? "inspect" : "final");
@@ -253,6 +265,14 @@
         if (e.ctrlKey || e.altKey || e.metaKey) return;
         var t = e.target, typing = t && t.matches && t.matches("input, textarea, select, [contenteditable]");
         var inSearch = search && t === search;
+        // Another figure of the page has the keys (the app: clicked, outlined `.q-key-area`, e.g. 4.6)
+        var other = document.querySelector(".q-key-area.q-active");
+        if (other && !other.contains(el) && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
+        // B: the other curve of the compound (its batch's own, not valid, and the global one)
+        if ((e.key === "b" || e.key === "B") && !typing) {
+          if (api.nextView()) e.preventDefault();
+          return;
+        }
         if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !typing) {
           e.preventDefault();
           api.setMode(e.key === "ArrowLeft" ? "inspect" : "final");
@@ -425,10 +445,12 @@
       var chip = function (label, value, cls) {
         return '<span class="qcv-chip' + (cls ? " " + cls : "") + '">' + label + (value === undefined ? "" : " <b>" + value + "</b>") + "</span>";
       };
-      var html = [];
-      if (e.why) html.push(chip(esc(e.why), undefined, e.valid ? "kept" : "warn"));
-      if (e.valid && e.src === "Global" && view.info) html.push(chip(esc(view.info), undefined, view.info_warn ? "warn" : undefined));
-      if (e.nq) html.push(chip(esc(e.nq), undefined, "kept"));
+      // The parameters on the first row, always in the same place; the state and notes of the curve
+      // (red / yellow / the global curve) on their own row below them, only when there are any
+      var html = [], notes = [];
+      if (e.why) notes.push(chip(esc(e.why), undefined, e.valid ? "kept" : "warn"));
+      if (e.valid && e.src === "Global" && view.info) notes.push(chip(esc(view.info), undefined, view.info_warn ? "warn" : undefined));
+      if (e.nq) notes.push(chip(esc(e.nq), undefined, "kept"));
       // Curves fitted in log scale: a straight line in log-log scale, with the R² of that fit
       if (e.model) html.push(chip("Model", data.log_scale ? "Linear in log-log scale" : esc(e.model)));
       if (finite(e.r2)) html.push(chip(data.log_scale ? "R² (log-log)" : "R²", (+e.r2).toFixed(3)));
@@ -441,7 +463,8 @@
         html.push(chip("Highest cal. conc.", num(e.top) + u));
       }
       if (e.src && view.parts.length) html.push(chip("Curve", esc(e.src)));
-      chips.innerHTML = html.join("");
+      chips.innerHTML = '<div class="qcv-params">' + html.join("") + "</div>" +
+        (notes.length ? '<div class="qcv-notes">' + notes.join("") + "</div>" : "");
     }
     function message(text) {
       chips.innerHTML = "";
@@ -490,7 +513,7 @@
       var band = titleBand(c.name, e.fill);
       var log = state.log, axisType = log ? "log" : "linear";
       var layout = {
-        font: { family: "Lato" }, hovermode: "closest", height: opts.height || 480,
+        font: { family: "Lato" }, hovermode: "closest", height: opts.height || 480, title: band.title,
         legend: { orientation: "v", x: 1.02, y: 1, xanchor: "left", tracegroupgap: 10 },
         margin: { t: 60, b: 60, l: 70, r: 170 },
         xaxis: { title: { text: (state.mode === "inspect" ? "Calibrant concentration" : "Concentration") + unit() },
@@ -540,6 +563,16 @@
         if (k >= 0 && k < sel.options.length) api.show(+sel.options[k].value);
       },
       setMode: function (m) { if (MODES[m] && m !== state.mode) { state.mode = m; draw(); } },
+      // The next curve of the compound (key B), e.g. from the global curve to the batch's own one
+      // that was not valid, and back; `false` when the compound has a single curve
+      nextView: function () {
+        var n = viewSel.options.length;
+        if (viewLabel.style.display === "none" || n < 2) return false;
+        viewSel.selectedIndex = (viewSel.selectedIndex + 1) % n;
+        state.view = state.viewPref = viewSel.value;
+        draw();
+        return true;
+      },
       setLog: function (on) { state.log = !!on; draw(); },
       // New data (e.g. another batch or normalization method): the compound, mode and axes stay
       setData: function (d) {

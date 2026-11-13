@@ -92,8 +92,8 @@ same LOD/LLOQ rules, so that they show the level of each chemical in the blanks.
 
 Values replaced by the LOD/LLOQ rules are coloured (in all sheets): red for LLOQ/4 (signal below the
 LOD signal), yellow for LLOQ/2 (signal from the LOD signal to below the mean signal of the LLOQ level)
-and blue for the LLOQ (signal at or above it, concentration below the LLOQ); light olive for values above
-the ULOQ but within a curve that was not cut at it, olive for values above the highest calibration level
+and blue for the LLOQ (signal at or above it, concentration below the LLOQ); light grey for values above
+the ULOQ but within a curve that was not cut at it, dark grey for values above the highest calibration level
 of the curve (extrapolated). The last sheet, `Legend`, explains the colours.
 
 The chemical columns of each batch sheet include `Notes`: the notes on each calibration curve in full
@@ -230,3 +230,17 @@ What happened to each feature and each sample during the processing, made from t
 
 As for the other tables, each sheet (but the legend) is also saved as a CSV file:
 `(source file name).(normalization method).history.(sheet).csv`.
+
+## Outlier injections kept, file formats, settings
+
+- With outlier removal off (`--rm_outlier=FALSE`), the injections found to be outliers by the
+  internal standards stay in the data. The sample rows at the top of each table then have a row
+  **IS outlier (not removed)** ("Yes (7 of 30 IS)", empty for the others), and the names of these
+  injections are orange in the `.xlsx` files.
+- `export_data.R --formats=xlsx,csv` (the default; page 5 of the app: *File formats*): the `.xlsx`
+  files and / or their CSV copies (one `.csv` per sheet, not the *Legend* sheet). Tables too large
+  for Excel (`--max_xlsx_cells`) are always written as CSV.
+- The history file (`….history.xlsx`) has a sheet **Settings**: the processing settings of the
+  results.
+- With blank subtraction off (`--blank_subtract=FALSE`), the `….norm_blk` tables hold the normalized
+  values as they are; the row *Blank subtracted* says "Not subtracted (option off)".

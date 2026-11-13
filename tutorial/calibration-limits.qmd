@@ -1,5 +1,5 @@
 ---
-title: "Calibration limits (4.1–4.3)"
+title: "Calibration limits (4.2–4.3)"
 ---
 
 ```{r}
@@ -27,21 +27,9 @@ How a calibration curve is made, in short:
    **LLOQ** the lowest above the second (and, with the RSD% option, with an RSD% of at most 20%).
 3. The curve is fitted from the LLOQ upwards: linear or quadratic, weighted 1, 1/x or 1/x², the
    combination with the highest R².
-4. The **ULOQ** is the top of the curve's linear range (see 4.2 and the next chapter).
+4. The **ULOQ** is the top of the curve's linear range (see 4.1 and the next chapter).
 
-## 4.1 Calibration curve samples
-
-```{r}
-#| label: table-4-1
-v <- util$spiked_conc_pts(batch$calcurve)
-tut_table(as.data.frame(table(v[!is.na(v)]), check.names = FALSE) |>
-            stats::setNames(c("Concentration", "Number of samples")), height = "300px")
-```
-
-The number of calibration samples per concentration level in the chosen batch: the replicates the
-curve of this batch is fitted on.
-
-## 4.2 Calibration curve limits
+## 4.1 Calibration curve limits
 
 ```{r}
 #| label: table-4-2
@@ -122,6 +110,18 @@ cat(paste0("  - ", icon, " **", cats, "**: ", meaning[names(cats)], collapse = "
 ```
 
 The exported tables have the same notes in full, as text.
+
+## 4.2 Calibration curve samples
+
+```{r}
+#| label: table-4-1
+v <- util$spiked_conc_pts(batch$calcurve)
+tut_table(as.data.frame(table(v[!is.na(v)]), check.names = FALSE) |>
+            stats::setNames(c("Concentration", "Number of samples")), height = "300px")
+```
+
+The number of calibration samples per concentration level in the chosen batch: the replicates the
+curve of this batch is fitted on.
 
 ## 4.3 Chemicals with concentrations
 

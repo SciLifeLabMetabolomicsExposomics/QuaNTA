@@ -12,7 +12,7 @@ is_se <- tr[["internal std. before qc"]]
 failed <- tr[["is failed internal std."]]
 is_out <- tr[["is outlier sample"]]
 is_rd <- SumExp::row_df(is_se)
-# The IS shown in 3.4 and 3.5: the first one, as preselected in the app
+# The IS shown in 3.2 and 3.5: the first one, as preselected in the app
 i_sel <- 1L
 # The best normalization method: used in the text of 3.7, above its chunk
 best <- tr[["best normalization"]]
@@ -23,10 +23,19 @@ amount to every sample, so their peak areas should be the same everywhere. Page 
 **Quality control and normalization**, first checks them: which ones fail, which samples are
 outliers, and how stable they are over the run.
 
+::: {.callout-note}
+## The batch of page 3
+When the data is processed per batch (with several batches), a **Batch** choice above table 3.1
+sets the batch of the RSD% in 3.1, 3.2, 3.8 and 3.9: *Global* (all batches pooled) or one batch.
+The arrow keys ← / → switch it anywhere on page 3 (except after a click in figure 3.11, which then
+has the arrow keys). This tutorial shows *Global*. Without per-batch processing, the RSD% are
+always of all batches pooled.
+:::
+
 ## 3.1 Internal standards
 All internal standards with their retention time, m/z, the RSD% of their raw peak areas over all
-samples, and the number of samples where they were not found (zero). **Failed** IS are red. In the
-app, select a row (or use the arrow keys ↑ / ↓) to show that IS in 3.4 and 3.5 (unless figure 3.11
+samples (or the injections of the chosen batch), and the number of samples where they were not found (zero). **Failed** IS are red. In the
+app, select a row (or use the arrow keys ↑ / ↓) to show that IS in 3.2 and 3.5 (unless figure 3.11
 was clicked last: it then has the arrow keys).
 ```{r}
 #| label: table-3-1
@@ -47,17 +56,21 @@ tut_table(d[, -6]) |>
 - **Zero values** are samples where the IS was not found.
 :::
 
-## 3.2 Failed internal standards
-An IS **fails** when more than 10% of the samples have a zero value: it cannot be trusted to
-normalize the others. Failed IS are removed before normalization. Here
-`r sum(failed)` of `r length(failed)` internal standards failed.
-
+## 3.2 Raw RSD% of the selected IS
+```{r}
+prep <- show$is_rsd_by_group(is_se)
+```
+The RSD% of the raw peak areas of one IS (here **`r colnames(prep$rsd)[i_sel]`**) within each QC
+group and each sample class, with the number of samples. The QC groups are replicates of the same
+material, so their RSD% shows the technical variation alone.
 ```{r}
 #| label: table-3-2
-zeros <- proc$count_zeros_per_feature(is_se[["raw"]])
-n <- ncol(is_se)
-tut_table(tibble::tibble(`Internal standard` = is_rd$feature_name, `RT [min]` = round(is_rd$.rt, 2),
-                         `Zero values` = paste0(zeros, " of ", n, " (", round(100 * zeros / n, 1), "%)"))[failed, ])
+rsd <- prep$rsd[, i_sel]
+tut_table(tibble::tibble(Group = rownames(prep$rsd), `RSD%` = round(rsd, 2), n = prep$n,
+                         Note = dplyr::case_when(prep$n < 2 ~ "Too few samples: RSD% needs at least 2",
+                                                 !is.finite(rsd) ~ "Not computable: all values 0 or missing",
+                                                 TRUE ~ "")),
+          caption = colnames(prep$rsd)[i_sel])
 ```
 
 
@@ -67,7 +80,11 @@ A sample is an **outlier** when more than 20% of the internal standards deviate 
 3 standard deviations from their mean (in log scale): something went wrong with the whole sample,
 e.g. a wrong injection volume. Outlier samples are removed before normalization
 (`r sum(is_out)` here). With the processing option *Non-calibration samples only*, calibration
-samples are never removed.
+samples are never removed. With outlier removal off, the outliers are still found and listed here
+(column *Removed*: No): they stay in the data, and the exported tables mark them (a row *IS outlier
+(not removed)* and the injection name in orange). Processed per batch, the mean and SD of each
+internal standard are those of its batch. *n outlier IS* is the number of outlying internal
+standards, of all of them.
 
 ```{r}
 #| label: table-3-3
@@ -75,8 +92,9 @@ n_out <- tr[["number of outlier internal std. per sample"]]
 tut_table(tibble::as_tibble(SumExp::col_df(is_se), rownames = "sample_id") |>
             dplyr::mutate(n_out = unname(n_out[sample_id]), out = unname(is_out[sample_id])) |>
             dplyr::filter(out %in% TRUE) |>
-            dplyr::select(Sample = sample_name, Class, `File type` = sample_type, Batch = batch_id,
-                          `Number of outlying IS` = n_out))
+            dplyr::transmute(Injection = sample_name, `Group (Class)` = Class, `Injection type` = sample_type,
+                             Batch = batch_id, `n outlier IS` = paste(n_out, "of", nrow(is_se)),
+                             Removed = if (isFALSE(tr[["outliers removed"]])) "No" else "Yes"))
 ```
 
 ::: {.callout-note}
@@ -91,21 +109,17 @@ lists every replaced zero.
 
 
 
-## 3.4 Raw RSD% of the selected IS
-```{r}
-prep <- show$is_rsd_by_group(is_se)
-```
-The RSD% of the raw peak areas of one IS (here **`r colnames(prep$rsd)[i_sel]`**) within each QC
-group and each sample class, with the number of samples. The QC groups are replicates of the same
-material, so their RSD% shows the technical variation alone.
+## 3.4 Failed internal standards
+An IS **fails** when more than 10% of the samples have a zero value: it cannot be trusted to
+normalize the others. Failed IS are removed before normalization. Here
+`r sum(failed)` of `r length(failed)` internal standards failed.
+
 ```{r}
 #| label: table-3-4
-rsd <- prep$rsd[, i_sel]
-tut_table(tibble::tibble(Group = rownames(prep$rsd), `RSD%` = round(rsd, 2), n = prep$n,
-                         Note = dplyr::case_when(prep$n < 2 ~ "Too few samples: RSD% needs at least 2",
-                                                 !is.finite(rsd) ~ "Not computable: all values 0 or missing",
-                                                 TRUE ~ "")),
-          caption = colnames(prep$rsd)[i_sel])
+zeros <- proc$count_zeros_per_feature(is_se[["raw"]])
+n <- ncol(is_se)
+tut_table(tibble::tibble(`Internal standard` = is_rd$feature_name, `RT [min]` = round(is_rd$.rt, 2),
+                         `Zero values` = paste0(zeros, " of ", n, " (", round(100 * zeros / n, 1), "%)"))[failed, ])
 ```
 
 

@@ -343,28 +343,134 @@ has_qc_replicates <- function(se) {
 #' QC RSD% of each feature
 #'
 #' RSD% is computed within each QC class with at least two samples; with several QC classes the
-#' median over the classes is taken.
+#' median over the classes is taken. Per batch (`by_batch`): within each QC class of each batch,
+#' the median over the classes of a batch, then the median over the batches.
 #'
 #' @param se A [`SumExp::SumExp`] object
 #' @param mat_id The name of a matrix in `se`
+#' @param by_batch Per batch (`batch_id`) instead of all batches pooled
 #' @returns A numeric vector of RSD% per feature (rows of `se`); `NA` when it cannot be computed,
 #'   e.g. all values are zero or missing
 #' @export
-qc_rsd_per_feature <- function(se, mat_id) {
+qc_rsd_per_feature <- function(se, mat_id, by_batch = FALSE) {
   qc_se <- util$extract_ctrl_smpl_cat(se, "QC")
+  batch <- as.character(SumExp::col_df(qc_se)$batch_id)
+  median_na <- function(m) apply(m, 1, \(v) if (all(is.na(v))) NA_real_ else stats::median(v, na.rm = TRUE))
+  if (by_batch && length(unique(batch)) > 1) {
+    # Per batch: without the zero values (as the RSD% shown per batch)
+    per_batch <- vapply(unique(batch), function(b) {
+      unname(.qc_rsd_median_over_classes(qc_se[, batch == b], mat_id, exclude_zero = TRUE))
+    }, numeric(nrow(se)))
+    out <- median_na(matrix(per_batch, nrow = nrow(se)))
+  } else {
+    out <- .qc_rsd_median_over_classes(qc_se, mat_id)
+  }
+  stats::setNames(out, rownames(se))
+}
+
+#' QC RSD% of each feature for all batches pooled ("Global") and, per batch, within each batch
+#'
+#' As [qc_rsd_per_feature()]: the median over the QC classes of the RSD% within each class.
+#' Processed per batch, the zero values are left out (also in "Global").
+#'
+#' @inheritParams qc_rsd_per_feature
+#' @returns A matrix: features in rows (`rownames(se)`), "Global" and the batches in columns
+#' @export
+qc_rsd_feature_by_batch <- function(se, mat_id, by_batch = FALSE) {
+  qc_se <- util$extract_ctrl_smpl_cat(se, "QC")
+  batch <- as.character(SumExp::col_df(qc_se)$batch_id)
+  by_batch <- by_batch && length(unique(batch)) > 1
+  cols <- list(Global = .qc_rsd_median_over_classes(qc_se, mat_id, exclude_zero = by_batch))
+  if (by_batch) {
+    for (b in unique(batch)) cols[[b]] <- .qc_rsd_median_over_classes(qc_se[, batch == b], mat_id, exclude_zero = TRUE)
+  }
+  out <- do.call(cbind, lapply(cols, unname))
+  dimnames(out) <- list(rownames(se), names(cols))
+  out
+}
+
+#' The number of features above the QC RSD% limit, per batch and type (app and report 3.12)
+#'
+#' @param rsd The matrix of [qc_rsd_feature_by_batch()]
+#' @param targeted Whether each feature (row) is a targeted compound
+#' @param counted The features counted (not removed before, e.g. by the blank filter; not the vIS)
+#' @param limit The limit of each feature (%)
+#' @param used Whether the limit of each feature was used by the QC RSD% filter
+#' @returns A tibble of `batch`, `type` ("Targeted", "Non-targeted"), `n_above`, `n_total` (with an
+#'   RSD%), `limit` and `used`
+#' @export
+qc_rsd_counts <- function(rsd, targeted, counted, limit, used) {
+  purrr::map_dfr(colnames(rsd), function(b) {
+    r <- rsd[, b]
+    purrr::map_dfr(c(TRUE, FALSE), function(tg) {
+      k <- counted & targeted == tg
+      tibble::tibble(batch = b, type = if (tg) "Targeted" else "Non-targeted",
+                     n_above = sum(k & !is.na(r) & r > limit, na.rm = TRUE),
+                     n_total = sum(k & !is.na(r)),
+                     limit = if (any(k)) limit[k][1] else NA_real_, used = any(used[k]))
+    })
+  })
+}
+
+#' The median over the QC classes (with at least two samples) of the RSD% within each class
+.qc_rsd_median_over_classes <- function(qc_se, mat_id, exclude_zero = FALSE) {
   qc_class <- SumExp::col_df(qc_se)$Class
   classes <- names(which(table(qc_class) >= 2))
   rsd_perc <- function(x) {
+    if (exclude_zero) {
+      x <- x[!is.na(x) & x > 0]
+      if (length(x) < 2) return(NA_real_)
+    }
     m <- mean(x, na.rm = TRUE)
     if (!is.finite(m) || m == 0) NA_real_ else 100 * stats::sd(x, na.rm = TRUE) / m
   }
-  if (length(classes) == 0) return(rep(NA_real_, nrow(se)))
+  if (length(classes) == 0) return(rep(NA_real_, nrow(qc_se)))
   per_class <- vapply(classes, function(cl) {
     apply(qc_se[[mat_id]][, qc_class == cl, drop = FALSE], 1, rsd_perc)
-  }, numeric(nrow(se)))
-  per_class <- matrix(per_class, nrow = nrow(se))
-  out <- apply(per_class, 1, \(v) if (all(is.na(v))) NA_real_ else stats::median(v, na.rm = TRUE))
-  stats::setNames(out, rownames(se))
+  }, numeric(nrow(qc_se)))
+  per_class <- matrix(per_class, nrow = nrow(qc_se))
+  apply(per_class, 1, \(v) if (all(is.na(v))) NA_real_ else stats::median(v, na.rm = TRUE))
+}
+
+#' RSD% of each feature within each QC group, without the zero values, for all batches pooled
+#' ("Global") and, per batch, within each batch
+#'
+#' Zeros (not detected, or at most the blank after blank subtraction) are left out and counted. A
+#' feature without values (removed, e.g. by the blank filter) has no RSD% and no count of zeros.
+#'
+#' @param m A numeric matrix (features in rows, the QC injections in columns)
+#' @param qc_class The QC group of each column
+#' @param batch The batch of each column
+#' @param by_batch Also per batch
+#' @returns A tibble of `batch` ("Global" or the batch ID), `QC`, `feature_id` (the row names of
+#'   `m`), `rsd` (`NA` with fewer than two non-zero values), `n` (QC injections) and `n_zero`
+#' @export
+qc_rsd_by_group <- function(m, qc_class, batch, by_batch = FALSE) {
+  batch <- as.character(batch)
+  sets <- c(list(Global = rep(TRUE, ncol(m))),
+            if (by_batch && length(unique(batch)) > 1) lapply(stats::setNames(nm = unique(batch)), \(b) batch == b))
+  rows <- lapply(names(sets), function(b) {
+    lapply(unique(qc_class[sets[[b]]]), function(cl) {
+      cols <- sets[[b]] & qc_class == cl
+      if (sum(cols) < 2) return(NULL)
+      x <- m[, cols, drop = FALSE]
+      removed <- rowSums(!is.na(x)) == 0
+      nz <- x
+      nz[!is.na(nz) & nz <= 0] <- NA
+      n_nz <- rowSums(!is.na(nz))
+      mu <- rowMeans(nz, na.rm = TRUE)
+      sd <- sqrt(rowSums((nz - mu)^2, na.rm = TRUE) / (n_nz - 1))
+      rsd <- ifelse(n_nz >= 2 & is.finite(mu) & mu > 0, 100 * sd / mu, NA_real_)
+      tibble::tibble(batch = b, QC = cl, feature_id = rownames(m), rsd = rsd, n = sum(cols),
+                     n_zero = ifelse(removed, NA_integer_, as.integer(rowSums(!is.na(x) & x <= 0))))
+    })
+  })
+  out <- dplyr::bind_rows(unlist(rows, recursive = FALSE))
+  if (nrow(out) == 0) {
+    out <- tibble::tibble(batch = character(), QC = character(), feature_id = character(),
+                          rsd = numeric(), n = integer(), n_zero = integer())
+  }
+  out
 }
 
 #' Select the normalization method with the lowest median RSD%
@@ -459,6 +565,8 @@ filter_by_blank <- function(sumexp, mat_id, factor = 5, stat = c("max", "mean"))
 #' Each batch is subtracted by the average of its own blank samples. A batch without blank samples
 #' is subtracted by the average of all blank samples (of all batches).
 #'
+#' @param subtract `FALSE`: nothing is subtracted (processing option `--blank_subtract`); the
+#'   output matrices are the input ones, without the blanks
 #' @returns A [`SumExp::SumExp`] object with the blank values subtracted.
 #'   The columns of the blanks are removed from the `sumexp`.
 #' @md
@@ -466,7 +574,8 @@ filter_by_blank <- function(sumexp, mat_id, factor = 5, stat = c("max", "mean"))
 add_blank_subtracted_sumexp <- function(sumexp,
                                         no_change,
                                         mat_ids,
-                                        out_mat_ids) {
+                                        out_mat_ids,
+                                        subtract = TRUE) {
   stopifnot(length(mat_ids) == length(out_mat_ids))
   g <- ifelse(util$ctrl_smpl_cat(sumexp) == "Blank", "Blank", "Other")
   se_lst <- SumExp::split_columns(sumexp, g)
@@ -474,6 +583,7 @@ add_blank_subtracted_sumexp <- function(sumexp,
   has_blank <- !is.null(blank_se) && ncol(blank_se) > 0
   sumexp <- se_lst[["Other"]]
   no_change <- no_change[g == "Other"]    # Blank has been split already
+  if (!subtract) has_blank <- FALSE        # Nothing subtracted
   for (ii in seq(mat_ids)) {      # Paired `mat_ids` and `out_mat_ids`
     mat_id <- mat_ids[ii]
     blank_bat_ids <- if (has_blank) SumExp::col_df(blank_se)[["batch_id"]] else character(0)
@@ -498,7 +608,7 @@ add_blank_subtracted_sumexp <- function(sumexp,
     }
     mat_subt[mat_subt < 0] <- 0
     sumexp[[out_mat_ids[ii]]] <- mat_subt |>
-      labelled::set_label_attribute(paste(x_lab, "(blank adjusted)"))
+      labelled::set_label_attribute(paste(x_lab, if (subtract) "(blank adjusted)" else "(no blank subtraction)"))
   }
   sumexp
 }

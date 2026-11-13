@@ -204,6 +204,54 @@ plotly_feature_flow <- function(fh, height = 420) {
     plotly::config(displayModeBar = FALSE)
 }
 
+#' The processing settings as a table (internal report "Settings", and the sheet "Settings" of the
+#' exported history)
+#'
+#' @param tr The `to_report` of `process.R`
+#' @param mat_id The data version of the report or the file (matrix ID, e.g. "loess_norm")
+#' @returns A tibble of `Setting` and `Value`
+#' @export
+settings_table <- function(tr, mat_id) {
+  p <- tr$params
+  val <- function(x) if (is.null(x) || length(x) == 0 || all(is.na(x))) "–" else paste(x, collapse = ", ")
+  lab <- function(m) dplyr::coalesce(unname(version_labels[m]), m)
+  n_batches <- length(unique(as.character(SumExp::col_df(tr[["normalized"]])$batch_id)))
+  rsd_f <- tr[["qc rsd filter"]]
+  rsd_txt <- if (!isTRUE(p$rsd_filter)) "No" else if (isTRUE(rsd_f$skipped)) "Skipped (no QC replicates)" else
+    paste0("Yes (", p$rsd_filter_scope, "; max. targeted ", val(rsd_f$max_targeted),
+           "%, non-targeted ", val(rsd_f$max_nontargeted), "%",
+           if (isTRUE(rsd_f$by_batch)) "; median over the batches" else "", ")")
+  outlier_txt <- if (!isTRUE(p$rm_outlier)) "No (outliers flagged only)" else if (identical(p$rm_outlier_scope, "no_calib"))
+    "Yes (calibration samples always kept)" else "Yes (all injections)"
+  tibble::tibble(
+    Setting = c("Normalization (this file / report)", "Best normalization (lowest median RSD%)",
+                "Per-batch processing", "Outlier removal", "Blank filtering", "Blank filtering factor",
+                "Blank subtraction", "QC RSD% filter", "Weighting", "LOD/LLOQ method", "RSD% ≤ 20% for LLOQ",
+                "Log-scale calibration", "Keep all calibration curves", "Linear models only",
+                "Linear range (ULOQ): max. deviation of the top level; curves cut at the ULOQ",
+                "Minimum R² of the calibration curves", "Values below the LOD/LLOQ",
+                "Calibration replicates averaged per batch", "Pre-normalization by the volumetric IS"),
+    Value = c(val(lab(mat_id)), val(lab(tr[["best normalization"]])),
+              val(n_batches > 1), outlier_txt,
+              val(p$blank_filter),
+              paste0(val(p$blank_filter_factor), " (",
+                     if (identical(p$blank_filter_stat, "mean")) "mean" else "maximum", " of the study samples)"),
+              if (isFALSE(p$blank_subtract)) "No" else "Yes",
+              rsd_txt, val(p$weight), val(p$llox_method),
+              val(p$use_rsd20), val(p$log_calibration), val(isTRUE(p$keep_all_calcurves)), val(isTRUE(p$linear_only)),
+              paste0(if (isTRUE(p$log_calibration)) "SCALiR" else if (is.null(p$linear_range_tol)) "–" else paste0(p$linear_range_tol, "%"),
+                     "; ", if (isTRUE(p$enforce_linear_range)) "cut" else "not cut"),
+              if (isTRUE(p$r2_filter)) sprintf("%.3f", p$min_r2) else "None",
+              if (isFALSE(p$impute_llox)) "Reported as n.d. / n.q. (no value)" else "Replaced (LLOQ/4, LLOQ/2)",
+              val(isTRUE(p$average_cal_reps)),
+              if (is.null(tr[["vIS prenormalization"]])) "No" else
+                paste0("Yes: ", paste(tr[["vIS prenormalization"]], collapse = ", then "),
+                       if (length(tr[["samples without vIS value"]]) > 0)
+                         paste0(" (", length(unique(unlist(tr[["samples without vIS value"]]))),
+                                " sample(s) without a vIS value not corrected; see 3.6)")))
+  )
+}
+
 #' The history tables of one data version as an Excel file
 #'
 #' Sheets "Feature history", "Sample history", "Events" (of this version and of all) and "Legend".
@@ -218,7 +266,8 @@ write_history_xlsx <- function(tr, mat_id, file) {
   ev <- tibble::tibble(Step = ev$step, `Applies to` = ev$scope, Name = ev$name, ID = ev$id,
                        Batch = ev$batch_id, Kind = ev$kind, Event = ev$event, Detail = ev$detail)
   sheets <- list(`Feature history` = tr[["feature history"]][[mat_id]],
-                 `Sample history` = tr[["sample history"]], Events = ev)
+                 `Sample history` = tr[["sample history"]], Events = ev,
+                 Settings = settings_table(tr, mat_id))
   wb <- openxlsx::createWorkbook()
   head_style <- openxlsx::createStyle(textDecoration = "bold", fgFill = "#E3E8F1", border = "bottom")
   for (s in names(sheets)) {
@@ -228,7 +277,7 @@ write_history_xlsx <- function(tr, mat_id, file) {
     openxlsx::setColWidths(wb, s, cols = seq_len(ncol(sheets[[s]])), widths = "auto")
   }
   legend <- tibble::tibble(
-    Sheet = c("Feature history", "", "", "Sample history", "", "Events", "", ""),
+    Sheet = c("Feature history", "", "", "Sample history", "", "Events", "", "", "Settings"),
     Explanation = c(
       paste0("One row per feature of the input file, also those removed on the way. Data version: ",
              dplyr::coalesce(unname(version_labels[mat_id]), mat_id), "."),
@@ -242,7 +291,8 @@ write_history_xlsx <- function(tr, mat_id, file) {
       "Everything the processing logged, one row per feature, sample or batch it concerned.",
       paste("Kind: removed (left out from there on), fallback (the data did not allow the usual way; what",
             "was done instead), changed (a value replaced), note (for information)."),
-      "Applies to: feature, sample, batch, or run (the whole processing)."
+      "Applies to: feature, sample, batch, or run (the whole processing).",
+      "The processing settings of these results."
     )
   )
   openxlsx::addWorksheet(wb, "Legend")

@@ -263,7 +263,24 @@ runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data
         pattern <- "\\.(norm|norm_blk|conc|history)(\\.[^.]+)?\\.(xlsx|csv)$"
         files <- list.files(ws$tables, pattern = pattern, full.names = TRUE)
         if (length(files) == 0) stop("No exported tables yet. Run the export first.")
-        zip::zip(zipfile = file, files = files, mode = "cherry-pick")
+        ext <- tolower(tools::file_ext(files))
+        if (length(unique(ext)) < 2) {
+          zip::zip(zipfile = file, files = files, mode = "cherry-pick")
+          return(invisible())
+        }
+        # Both formats: a folder "xlsx" and a folder "csv" in the zip file (the files linked into
+        # a staging folder of the session, copied where links are not possible)
+        stage <- file.path(ws$base, "zip_staging")
+        unlink(stage, recursive = TRUE)
+        on.exit(unlink(stage, recursive = TRUE), add = TRUE)
+        for (e in unique(ext)) {
+          dir.create(file.path(stage, e), recursive = TRUE)
+          for (f in files[ext == e]) {
+            dest <- file.path(stage, e, basename(f))
+            if (!isTRUE(suppressWarnings(file.link(f, dest)))) file.copy(f, dest)
+          }
+        }
+        zip::zip(zipfile = file, files = sort(unique(ext)), root = stage, mode = "mirror")
       }
     )
   })

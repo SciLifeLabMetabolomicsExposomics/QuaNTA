@@ -73,21 +73,23 @@ in two views; switch with the buttons above the plot:
   injection order. The area is green within the limit of the QC RSD% filter for targeted compounds
   (30% if that filter is not used) and red outside it; the batches are shaded and the purple line
   is the trend (a moving mean within each batch).
-- **Per batch**: the QC values of each batch with their mean ± SD and CV% (red above 15%); the
+- **Per batch**: the QC values of each batch with their mean ± SD and RSD% (red above 15%); the
   dashed line is the mean of all batches. **Linear / Log** switch the scale.
 
-The chips next to the buttons count the QCs beyond the limit, and give per QC group the CV% in
-each batch and between the batches. Only measured values count for the median, the means and the
-CV%; open points are values replaced by the LOD/LLOQ rules.
+The line under the buttons says whether the QC RSD% filter was used (its limit is then the green
+band) or not (the band is for reading only). The RSD% is relative (SD / mean): the same RSD% is a
+larger spread at a higher concentration, which the **Log** scale shows alike. Only measured values
+count for the median, the means and the RSD%; open points are values replaced by the LOD/LLOQ rules.
+In the app, click in the figure to switch the view with ← / → (↑ / ↓ still change the compound).
 
 **How to read it**
 
 - **Points within the green area** from the start to the end of the run mean the whole procedure
   (normalization, blank subtraction, calibration) gives the same concentration throughout.
-- **A step between batches** (the trend jumps, or a high CV% between batches) points to a batch
+- **A step between batches** (the trend jumps, or a high RSD% between batches) points to a batch
   effect in the calibration, e.g. a calibration curve of one batch that differs from the others;
   compare the batches' curves in 4.4.
 - **A drift within a batch** (the trend slopes) that normalization did not remove points to a
   compound that its internal standard does not follow well (see 3.8).
-- **A high CV% within a batch** means the compound is not measured precisely there, even if its
+- **A high RSD% within a batch** means the compound is not measured precisely there, even if its
   mean is right.

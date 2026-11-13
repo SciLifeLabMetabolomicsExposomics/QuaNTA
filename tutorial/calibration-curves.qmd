@@ -18,7 +18,7 @@ x <- lst[[b]]
 
 For every targeted compound (`Quant` in the MS-DIAL comment), QuaNTA fits a calibration curve to
 the calibration samples (`Cal…` classes) and uses it to turn the signal of every sample into a
-concentration. Figure **4.4** of the app shows the curve of the compound selected in table **4.2**.
+concentration. Figure **4.4** of the app shows the curve of the compound selected in table **4.1**.
 Below is the same figure as in the app, with the example data (batch `r b`,
 `r tut$method_labels[[best]]` normalization); here, choose the compound in the list or search it by
 name.
@@ -39,7 +39,7 @@ show$calib_viewer_html("calcurve-viewer", cv_data, script_src = "assets/calcurve
 ```
 
 The figure has two modes; switch with the buttons, or with the arrow keys ← and →. The arrow keys
-↑ and ↓ go to the previous and next compound (in the app, the rows of table 4.2).
+↑ and ↓ go to the previous and next compound (in the app, the rows of table 4.1).
 
 - **Calibration inspection** (first): every calibration point, each injection of a calibration
   sample, at its spiked (nominal) concentration and its measured signal. Points of the same
@@ -66,11 +66,12 @@ In both modes:
   keeps more levels (the minimum number of calibration levels), those levels are in the olive area.
 - **Above the plot**, the parameters of the curve (model, R², LOD, LLOQ, ULOQ, highest calibration
   concentration, the curve used) and notes, e.g. why a curve is not valid.
-- **The title** is coloured as the row of the compound in table 4.2: red when it has no valid
-  curve, orange when it was kept although not valid, blue when it uses the global curve, grey when
-  it was removed before calibration.
+- **The title** names the compound, followed by the state of its curve in the colour of its row in
+  table 4.1: *(not valid)* in red, *(kept although not valid)* in orange, *(global curve used)* in
+  blue, *(removed before calibration)* in grey; nothing for a valid curve.
 - **Curve** (only for a compound that uses the global curve, with several batches): the calibration
-  points of all batches, which the global curve was fitted on, or only those of the batch.
+  points of all batches, which the global curve was fitted on, or only those of the batch. The key
+  **B** switches between them (in the report, after a click in the figure).
 
 **How to read it**
 
@@ -83,12 +84,12 @@ In both modes:
 - **Samples in the olive area** are above the ULOQ: within the curve but above its linear range, or
   extrapolated above its highest level. Treat these values with care, or dilute and re-measure.
 - **A curve far from its calibration points**, or points bending away at the top, suggests that the
-  linear range is shorter than the calibration range; see the notes in table 4.2 and the option
+  linear range is shorter than the calibration range; see the notes in table 4.1 and the option
   *Enforce linear range*.
 
 ::: {.callout-tip}
 ## In the app
-Use the arrow keys ↑ / ↓ to step through the rows of table 4.2 and ← / → to switch the mode; the
+Use the arrow keys ↑ / ↓ to step through the rows of table 4.1 and ← / → to switch the mode; the
 figure follows at once. With the processing option *Log scale for calibration curve fitting*, the
 figure starts with log axes, which show the low concentrations better.
 :::

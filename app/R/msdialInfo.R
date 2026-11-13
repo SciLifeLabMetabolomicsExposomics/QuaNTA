@@ -58,7 +58,7 @@ msdialInfoUI <- function(uiId) {
       buttonLabel = "Browse",
       placeholder = "No file selected",
       # Only the file dialog's filter; the server checks the type too (`upload_type_problem()`)
-      accept = c(".txt", ".gz", ".zip"),
+      accept = c(".txt", ".csv", ".xlsx", ".gz", ".zip"),
       width = "100%"
     ),
     .disable_steps_while_uploading(ns("input_file_upload")),
@@ -120,63 +120,114 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
     }
 
     # MS-DIAL file upload: keep the original file name (used to name reports and tables).
-    # Compressed uploads (.gz, .zip) are decompressed in a background process.
-    n_uploads <- 0   # A decompression that ends after a newer upload is ignored
+    # A tab-delimited text file is used as it is. Others are made ready for reading in a background
+    # process (scripts/prepare_input.R, projlib/input_file.R): .gz / .zip unpacked, an .xlsx sheet
+    # converted to text (the user chooses the sheet when there are several), text separated by
+    # semicolons or commas, in UTF-16 or with decimal commas rewritten as tab-delimited text.
+    box::use(input_file = projlib/input_file)
+    n_uploads <- 0   # A preparation that ends after a newer upload is ignored
+    pending_sheet <- shiny::reactiveVal(NULL)   # An .xlsx file waiting for the choice of its sheet
+    file_problem_modal <- function(title, ...) {
+      shiny::showModal(shiny::modalDialog(
+        title = title, ...,
+        shiny::p(paste0("Upload ", input_file$accepted_types_text, ". A parameters file (.yml) is loaded ",
+                        "with \"Load parameters\" above.")),
+        easyClose = TRUE
+      ))
+    }
+    prepare_upload <- function(src, name, sheet, this_upload, out_dir, label, remove_src = FALSE) {
+      data_info$input_file <- ""   # Not usable until ready ("Read" stays disabled)
+      data_info$input_file_name <- paste(label, "(preparing ...)")
+      result_file <- file.path(ws$base, paste0("prepare_result_", this_upload, ".rds"))
+      unlink(result_file)
+      job <- list(src = src, name = name, out_dir = out_dir, sheet = sheet, result_file = result_file)
+      run_bg_rscript(
+        session, ws, "scripts/prepare_input.R", job,
+        progress_message = paste("Preparing", label),
+        on_done = function(ok, log) {
+          res <- if (ok && file.exists(result_file)) readRDS(result_file)
+          unlink(result_file)
+          # Another file was uploaded meanwhile: that one is the data file
+          if (this_upload != n_uploads) {
+            unlink(out_dir, recursive = TRUE)
+            return()
+          }
+          if (is.null(res)) {
+            data_info$input_file_name <- paste(label, "(could not be used)")
+            file_problem_modal("The file could not be used", shiny::p(bg_error_message(log)))
+            return()
+          }
+          if (!is.null(res$sheets)) {
+            pending_sheet(list(path = res$path, name = res$name, upload = this_upload, out_dir = out_dir,
+                               label = label))
+            data_info$input_file_name <- paste(label, "(choose a sheet)")
+            shiny::showModal(shiny::modalDialog(
+              title = "Which sheet has the data?",
+              shiny::p(sprintf("The workbook %s has %d sheets. Choose the sheet with the MS-DIAL data to analyse.",
+                               res$name, length(res$sheets))),
+              shiny::selectInput(session$ns("xlsx_sheet"), "Sheet", choices = res$sheets, width = "100%"),
+              easyClose = FALSE,
+              footer = shiny::tagList(
+                shiny::modalButton("Cancel"),
+                shiny::actionButton(session$ns("xlsx_sheet_ok"), "Use this sheet", class = "btn-primary")
+              )
+            ))
+            return()
+          }
+          if (remove_src && !identical(normalizePath(src, mustWork = FALSE), res$path)) unlink(src)
+          data_info$input_file <- res$path
+          data_info$input_file_name <- res$name
+          if (length(res$notes) > 0) {
+            shiny::showNotification(paste(res$notes, collapse = " "), type = "message", duration = 15)
+          }
+          warn_if_large_upload(res$path, session)
+        }
+      )
+    }
+    shiny::observeEvent(input$xlsx_sheet_ok, {
+      p <- pending_sheet()
+      shiny::removeModal()
+      pending_sheet(NULL)
+      shiny::req(p, p$upload == n_uploads, input$xlsx_sheet)
+      prepare_upload(p$path, p$name, input$xlsx_sheet, p$upload, p$out_dir,
+                     paste0(p$label, " [", input$xlsx_sheet, "]"), remove_src = TRUE)
+    })
+
     shiny::observeEvent(input$input_file_upload, {
       n_uploads <<- n_uploads + 1
       this_upload <- n_uploads
       up <- input$input_file_upload
-      # Only a .txt file, or a .gz / .zip with one .txt file inside (checked when decompressing);
+      # Only the accepted types (the file inside a .gz / .zip is checked when it is unpacked);
       # another file keeps the earlier data
       problem <- upload_type_problem(up$name)
       if (!is.null(problem)) {
-        shiny::showModal(shiny::modalDialog(
-          title = "This file cannot be used as the data file",
-          shiny::p(problem),
-          shiny::p("Upload the data export as a .txt file, or compressed as a .gz or .zip file with one",
-                   ".txt file inside. A parameters file (.yml) is loaded with \"Load parameters file\" above."),
-          easyClose = TRUE
-        ))
+        file_problem_modal("This file cannot be used as the data file", shiny::p(problem))
         return()
+      }
+      # A text file: its format from its first lines (quick). Not an MS-DIAL export: the earlier
+      # data is kept
+      ext <- tolower(tools::file_ext(up$name))
+      as_is <- FALSE
+      if (ext %in% c("txt", "csv", "tsv")) {
+        fmt <- tryCatch(input_file$detect_text_format(up$datapath), error = function(e) e)
+        if (inherits(fmt, "error")) {
+          file_problem_modal("The file could not be read", shiny::p(conditionMessage(fmt)))
+          return()
+        }
+        as_is <- !fmt$needs_rewrite
       }
       # A new file makes all earlier results stale (data, exported tables, reports)
       unlink(list.files(ws$input, full.names = TRUE), recursive = TRUE)
       unlink(list.files(ws$intermediate, full.names = TRUE))
       unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
       unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
+      pending_sheet(NULL)
 
-      if (tolower(tools::file_ext(up$name)) %in% c("gz", "zip")) {
-        data_info$input_file <- ""   # Not usable until decompressed ("Read" stays disabled)
-        data_info$input_file_name <- paste(up$name, "(decompressing ...)")
-        result_file <- file.path(ws$base, paste0("decompress_result_", this_upload, ".rds"))
-        unlink(result_file)
-        # A folder per upload: an older decompression cannot overwrite a newer file of the same name
+      if (!as_is) {
+        # A folder per upload: an older preparation cannot overwrite a newer file of the same name
         out_dir <- file.path(ws$input, this_upload)
         dir.create(out_dir)
-        job <- list(src = up$datapath, name = up$name, out_dir = out_dir, result_file = result_file)
-        run_bg_rscript(
-          session, ws, "scripts/decompress_input.R", job,
-          progress_message = paste("Decompressing", up$name),
-          on_done = function(ok, log) {
-            res <- if (ok && file.exists(result_file)) readRDS(result_file)
-            unlink(result_file)
-            # Another file was uploaded meanwhile: that one is the data file
-            if (this_upload != n_uploads) {
-              unlink(out_dir, recursive = TRUE)
-              return()
-            }
-            if (is.null(res)) {
-              data_info$input_file_name <- paste(up$name, "(could not be decompressed)")
-              shiny::showNotification(paste("The uploaded file could not be decompressed:",
-                                            bg_error_message(log)), type = "error", duration = NULL)
-              return()
-            }
-            data_info$input_file <- res$path
-            data_info$input_file_name <- res$name
-            shiny::showNotification(paste("Decompressed", up$name, "to", res$name), type = "message")
-            warn_if_large_upload(res$path, session)
-          }
-        )
+        prepare_upload(up$datapath, up$name, NULL, this_upload, out_dir, up$name)
         return()
       }
 

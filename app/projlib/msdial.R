@@ -198,12 +198,39 @@ required_feature_columns <- list(
 #' @returns The names of the feature columns, invisibly
 #' @export
 check_feature_columns <- function(msdial_file, indices) {
-  header <- strsplit(readLines(msdial_file, n = 5L, warn = FALSE)[5L], "\t", fixed = TRUE)[[1L]]
-  header <- gsub('^"|"$', "", trimws(header[indices], whitespace = "[\r\n]"))
-  similar_to <- function(name) {
-    header[grepl(tolower(name), tolower(header), fixed = TRUE) & !header %in% unlist(required_feature_columns)]
+  problems <- feature_column_problems(msdial_file, indices)
+  if (length(problems) > 0) {
+    stop("The feature columns of the MS-DIAL file are not as expected:\n  - ",
+         paste(problems, collapse = "\n  - "),
+         "\nColumn names must match exactly, including upper/lower case.", call. = FALSE)
   }
-  quote <- function(x) paste0('"', x, '"', collapse = ", ")
+  header <- .feature_header(msdial_file, indices)
+  ignored <- unique(unlist(lapply(unlist(required_feature_columns), function(r) .similar_to(header, r))))
+  if (length(ignored) > 0) {
+    message("Note: column(s) ", .quote_names(ignored), " are similar to required columns but not used ",
+            "(only exact names are used: ", .quote_names(unlist(required_feature_columns)), ").")
+  }
+  invisible(header)
+}
+
+.feature_header <- function(msdial_file, indices) {
+  header <- strsplit(readLines(msdial_file, n = 5L, warn = FALSE)[5L], "\t", fixed = TRUE)[[1L]]
+  gsub('^"|"$', "", trimws(header[indices], whitespace = "[\r\n]"))
+}
+.similar_to <- function(header, name) {
+  header[grepl(tolower(name), tolower(header), fixed = TRUE) & !header %in% unlist(required_feature_columns)]
+}
+.quote_names <- function(x) paste0('"', x, '"', collapse = ", ")
+
+#' Problems with the required feature columns (see [check_feature_columns()])
+#'
+#' @inheritParams check_feature_columns
+#' @returns A character vector of problems (missing, present more than once), empty if none
+#' @export
+feature_column_problems <- function(msdial_file, indices) {
+  header <- .feature_header(msdial_file, indices)
+  similar_to <- function(name) .similar_to(header, name)
+  quote <- .quote_names
   problems <- character()
   for (req in required_feature_columns) {
     n_found <- vapply(req, function(r) sum(header == r), integer(1))
@@ -221,17 +248,7 @@ check_feature_columns <- function(msdial_file, indices) {
       problems <- c(problems, paste0("Both ", quote(req[n_found > 0]), " are present; keep only one of them."))
     }
   }
-  if (length(problems) > 0) {
-    stop("The feature columns of the MS-DIAL file are not as expected:\n  - ",
-         paste(problems, collapse = "\n  - "),
-         "\nColumn names must match exactly, including upper/lower case.", call. = FALSE)
-  }
-  ignored <- unique(unlist(lapply(unlist(required_feature_columns), similar_to)))
-  if (length(ignored) > 0) {
-    message("Note: column(s) ", quote(ignored), " are similar to required columns but not used ",
-            "(only exact names are used: ", quote(unlist(required_feature_columns)), ").")
-  }
-  invisible(header)
+  problems
 }
 
 #' Feature columns similar to a required column but not used (not the exact name), e.g.
@@ -314,7 +331,8 @@ fetch_sample_info <- function(msdial_file, indices) {
 #' @param skip The number of lines to skip before reading the data. The default is 4. The data
 #'   in MS_DIAL files starts from the 5th line.
 #' 
-#' @returns A tibble 
+#' @returns A tibble. Comments after a ";" in the `Comment` column are in a new column after it
+#'   (see [split_comment()]).
 #' @seealso `get_three_section_indices` `fetch_sample_info`
 #' @export
 fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
@@ -323,7 +341,40 @@ fetch_data_of_columns <- function(msdial_file, indices, skip = 4L) {
   # (`readr::read_tsv()` indexes every cell of the file, also of the columns it skips)
   out <- .fread_columns(msdial_file, indices, skip, colClasses = "character", data.table = FALSE)
   names(out) <- .column_names(msdial_file, indices, skip)
-  readr::type_convert(tibble::as_tibble(out), col_types = readr::cols(), guess_integer = FALSE, na = c("", "NA"))
+  out <- split_comment(out)
+  info <- attr(out, "comments2")
+  out <- readr::type_convert(tibble::as_tibble(out), col_types = readr::cols(), guess_integer = FALSE, na = c("", "NA"))
+  attr(out, "comments2") <- info
+  out
+}
+
+#' Comments after a ";" in the `Comment` column, into a new column after it
+#'
+#' E.g. "Quant; checked by AB" becomes `Comment` "Quant" and `Comments2` "checked by AB" (all after
+#' the first ";"). The new column is named "Comments2", or "Comments2_auto" when the file has a
+#' column of that name. Only added when a Comment has a ";".
+#'
+#' @param df A data frame of the feature columns (as text)
+#' @returns `df`, with attribute `comments2` = list(column, n) when comments were split
+#' @export
+split_comment <- function(df) {
+  if (!"Comment" %in% names(df)) return(df)
+  x <- as.character(df[["Comment"]])
+  has <- !is.na(x) & grepl(";", x, fixed = TRUE)
+  if (!any(has)) return(df)
+  rest <- rep(NA_character_, length(x))
+  rest[has] <- trimws(sub("^[^;]*;", "", x[has]))
+  x[has] <- trimws(sub(";.*$", "", x[has]))
+  x[has & !nzchar(x)] <- NA_character_
+  rest[has & !nzchar(rest)] <- NA_character_
+  nm <- "Comments2"
+  while (nm %in% names(df)) nm <- paste0(nm, "_auto")
+  df[["Comment"]] <- x
+  i <- match("Comment", names(df))
+  new <- stats::setNames(data.frame(rest, stringsAsFactors = FALSE), nm)
+  df <- cbind(df[seq_len(i)], new, df[-seq_len(i)])
+  attr(df, "comments2") <- list(column = nm, n = sum(has))
+  df
 }
 
 #' The selected columns of an MS-DIAL file with `data.table::fread()`, without their header
@@ -437,7 +488,28 @@ fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
     s_rows <- s_rows |>
       dplyr::mutate("Calibration" = SumExp::col_df(sumexp)[["calibration"]])
   }
+  # Outlier injections kept (outlier removal off): "Yes (7 of 30 IS)", empty otherwise
+  flag <- SumExp::col_df(sumexp)[["is_outlier_flag"]]
+  if (!is.null(flag) && any(nzchar(flag))) {
+    s_rows <- s_rows |> dplyr::mutate("IS outlier (not removed)" = flag)
+  }
   return(t(s_rows))  # Horizontal table
+}
+
+#' Fill of the names of the injections flagged as outliers but not removed
+.outlier_style <- function() openxlsx::createStyle(fgFill = "#F4B183", textDecoration = "bold")
+
+#' Colour the names of the outlier injections kept (outlier removal off) in the header row
+#' @param header_row The row of the sample names
+#' @param first_col The column of the first sample
+.mark_outlier_columns <- function(wb, sheet, sumexp, header_row, first_col) {
+  flag <- SumExp::col_df(sumexp)[["is_outlier_flag"]]
+  j <- which(!is.na(flag) & nzchar(flag))
+  if (length(j) > 0) {
+    openxlsx::addStyle(wb, sheet, .outlier_style(), rows = header_row, cols = first_col - 1L + j,
+                       gridExpand = TRUE, stack = TRUE)
+  }
+  invisible(wb)
 }
 
 #' Append exporting table with feature table
@@ -502,6 +574,7 @@ fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
     startRow = nrow(sinfo) + 1,
     colNames = TRUE
   )
+  .mark_outlier_columns(wb, sheetName, sumexp, header_row = nrow(sinfo) + 1L, first_col = ncol(feat_tbl) + 1L)
   # Concentrations without a value below the LOD / LLOQ: "n.d." / "n.q." (text) in their cells,
   # written per run of neighbouring cells of a chemical (the other cells stay numbers)
   if (mat_id == "conc") {
@@ -535,13 +608,15 @@ fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
 #' standards, times the injections.
 #'
 #' @param tr The `to_report` list of `process.R`
-#' @returns A named numeric vector (`norm`, `norm_blk`)
+#' @returns A named number: `norm_blk`, or `norm` for data processed without blank subtraction
 #' @export
 export_table_values <- function(tr) {
   fd <- tr[["full data"]]
   n_features <- function(rd) sum(!(util$is_internal_std(rd$.std_type) | rd$.std_type %in% "vIS"))
-  c(norm = n_features(fd$norm_rows) * as.numeric(nrow(fd$norm_cols)),
-    norm_blk = n_features(fd$blk_rows) * as.numeric(nrow(fd$blk_cols)))
+  out <- c(norm = n_features(fd$norm_rows) * as.numeric(nrow(fd$norm_cols)),
+           norm_blk = n_features(fd$blk_rows) * as.numeric(nrow(fd$blk_cols)))
+  # Only the table that is exported: blank-subtracted, or normalized without blank subtraction
+  out[if (isFALSE(tr$params$blank_subtract)) "norm" else "norm_blk"]
 }
 
 #' Write a table as CSV, with the same layout as the worksheet of [.write_data_to_new_worksheet()],
@@ -1044,9 +1119,9 @@ measured_conc <- function(sumexp) {
                             "Signal at or above the LLOQ level, concentration below the LLOQ: set to the LLOQ",
   # Not replacements: a value above the ULOQ, within a curve not cut at the ULOQ (code
   # `.above_linear`) or extrapolated beyond the curve (code `.extrapolated`)
-  -1,    "#E3E0B8", NA,     "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
+  -1,    "#E0E0E0", NA,     "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
                             "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
-  Inf,   "#A8A05A", NA,     "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
+  Inf,   "#9E9E9E", NA,     "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
                             "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
 )
 .extrapolated <- Inf
@@ -1145,7 +1220,9 @@ measured_conc <- function(sumexp) {
       "QC samples first (left), then the study samples and the blanks last (right); by batch and injection order within each."
     },
     paste0("Concentrations and peak areas have at most ", .max_decimals, " decimals, retention times ",
-           .rt_decimals, " and m/z values ", .mz_decimals, ".")
+           .rt_decimals, " and m/z values ", .mz_decimals, "."),
+    paste("Injection names in orange (when outlier removal was off): injections found to be outliers by the",
+          "internal standards but not removed; the row \"IS outlier (not removed)\" gives the number of outlying IS.")
   )
   openxlsx::writeData(wb, "Legend", data.frame(Notes = notes), startRow = nrow(legend) + 3L)
   openxlsx::setColWidths(wb, "Legend", cols = 1:2, widths = c(10, 100))
@@ -1161,7 +1238,7 @@ measured_conc <- function(sumexp) {
 .combine_samples <- function(concn, calcurve = NULL, blank = NULL) {
   # The same sample information in all batches (needed to merge them)
   cols <- intersect(c("sample_name", "Class", "sample_type", ".ctrl_cat", "injection_order",
-                      "batch_id", "org_batch_id", "blank_source", "calibration"),
+                      "batch_id", "org_batch_id", "blank_source", "calibration", "is_outlier_flag"),
                     names(SumExp::col_df(concn)))
   lab <- labelled::get_label_attribute(concn[["conc"]])
   part <- function(se) {

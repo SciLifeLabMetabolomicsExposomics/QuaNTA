@@ -16,7 +16,14 @@ All settings and metadata can be saved as a parameters file for ease of reproces
 ## File structure
 
 QuaNTA reads a `.txt` file formatted according to the [MS-DIAL](https://systemsomicslab.github.io/compms/msdial/main.html) **alignment result** output format.
-Upload it as it is, or compressed as `.zip` or `.gz`.
+Upload it as it is, or compressed as `.zip` or `.gz`. A file edited in Excel can also be uploaded:
+
+- **as an Excel workbook (`.xlsx`)**: with several sheets, QuaNTA asks which sheet has the data;
+- **as text separated by semicolons or commas (`.txt`, `.csv`)**, also with decimal commas
+  (e.g. `1,5`) or saved as *Unicode text*: QuaNTA converts it to tab-delimited text and says so.
+
+A file that is not in this format (e.g. without the `File type` row) is not read: QuaNTA says that
+its format is probably wrong.
 
 The file has two parts: four rows of **sample information** at the top, and below them one row of headers above all
 **feature** (a compound or an unknown peak) rows with its peak area in every sample. This is the top-left
@@ -58,7 +65,13 @@ The four sample rows (shaded above) describe each sample column:
 ### The feature columns
 
 QuaNTA needs these feature columns (exact names): `Alignment ID`, `Average Rt(min)`,
-`Average Mz`, `Metabolite name` and `Comment`. Other columns are ignored.
+`Average Mz`, `Metabolite name` and `Comment`, each exactly once; otherwise the file is not read
+and QuaNTA asks for a corrected file. Other columns are not used, but they are copied into the
+exported tables.
+
+A `Comment` with a `;` is split: the part before the first `;` is the Comment (e.g. `Quant` in
+`Quant; checked by AB`), and the rest goes into a new column `Comments2` of the exported tables
+(`Comments2_auto` if the file already has a column `Comments2`).
 
 
 ### Naming conventions
@@ -79,6 +92,13 @@ The **calibration samples** (`File type` = `Standard`) carry their concentration
 name, after `Cal`, with a dash for the decimal point: `Cal0` (the zero calibrant), `Cal0-005` (0.005),
 `Cal0-5` (0.5), `Cal10` (10). **QC samples** with the same `Class` are replicates of one QC material;
 several QC materials (e.g. `QC-low`, `QC-high`) are possible.
+
+When the file is read, QuaNTA checks the names of the calibration samples. These stop the reading
+(correct the file and upload it again): two dashes in a concentration (`Cal0-5-1`), a point or a
+comma instead of the dash (`Cal0.5`), a `Standard` named with `cal` but not `Cal<number>` (`cal5`,
+`Cal_5`, `Cal 5`), no `Cal0`, and a sample name used twice. These are shown before processing:
+a `Standard` without `Cal` in its name (it is treated as a study sample), a `Cal<number>` name of
+another File type, and a concentration with a leading zero (`Cal05` is read as 5).
 
 ### Example dataset
 
@@ -104,7 +124,7 @@ The initial page has 3 sections: Input and metadata, reading and processing data
 
 ### Upload file, read and process
 1. If the user has previously saved a parameters file it contains metadata, processing settings and which dataset was uploaded at the time of saving it.
-2. Otherwise, fill in metadata (optional), choose a `.txt`, `.zip` or `.gz` (containing a `.txt` file) by clicking "Browse" in lower left corner
+2. Otherwise, fill in metadata (optional), choose a `.txt`, `.csv` or `.xlsx` file, or a `.zip` or `.gz` (containing one of them) by clicking "Browse" in lower left corner
 3. Choose whether to process batch-wise or globally and read file by clicking "Read data file".<br> Section 2 is now viewable.
 
 ![Example parameters file and data loaded and read.](images/page1-read.png){.screenshot}
@@ -120,11 +140,12 @@ greyed out.
 desc <- c(
   per_batch = "Blank subtraction and calibration per batch (Batch ID); otherwise all batches together.",
   vis_prenorm = "Divide all peak areas by the volumetric IS of each sample before normalization.",
-  rm_outlier = "Remove samples in which more than 20% of the internal standards deviate by more than 3 SD (log scale).",
+  rm_outlier = "Remove samples in which more than 20% of the internal standards deviate by more than 3 SD (log scale); unticked, they are only listed (3.3) and marked in the exported tables.",
   rm_outlier_scope = "Which samples can be removed as outliers: all injections, or all but the calibration samples.",
   blank_filter = "Remove features whose maximum (or mean) in the study samples is not above factor × the blank mean.",
   blank_filter_factor = "The factor of the blank filter.",
   blank_filter_stat = "Compare the blank mean with the maximum or the mean of the study samples (QCs and calibration standards do not count).",
+  blank_subtract = "Subtract the blank mean (per batch) from the QCs and study samples; unticked, the normalized values are used as they are.",
   rsd_filter = "Remove features with a high RSD% among the QC replicates (after normalization and blank subtraction).",
   rsd_filter_scope = "Targeted, non-targeted features or both.",
   rsd_max_targeted = "Maximum QC RSD% of targeted compounds.",
@@ -147,7 +168,7 @@ desc <- c(
 )
 group <- c(per_batch = "Reading", vis_prenorm = "Quality control", rm_outlier = "Quality control",
            rm_outlier_scope = "Quality control", blank_filter = "Quality control", blank_filter_factor = "Quality control",
-           blank_filter_stat = "Quality control", rsd_filter = "Quality control", rsd_filter_scope = "Quality control", rsd_max_targeted = "Quality control",
+           blank_filter_stat = "Quality control", blank_subtract = "Quality control", rsd_filter = "Quality control", rsd_filter_scope = "Quality control", rsd_max_targeted = "Quality control",
            rsd_max_nontargeted = "Quality control")
 po <- settings$processing_options
 show_val <- function(v) if (is.logical(v)) ifelse(v, "Yes", "No") else as.character(v)

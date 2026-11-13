@@ -39,6 +39,7 @@ cat(
 options(box.path = Sys.getenv("R_BOX_PATH", "app/"))          # Path to project local libraries
 box::use(
   projlib/msdial,   # Handle MS-Dial files
+  input_file = projlib/input_file,   # The format of the data file
   io = projlib/check_io_exist,       # Check input/output files
   util = projlib/msdial_utils,   
   show = projlib/show,   # Counts of the value distribution (app 2.6)
@@ -55,6 +56,25 @@ FILE <- list(
 # Check if input files and output directories exist
 io$check_io_exist(FILE)
 
+# Input errors the user must fix in the file: saved to `input_errors.txt` in the intermediate
+# folder (the app shows them in a popup); the read data is then not saved, so the data cannot be
+# processed
+errors_file <- file.path(user_inputs$intermediate_dir, "input_errors.txt")
+stop_with_input_errors <- function(errors) {
+  writeLines(errors, errors_file)
+  stop("The input file has ", length(errors), " error(s) that must be fixed:\n",
+       paste("-", errors, collapse = "\n"), call. = FALSE)
+}
+# A file that is not tab-delimited UTF-8 text with decimal points (the app converts uploads before
+# reading; this is for files given to the script directly)
+fmt_error <- tryCatch({
+  fmt <- input_file$detect_text_format(FILE$i)
+  if (fmt$needs_rewrite) sub("^The file was converted to tab-delimited text \\(it was (.*)\\)\\.$",
+                             "The file is not tab-delimited text as exported by MS-DIAL: it is \\1.",
+                             fmt$description)
+}, error = function(e) conditionMessage(e))
+if (length(fmt_error) > 0) stop_with_input_errors(fmt_error)
+
 # "non-target mode": When there is missing information for calibration of targeted chemicals
 is_non_target_mode <- FALSE
 
@@ -70,6 +90,14 @@ is_non_target_mode <- FALSE
 i_three_sections <- msdial$get_three_section_indices(FILE$i)
 # Sample Info
 sample_info <- msdial$fetch_sample_info(FILE$i, i_three_sections[["2nd"]])
+names_txt <- function(x) {
+  paste0(paste0("\"", utils::head(x, 10), "\"", collapse = ", "), if (length(x) > 10) ", ..." else "")
+}
+# The same sample name twice (the columns of the measured values would not match the samples)
+dup_names <- unique(sample_info$sample_name[duplicated(sample_info$sample_name)])
+if (length(dup_names) > 0) {
+  stop_with_input_errors(paste0("Sample name(s) used for more than one injection: ", names_txt(dup_names), "."))
+}
 
 # Feature Data
 
@@ -85,11 +113,20 @@ to_valid_id <- function(given_id, tbl = util$conv_tbl) {
   m <- match(given_id, tbl$given_id)
   ifelse(is.na(m), given_id, tbl$id[m])
 }
-# Required columns must be present exactly once with exact names (stops with a message otherwise)
-msdial$check_feature_columns(FILE$i, i_three_sections[["1st"]])
+# Required columns must be present exactly once with exact names (an input error otherwise)
+col_problems <- msdial$feature_column_problems(FILE$i, i_three_sections[["1st"]])
+if (length(col_problems) > 0) {
+  stop_with_input_errors(paste(col_problems, "Column names must match exactly, including upper/lower case."))
+}
 # Columns similar to a required one but not used (e.g. "comment"): shown before processing
 column_notes <- msdial$similar_feature_columns(FILE$i, i_three_sections[["1st"]])
 features <- msdial$fetch_data_of_columns(FILE$i, i_three_sections[["1st"]])
+# Comments after a ";" are in a new column (only in the exported tables, with all columns of the file)
+c2 <- attr(features, "comments2")
+if (!is.null(c2)) {
+  cat(c2$n, " Comment value(s) have a \";\": the text after it is in the column \"", c2$column,
+      "\" of the exported tables; the Comment is the text before it.\n", sep = "")
+}
 # Identify features to be removed (Comment == "R")
 i_to_keep <- which(is.na(features$Comment) | features$Comment != "R")
 features <- features[i_to_keep, ]
@@ -204,9 +241,10 @@ batch_ids <- unique(sample_info$batch_id)
 stopifnot("`Batch ID` must not be NA." = all(!is.na(batch_ids)))
 
 # Input errors the user must fix in the file ---------------------------------------------
-# Collected and saved to `input_errors.txt` in the intermediate folder (the app shows them in a
-# popup); the read data is then not saved, so the data cannot be processed
+# Collected and saved to `input_errors.txt` (see `stop_with_input_errors()` above)
 input_errors <- character(0)
+# Names of calibration standards that are likely mistakes (shown before processing)
+calibrant_notes <- character(0)
 # 1. The same injection number twice in a batch
 inj_key <- paste(sample_info$batch_id, sample_info$injection_order)
 dup_inj <- unique(inj_key[duplicated(inj_key) & !is.na(sample_info$injection_order)])
@@ -241,12 +279,49 @@ for (col in c(".rt", "mz")) {
       paste0(paste(utils::head(miss, 10), collapse = ", "), if (length(miss) > 10) ", ..." else "")))
   }
 }
-errors_file <- file.path(user_inputs$intermediate_dir, "input_errors.txt")
-if (length(input_errors) > 0) {
-  writeLines(input_errors, errors_file)
-  stop("The input file has ", length(input_errors), " error(s) that must be fixed:\n",
-       paste("-", input_errors, collapse = "\n"), call. = FALSE)
+# 5. Names of the calibration standards: File type "Standard" and "Cal<concentration>" in the
+# name, with "-" as the decimal point (e.g. Cal0-5_E_B1 = 0.5). Only with targeted (Quant) features.
+if (!is_non_target_mode) {
+  nm <- sample_info$sample_name
+  std <- sample_info$sample_type %in% "Standard"
+  is_cal <- sample_info$.ctrl_cat == "CalCurve"
+  conc_txt <- stringr::str_extract(nm, "Cal([[:digit:]][[:digit:]-]*)", group = 1)
+  conv <- "(the concentration follows \"Cal\", with \"-\" as the decimal point, e.g. Cal0-5_... for 0.5)"
+  # Errors: the concentration cannot be read, or the injection is not recognised as a calibration
+  # standard (it would be a study sample)
+  bad_dash <- is_cal & (stringr::str_count(conc_txt, "-") > 1 | grepl("-$", conc_txt))
+  if (any(bad_dash)) input_errors <- c(input_errors, paste0(
+    "Calibration standard name(s) with more than one \"-\" in the concentration, or a \"-\" at its end: ",
+    names_txt(nm[bad_dash]), " ", conv, "."))
+  bad_dec <- is_cal & grepl("Cal[[:digit:]]+[.,][[:digit:]]", nm)
+  if (any(bad_dec)) input_errors <- c(input_errors, paste0(
+    "Calibration standard name(s) with a point or a comma in the concentration: ", names_txt(nm[bad_dec]),
+    " ", conv, "."))
+  near_cal <- std & !is_cal & grepl("cal", nm, ignore.case = TRUE)
+  if (any(near_cal)) input_errors <- c(input_errors, paste0(
+    "Injection(s) of File type Standard with \"cal\" in the name, but not \"Cal<concentration>\" (upper-case ",
+    "C, then the number): ", names_txt(nm[near_cal]), ". They are not recognised as calibration standards ",
+    conv, "."))
+  conc <- suppressWarnings(as.numeric(sub("-", ".", conc_txt[is_cal & !bad_dash], fixed = TRUE)))
+  if (any(is_cal) && !any(conc == 0, na.rm = TRUE)) input_errors <- c(input_errors,
+    "No calibration standard of concentration 0 (Cal0_...), which the LOD and LLOQ need.")
+  # Warnings (shown before processing): likely, but not certainly, mistakes
+  std_no_cal <- std & !is_cal & !near_cal
+  if (any(std_no_cal)) calibrant_notes <- c(calibrant_notes, paste0(
+    "Injection(s) of File type Standard without \"Cal<concentration>\" in the name: ", names_txt(nm[std_no_cal]),
+    ". They are not calibration standards and are treated as study samples."))
+  cal_other <- !std & grepl("Cal[[:digit:]]", nm)
+  if (any(cal_other)) calibrant_notes <- c(calibrant_notes, paste0(
+    "Injection(s) named \"Cal<concentration>\" but not of File type Standard: ",
+    names_txt(paste0(nm[cal_other], " (", sample_info$sample_type[cal_other], ")")),
+    ". They are not used as calibration standards."))
+  lead0 <- is_cal & grepl("^0[[:digit:]]", conc_txt)
+  if (any(lead0)) calibrant_notes <- c(calibrant_notes, paste0(
+    "Calibration standard(s) whose concentration starts with 0: ", names_txt(nm[lead0]),
+    ". These are read without the 0 (Cal05 = 5); for 0.5, the name is Cal0-5."))
+  if (length(calibrant_notes) > 0) cat("Calibration standard names to check:\n", paste0("  - ", calibrant_notes, "\n"), sep = "")
 }
+if (length(input_errors) > 0) stop_with_input_errors(input_errors)
 if (length(batch_ids) > 1) {
   cat("Multiple batches are detected: ", paste(batch_ids, collapse = ", "), "\n")
   # If not processing per batch, assign all samples to a single batch
@@ -329,6 +404,7 @@ sumexp <- SumExp::SumExp(
     comment_notes = comment_notes,   # Comment values that do not follow the naming conventions
     column_notes = column_notes,     # Columns similar to a required column (not used)
     missing_values = missing_values,   # Empty or non-numeric values read as 0, per feature
+    calibrant_notes = calibrant_notes, # Calibration standard names that are likely mistakes
     # Histogram counts of all raw values (app 2.6), counted once here instead of in the app
     value_bins = show$value_distribution_bins(raw_mat),
   )

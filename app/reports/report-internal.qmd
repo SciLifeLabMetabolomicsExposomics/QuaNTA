@@ -79,6 +79,14 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   /* The viewer that answers the arrow keys (clicked last): a thin outline */
   .q-keys.q-active { outline: 1.5px solid #1A0DF2; outline-offset: 3px; border-radius: 8px; }
   .viewer .chip { display: inline-block; background: #EEF4FE; border-radius: 4px; padding: 1px 7px; margin: 0 6px 3px 0; }
+  .q-eye { display: inline-flex; vertical-align: middle; margin-left: 8px; padding: 2px 4px; border-radius: 4px; color: #667085; cursor: pointer; }
+  .q-eye:hover { color: #0D1B3E; background: #EEF0FE; }
+  .q-collapsed .q-eye { color: #B54708; background: #FEF0C7; }
+  .q-eye-hidden { display: none !important; }
+  .q-table-resize { position: relative; height: 8px; cursor: ns-resize; }
+  .q-table-resize::before { content: ""; position: absolute; left: 0; right: 0; top: 3px; height: 2px; border-radius: 2px;
+    background: repeating-linear-gradient(90deg, #D0D5DD 0 6px, transparent 6px 10px); }
+  .q-table-resize:hover::before { top: 2px; height: 4px; background: #98A2B3; }
   /* QuaNTA and SciLifeLab logos at the top right of the title block */
   .report-logos { float: right; display: flex; align-items: center; gap: 14px; margin: -8px 0 12px 24px; }
   .report-logos img { display: block; width: auto; }
@@ -158,8 +166,10 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
     document.addEventListener('keydown', function (e) {
       if (!active || !active._qKeys || active.offsetParent === null) return;
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
       var t = e.target, text = t && t.matches && t.matches('input[type=search], input[type=text], textarea');
+      // B: the other curve of the compound in 4.4 (only that viewer has `_qB`)
+      if ((e.key === 'b' || e.key === 'B') && !text) { if (active._qB && active._qB()) e.preventDefault(); return; }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
       if (text && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
       if (active._qKeys(e.key)) e.preventDefault();
     });
@@ -172,6 +182,45 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   })();
   // Plots in tabs that were hidden at load time get their full width when the tab is opened
   document.addEventListener('shown.bs.tab', () => window.dispatchEvent(new Event('resize')));
+  // An eye button after each numbered title (e.g. "3.1 Internal standards"): hides / shows its
+  // section but the title (open eye: shown, closed eye: hidden), as in the app
+  document.addEventListener('DOMContentLoaded', function () {
+    var EYE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+    var EYE_OFF = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.9 17.9A10.1 10.1 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 5.1-5.9M9.9 4.2A9.1 9.1 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.2 3.2"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    document.querySelectorAll('section.level2 > h2, section.level3 > h3').forEach(function (h) {
+      if (!/^\s*\d+\.\d+/.test(h.textContent)) return;
+      var b = document.createElement('span');
+      b.className = 'q-eye'; b.title = 'Hide'; b.innerHTML = EYE;
+      b.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var hide = !h.classList.contains('q-collapsed');
+        h.classList.toggle('q-collapsed', hide);
+        b.innerHTML = hide ? EYE_OFF : EYE; b.title = hide ? 'Show' : 'Hide';
+        Array.prototype.forEach.call(h.parentElement.children, function (n) { if (n !== h) n.classList.toggle('q-eye-hidden', hide); });
+        if (!hide) setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 30);
+      });
+      h.appendChild(b);
+    });
+  });
+  // Tables with a scroll bar: drag the bar under them to make them taller or shorter (as in the app)
+  function qResizeHandles() {
+    document.querySelectorAll('.dataTables_wrapper').forEach(function (w) {
+      var body = w.querySelector('.dataTables_scrollBody');
+      if (!body || w.querySelector(':scope > .q-table-resize')) return;
+      var h = document.createElement('div');
+      h.className = 'q-table-resize'; h.title = 'Drag to make the table taller or shorter';
+      w.appendChild(h);
+      h.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        var y0 = e.clientY, h0 = body.getBoundingClientRect().height;
+        function move(ev) { var hh = Math.max(80, h0 + ev.clientY - y0); body.style.maxHeight = hh + 'px'; body.style.height = hh + 'px'; }
+        function up() { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }
+        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+      });
+    });
+  }
+  window.addEventListener('load', function () { setTimeout(qResizeHandles, 500); });
+  if (window.jQuery) jQuery(document).on('init.dt', function () { setTimeout(qResizeHandles, 0); });
   // The logos into the title block (built by Quarto)
   document.addEventListener('DOMContentLoaded', function () {
     var logos = document.querySelector('.report-logos'), header = document.getElementById('title-block-header');
@@ -427,14 +476,16 @@ cat('<div class="kpis">',
     kpi(sum(smp$category == "Blank"), "Blanks"),
     kpi(sum(smp$category == "CalCurve"), "Calibration samples"),
     kpi(length(batch_ids), "Batches"),
-    # All targeted (Quant) compounds of the file; their calibration status is in table 4.2
+    # All targeted (Quant) compounds of the file; their calibration status is in table 4.1
     if (HAS_CALIB) kpi(sum(feat$type == "Targeted"), "Targeted compounds &rarr;", href = "#calib-limits") else
       kpi(sum(feat$type == "Targeted"), "Targeted compounds"),
     if (HAS_CALIB) kpi(sum(cmp_stat$detected), "Compounds > LOD in ≥ 50% of study samples"),
     if (HAS_CALIB) kpi(sum(cmp_stat$quantified), "Compounds quantified in ≥ 1 study sample"),
     kpi(sum(feat$type == "Non-targeted"), "Non-targeted features"),
     kpi(sum(tr[["is failed internal std."]]), "Failed internal standards &rarr;", warn = TRUE, href = "#failed-is"),
-    kpi(sum(tr[["is outlier sample"]], na.rm = TRUE), "Outlier samples removed &rarr;", warn = TRUE, href = "#outlier-samples"),
+    kpi(sum(tr[["is outlier sample"]], na.rm = TRUE),
+        if (isFALSE(tr[["outliers removed"]])) "Outlier injections (not removed) &rarr;" else "Outlier samples removed &rarr;",
+        warn = TRUE, href = "#outlier-samples"),
     '</div>', sep = "")
 ```
 
@@ -468,8 +519,9 @@ tibble(
   Batch = batch_label(batch_ids),
   `Blank samples` = vapply(batch_ids, \(b) sum(norm_cd$batch_id == b & norm_cd$.ctrl_cat == "Blank"), integer(1)),
   # With one batch only, its own curve / blank mean is the global one (`util$calibration_label()`)
-  `Blank subtracted` = util$blank_source_label(ifelse(batch_ids %in% tr[["batches without blank"]], "Average of all batches", "Batch"),
-                                               length(batch_ids)),
+  `Blank subtracted` = if (isFALSE(tr$params$blank_subtract)) "Not subtracted (option off)" else
+    util$blank_source_label(ifelse(batch_ids %in% tr[["batches without blank"]], "Average of all batches", "Batch"),
+                            length(batch_ids)),
   Calibration = util$calibration_label(coalesce(cpb$calibration[match(batch_ids, cpb$batch_id)], "None"), length(batch_ids)),
   Note = coalesce(as.character(cpb$note[match(batch_ids, cpb$batch_id)]), "")
 ) |> dt()
@@ -480,37 +532,7 @@ tibble(
 ```{r}
 p <- tr$params
 val <- function(x) if (is.null(x) || length(x) == 0 || all(is.na(x))) "–" else paste(x, collapse = ", ")
-rsd_f <- tr[["qc rsd filter"]]
-rsd_txt <- if (!isTRUE(p$rsd_filter)) "No" else if (isTRUE(rsd_f$skipped)) "Skipped (no QC replicates)" else
-  paste0("Yes (", p$rsd_filter_scope, "; max. targeted ", val(rsd_f$max_targeted),
-         "%, non-targeted ", val(rsd_f$max_nontargeted), "%)")
-tibble(Setting = c("Normalization (this report)", "Best normalization (lowest median RSD%)",
-                   "Per-batch processing", "Outlier removal", "Blank filtering", "Blank filtering factor",
-                   "QC RSD% filter", "Weighting", "LOD/LLOQ method", "RSD% ≤ 20% for LLOQ",
-                   "Log-scale calibration", "Keep all calibration curves", "Linear models only",
-                   "Linear range (ULOQ): max. deviation of the top level; curves cut at the ULOQ",
-                   "Minimum R² of the calibration curves", "Values below the LOD/LLOQ",
-                   "Calibration replicates averaged per batch", "Pre-normalization by the volumetric IS"),
-       Value = c(val(method_label[MAT]), val(method_label[tr[["best normalization"]]]),
-                 val(length(batch_ids) > 1),
-                 if (!isTRUE(p$rm_outlier)) "No" else if (identical(p$rm_outlier_scope, "no_calib"))
-                   "Yes (calibration samples always kept)" else "Yes (all injections)",
-                 val(p$blank_filter),
-                 paste0(val(p$blank_filter_factor), " (",
-                        if (identical(p$blank_filter_stat, "mean")) "mean" else "maximum", " of the study samples)"),
-                 rsd_txt, val(p$weight), val(p$llox_method),
-                 val(p$use_rsd20), val(p$log_calibration), val(isTRUE(p$keep_all_calcurves)), val(isTRUE(p$linear_only)),
-                 paste0(if (isTRUE(p$log_calibration)) "SCALiR" else if (is.null(p$linear_range_tol)) "–" else paste0(p$linear_range_tol, "%"),
-                        "; ", if (isTRUE(p$enforce_linear_range)) "cut" else "not cut"),
-                 if (isTRUE(p$r2_filter)) sprintf("%.3f", p$min_r2) else "None",
-                 if (isFALSE(p$impute_llox)) "Reported as n.d. / n.q. (no value)" else "Replaced (LLOQ/4, LLOQ/2)",
-                 val(isTRUE(p$average_cal_reps)),
-                 if (is.null(tr[["vIS prenormalization"]])) "No" else
-                   paste0("Yes: ", paste(tr[["vIS prenormalization"]], collapse = ", then "),
-                          if (length(tr[["samples without vIS value"]]) > 0)
-                            paste0(" (", length(unique(unlist(tr[["samples without vIS value"]]))),
-                                   " sample(s) without a vIS value not corrected; see 3.6)")))) |>
-  knitr::kable()
+history$settings_table(tr, MAT) |> knitr::kable()
 ```
 
 ```{r}
@@ -617,28 +639,130 @@ is0 <- tr[["internal std. before qc"]]                     # All IS, all samples
 is_failed <- tr[["is failed internal std."]]
 is_out <- tr[["is outlier sample"]]
 n_out <- tr[["number of outlier internal std. per sample"]]
+# Outliers removed (option on), or only found and listed (off). Older processed data: listed only when removed
+OUT_REMOVED <- !isFALSE(tr[["outliers removed"]])
+# Processed per batch with several batches: the RSD% also per batch (3.1, 3.2, 3.8, 3.9)
+BY_BATCH <- isTRUE(tr[["qc rsd by batch"]])
+is_batch <- as.character(SumExp::col_df(is0)$batch_id)
 is_tbl <- SumExp::row_df(is0) |>
   tibble::as_tibble(rownames = "feature_id") |>
-  mutate(rsd = show$compute_rsd_per_feature(is0[["raw"]]),
+  mutate(rsd = show$compute_rsd_per_feature(is0[["raw"]], exclude_zero = BY_BATCH),   # Per batch: without zeros
          zeros = proc$count_zeros_per_feature(is0[["raw"]]),
          failed = unname(is_failed))
-is_cols <- function(d) transmute(d, `Internal standard` = feature_name, `Avg RT [min]` = round(.rt, 2),
-                                 `Avg m/z` = round(mz, 5), `RSD% (raw, all samples)` = round(rsd, 1),
-                                 `Zero values` = zeros)
+batch_rsd_cols <- if (BY_BATCH) {
+  stats::setNames(lapply(unique(is_batch), function(b) {
+    round(unname(show$compute_rsd_per_feature(is0[["raw"]][, is_batch == b, drop = FALSE], exclude_zero = TRUE)), 1)
+  }), paste("RSD% batch", unique(is_batch)))
+}
+is_cols <- function(d) {
+  out <- transmute(d, `Internal standard` = feature_name, `Avg RT [min]` = round(.rt, 2),
+                   `Avg m/z` = round(mz, 5), `RSD% (raw, all samples)` = round(rsd, 1))
+  if (!is.null(batch_rsd_cols) && nrow(d) == nrow(is_tbl)) out <- bind_cols(out, as_tibble(batch_rsd_cols))
+  mutate(out, `Zero values` = d$zeros)
+}
 # After removing failed IS and outlier samples (used for the RSD% below)
-is_clean <- is0[!is_failed, if (is.null(is_out)) TRUE else !is_out]
+is_clean <- is0[!is_failed, if (is.null(is_out) || !OUT_REMOVED) TRUE else !is_out]
 ```
 
 ## 3.1 Internal standards
 
 There are `r nrow(is0)` internal standards (IS) in the data, measured in `r ncol(is0)` samples.
+`r if (BY_BATCH) "Processed per batch: the RSD% of the raw peak areas also in each batch, without the zero values."`
 
 ```{r}
 is_cols(is_tbl) |> mutate(Status = ifelse(is_tbl$failed, "Failed (removed)", "OK")) |> dt() |>
   DT::formatStyle("Status", target = "row", backgroundColor = DT::styleEqual("Failed (removed)", FAILED_BG))
 ```
 
-## 3.2 Failed internal standards {#failed-is}
+## 3.2 Raw RSD%
+
+RSD% of the raw IS peak areas within groups of samples, after removing failed IS and outlier samples.
+A group with a single sample has no RSD% (it needs at least two); the *Note* column says so.
+`r if (BY_BATCH) "Processed per batch: for all batches pooled (*All*) and within each batch (filter the *Batch* column), without the zero values."`
+Internal standards are not blank-filtered or blank-subtracted. Filter the table by grouping or group;
+the matrix tab shows all groups side by side.
+
+```{r}
+cd_clean <- SumExp::col_df(is_clean)
+clean_batch <- as.character(cd_clean$batch_id)
+grp_rsd <- function(grouping, key, keep = TRUE, batch = "All") {
+  in_b <- if (batch == "All") TRUE else clean_batch == batch
+  keys <- unique(key[keep & in_b])
+  purrr::map_dfr(keys, function(k) {
+    cols <- keep & in_b & key == k
+    # A group with a single sample stays in the table, with the reason why it has no RSD%
+    rsd <- if (sum(cols) < 2) NA_real_ else round(apply(is_clean[["raw"]][, cols, drop = FALSE], 1, if (BY_BATCH) show$rsd_perc_no_zero else show$rsd_perc), 1)
+    # The zeros of each IS in the group; n: the values of the RSD% (per batch without the zeros)
+    vals <- is_clean[["raw"]][, cols, drop = FALSE]
+    n_zero <- unname(rowSums(is.na(vals) | vals <= 0))
+    n_used <- if (BY_BATCH) sum(cols) - n_zero else rep(sum(cols), length(n_zero))
+    tibble(`Internal standard` = SumExp::row_df(is_clean)$feature_name, Batch = batch, Grouping = grouping,
+           Group = k, n = n_used, `n zeros` = n_zero, `RSD%` = rsd,
+           Note = dplyr::case_when(
+             sum(cols) < 2 ~ paste0("Too few samples (n = ", sum(cols), "): RSD% needs at least 2"),
+             n_used < 2 ~ paste0("Too few values above 0 (n = ", n_used, "): RSD% needs at least 2"),
+             !is.finite(rsd) ~ "Not computable: all values 0 or missing",
+             TRUE ~ ""
+           ))
+  })
+}
+is_rsd <- purrr::map_dfr(c("All", if (BY_BATCH) unique(clean_batch)), function(b) bind_rows(
+  grp_rsd("Sample type", cd_clean$sample_type, batch = b),
+  grp_rsd("Class", cd_clean$Class, cd_clean$sample_type != "QC", batch = b),
+  if (has_qc) grp_rsd("QC group", cd_clean$Class, cd_clean$sample_type == "QC", batch = b)
+))
+if (!BY_BATCH) is_rsd$Batch <- NULL
+```
+
+::: {.panel-tabset}
+
+### Table
+
+```{r}
+dt(mutate(is_rsd, Grouping = factor(Grouping), Group = factor(Group), across(any_of("Batch"), factor)))
+```
+
+### Matrix
+
+```{r}
+is_rsd |> mutate(col = paste0(Group, " (", Grouping, if (BY_BATCH) paste0(", ", Batch), ")")) |>
+  select(`Internal standard`, col, `RSD%`) |>
+  tidyr::pivot_wider(names_from = col, values_from = `RSD%`) |> dt()
+```
+
+:::
+
+```{r}
+#| results: asis
+if (!has_qc) note(paste(NO_QC, "The RSD% per QC group is not available."))
+```
+
+## 3.3 Outlier samples {#outlier-samples}
+
+An injection is an outlier when more than 20% of the IS deviate by more than 3 standard deviations from
+the IS mean (log scale; the mean and SD of the non-zero values`r if (isTRUE(tr[["outliers per batch"]])) ", within the batch of the injection"`)
+or are missing (zero) in it. `r if (OUT_REMOVED) "Outlier injections are removed before normalization." else "**Outlier removal is off:** the outliers below are only listed, NOT removed; they are in the data and the results, and marked in the exported tables (row \"IS outlier (not removed)\", injection name in orange)."`
+The remaining zeros of the IS are then replaced, for the
+normalization only, by the mean of the IS in the same sample type (in all samples when it has no
+value in that type).
+
+```{r}
+#| results: asis
+if (is.null(is_out)) {
+  note("Outlier removal was not selected.")
+} else if (!any(is_out)) {
+  note("No outlier injections were found.")
+} else {
+  smp |> filter(sample_id %in% names(which(is_out))) |>
+    transmute(Injection = sample_name, `Injection type` = sample_type, `Group (Class)` = Class,
+              Batch = ms_batch, `Injection order` = injection_order,
+              `n outlier IS` = paste(n_out[sample_id], "of", tr[["number of internal std. for outliers"]] %||% nrow(is0)),
+              Removed = if (OUT_REMOVED) "Yes" else "No") |>
+    knitr::kable()
+}
+```
+
+## 3.4 Failed internal standards {#failed-is}
 
 An IS fails when more than 10% of the samples have a zero value. Failed IS are removed before
 normalization.
@@ -669,83 +793,6 @@ if (any(is_failed)) {
     print(patchwork::wrap_plots(p1, p2, widths = c(.3, .7)))
   }
 }
-```
-
-## 3.3 Outlier samples {#outlier-samples}
-
-A sample is an outlier when more than 20% of the IS deviate by more than 3 standard deviations from
-the IS mean (log scale; the mean and SD of the non-zero values) or are missing (zero) in it. Outlier
-samples are removed before normalization. The remaining zeros of the IS are then replaced, for the
-normalization only, by the mean of the IS in the same sample type (in all samples when it has no
-value in that type).
-
-```{r}
-#| results: asis
-if (is.null(is_out)) {
-  note("Outlier removal was not selected.")
-} else if (!any(is_out)) {
-  note("No outlier samples were found.")
-} else {
-  smp |> filter(sample_id %in% names(which(is_out))) |>
-    transmute(Sample = sample_name, `Sample type` = sample_type, `Class (group)` = Class,
-              Batch = batch_id, `Injection order` = injection_order,
-              `Outlying IS` = paste(n_out[sample_id], "of", nrow(is0))) |>
-    knitr::kable()
-}
-```
-
-## 3.4 Raw RSD%
-
-RSD% of the raw IS peak areas within groups of samples, after removing failed IS and outlier samples.
-A group with a single sample has no RSD% (it needs at least two); the *Note* column says so.
-Filter the table by grouping or group; the matrix tab shows all groups side by side.
-
-```{r}
-rsd_of <- function(cols) apply(is_clean[["raw"]][, cols, drop = FALSE], 1, show$rsd_perc)
-cd_clean <- SumExp::col_df(is_clean)
-grp_rsd <- function(grouping, key, keep = TRUE) {
-  keys <- unique(key[keep])
-  purrr::map_dfr(keys, function(k) {
-    cols <- keep & key == k
-    # A group with a single sample stays in the table, with the reason why it has no RSD%
-    rsd <- if (sum(cols) < 2) NA_real_ else round(rsd_of(cols), 1)
-    tibble(`Internal standard` = SumExp::row_df(is_clean)$feature_name, Grouping = grouping, Group = k,
-           n = sum(cols), `RSD%` = rsd,
-           Note = dplyr::case_when(
-             sum(cols) < 2 ~ paste0("Too few samples (n = ", sum(cols), "): RSD% needs at least 2"),
-             !is.finite(rsd) ~ "Not computable: all values 0 or missing",
-             TRUE ~ ""
-           ))
-  })
-}
-is_rsd <- bind_rows(
-  grp_rsd("Sample type", cd_clean$sample_type),
-  grp_rsd("Class", cd_clean$Class, cd_clean$sample_type != "QC"),
-  if (has_qc) grp_rsd("QC group", cd_clean$Class, cd_clean$sample_type == "QC")
-)
-```
-
-::: {.panel-tabset}
-
-### Table
-
-```{r}
-dt(mutate(is_rsd, Grouping = factor(Grouping), Group = factor(Group)))
-```
-
-### Matrix
-
-```{r}
-is_rsd |> mutate(col = paste0(Group, " (", Grouping, ")")) |>
-  select(`Internal standard`, col, `RSD%`) |>
-  tidyr::pivot_wider(names_from = col, values_from = `RSD%`) |> dt()
-```
-
-:::
-
-```{r}
-#| results: asis
-if (!has_qc) note(paste(NO_QC, "The RSD% per QC group is not available."))
 ```
 
 ## 3.5 Distribution of intensities of the internal standards
@@ -980,15 +1027,41 @@ cat(sprintf('<div class="callout-q">Lowest median RSD%% among the %s replicates:
 
 ```{r}
 NO_TCOMP <- "No targeted compounds in this dataset."
-rsd_df <- if (has_qc_rep && nrow(norm_se) > 0) lapply(names(method_label), function(m) {
-  tibble(feature_id = rownames(norm_se), method = method_label[m],
-         rsd = proc$qc_rsd_per_feature(norm_se, m))
-}) |> bind_rows() |>
-  left_join(select(feat, feature_id, feature_name), by = "feature_id") |>
-  mutate(method = factor(method, levels = method_label))
+# RSD% per QC group (and per batch when processed per batch), after the blank filter and blank
+# subtraction, without zeros (process.R); data processed by older versions: before blank filtering
+qc_long <- tr[["qc rsd per group"]]
+labs_m <- SumExp::name_labs(norm_all)
+names(labs_m) <- gsub(" .*", "", names(labs_m))   # First word only, as in the app
+labs_m <- labs_m[labs_m %in% names(method_label)]
+qc_batches <- if (!is.null(qc_long)) show$qc_rsd_batches(qc_long) else "Global"
+median_na <- function(x) if (all(is.na(x))) NA_real_ else stats::median(x, na.rm = TRUE)
+rsd_df <- if (has_qc_rep && nrow(norm_se) > 0) {
+  if (!is.null(qc_long)) {
+    # Per compound: the median over the QC groups; per batch, then the median over the batches
+    qc_long[if (BY_BATCH) qc_long$batch != "Global" else qc_long$batch == "Global", ] |>
+      group_by(mat_id, batch, feature_id) |> summarise(rsd = median_na(rsd), .groups = "drop") |>
+      group_by(mat_id, feature_id) |> summarise(rsd = median_na(rsd), .groups = "drop") |>
+      transmute(feature_id, method = unname(method_label[mat_id]), rsd)
+  } else {
+    lapply(names(method_label), function(m) {
+      tibble(feature_id = rownames(norm_se), method = method_label[m], rsd = proc$qc_rsd_per_feature(norm_se, m))
+    }) |> bind_rows()
+  }
+}
+if (!is.null(rsd_df)) {
+  rsd_df <- rsd_df |> left_join(select(feat, feature_id, feature_name), by = "feature_id") |>
+    mutate(method = factor(method, levels = method_label))
+}
+# Per compound, QC group (and batch): the table of 3.9 and the viewer of 3.8
+rsd_cmp_all <- if (!is.null(qc_long) && has_qc_rep && nrow(norm_se) > 0) {
+  purrr::map_dfr(qc_batches, function(b) {
+    show$qc_rsd_of_batch(qc_long, b, labs_m)$df |>
+      mutate(Batch = if (b == "Global") "All (pooled)" else paste("Batch", b), sign = as.character(sign))
+  }) |> left_join(select(feat, feature_id, feature_name), by = "feature_id")
+}
 ```
 
-The QC RSD% of the targeted compounds under each method (the median over the QC groups):
+The QC RSD% of the targeted compounds under each method (the median over the QC groups`r if (BY_BATCH) "; processed per batch: the median over the QC groups of each batch, then the median over the batches"`), after the blank filter and blank subtraction, without zero values:
 
 ```{r}
 #| fig-height: 4.5
@@ -1001,20 +1074,24 @@ if (!has_qc_rep) note(NO_QC) else if (is.null(rsd_df)) note(NO_TCOMP) else
   labs(x = NULL, y = "QC RSD% (targeted compounds)")
 ```
 
-Per compound, as in the app: its RSD% among the replicates of each QC group (a panel per group) under
-each method, before blank filtering. The chosen compound is drawn in the colour of the method with its
+Per compound, as in the app: its RSD% among the replicates of each QC group (a panel per group`r if (BY_BATCH) ", for all batches pooled and for each batch"`) under
+each method, after the blank filter and blank subtraction, without zero values (a compound removed by
+the blank filter, or with fewer than two values above 0, has no RSD% there). The chosen compound is drawn in the colour of the method with its
 lowest RSD% (raw peak areas are not a method); all other compounds are the grey lines behind it.
 Choose the compound in the dropdown or search; hover over a point for its value.
 
 ```{r}
 #| results: asis
 if (!show$has_enough_qc(norm_all)) note(show$not_enough_qc_msg) else if (nrow(norm_se) == 0) note(NO_TCOMP) else {
-  labs_m <- SumExp::name_labs(norm_all)
-  names(labs_m) <- gsub(" .*", "", names(labs_m))   # First word only, as in the app
-  rsd_cmp <- show$extract_quant_qc(norm_all) |>
-    show$calc_rsd_qstd(labs_m) |>
-    show$mark_lowest_rsd_norm(labs_m) |>
-    left_join(select(feat, feature_id, feature_name), by = "feature_id")
+  rsd_cmp <- if (!is.null(rsd_cmp_all)) {
+    # A panel per QC group and batch
+    rsd_cmp_all |> mutate(QC = if (BY_BATCH) paste0(QC, " (", Batch, ")") else QC)
+  } else {
+    show$extract_quant_qc(norm_all) |>
+      show$calc_rsd_qstd(labs_m) |>
+      show$mark_lowest_rsd_norm(labs_m) |>
+      left_join(select(feat, feature_id, feature_name), by = "feature_id")
+  }
   qc_groups <- sort(unique(rsd_cmp$QC))   # Panels in the order of the app
   ids <- unique(rsd_cmp$feature_id[order(rsd_cmp$feature_name)])   # By compound name
   rsd_view <- list(
@@ -1051,13 +1128,23 @@ for (NORM_K in seq_along(norm_methods)) {
 
 ## 3.9 RSD% values
 
-The QC RSD% of each targeted compound under each method (the median over the QC groups).
+The QC RSD% of each targeted compound under each method in each QC group`r if (BY_BATCH) ", for all batches pooled and for each batch (filter the *Batch* column)"`,
+after the blank filter and blank subtraction, without zero values. *n*: the QC injections; *Zeros*:
+the values left out (per method when they differ).
 
 ```{r}
-if (!has_qc_rep) note(NO_QC) else if (is.null(rsd_df)) note(NO_TCOMP) else
+if (!has_qc_rep) note(NO_QC) else if (is.null(rsd_df)) note(NO_TCOMP) else if (!is.null(rsd_cmp_all)) {
+  rsd_cmp_all |>
+    transmute(Compound = feature_name, Batch = factor(Batch, unique(Batch)), `QC group` = factor(QC),
+              across(all_of(unname(labs_m)), \(x) round(x, 1)), n, Zeros = zeros) |>
+    rename(all_of(labs_m)) |>
+    (\(d) if (BY_BATCH) d else select(d, -Batch))() |>
+    dt(scroll = TRUE)
+} else {
   rsd_df |> select(Compound = feature_name, method, rsd) |>
-  mutate(rsd = round(rsd, 1)) |>
-  tidyr::pivot_wider(names_from = method, values_from = rsd) |> dt(scroll = TRUE)
+    mutate(rsd = round(rsd, 1)) |>
+    tidyr::pivot_wider(names_from = method, values_from = rsd) |> dt(scroll = TRUE)
+}
 ```
 
 ## 3.10 Removed features
@@ -1074,7 +1161,8 @@ if (is.null(removed) || nrow(filter(removed, mat_id == MAT)) == 0) {
     # The volumetric IS has its own type
     transmute(Feature = coalesce(label, feature_name),
               Type = case_when(targeted ~ "Targeted", ftype %in% "Volumetric IS" ~ "Volumetric IS", TRUE ~ "Non-targeted"),
-              `Removed by` = reason, `QC RSD%` = round(qc_rsd, 1)) |> dt(search = FALSE)
+              `Removed by` = reason, `QC RSD%` = round(qc_rsd, 1)) |>
+    mutate(Type = factor(Type), `Removed by` = factor(`Removed by`)) |> dt()   # Searchable, a filter per column
 }
 ```
 
@@ -1129,6 +1217,32 @@ if (!any(util$ctrl_smpl_cat(norm_b) == "Blank")) {
       '<div class="info"></div><div class="plot" style="height:480px;"></div></div>',
       '<script>window.BLANKVIEW = ', to_json(blank_view), ';</script>', sep = "")
 }
+```
+
+## 3.12 Features above the QC RSD% limit per batch
+
+```{r}
+qc_cnt <- tr[["qc rsd counts"]]
+qc_cnt <- if (!is.null(qc_cnt)) qc_cnt[qc_cnt$mat_id == MAT, ]
+cnt_txt <- if (!is.null(qc_cnt) && nrow(qc_cnt) > 0) {
+  paste(vapply(c("Targeted", "Non-targeted"), function(tp) {
+    d <- qc_cnt[qc_cnt$type == tp, ]
+    if (nrow(d) == 0 || all(d$n_total == 0)) return(NA_character_)
+    paste0(tolower(tp), " ", d$limit[1], "%", if (isTRUE(d$used[1])) " (used by the QC RSD% filter: removed)" else
+      " (the QC RSD% filter was not used for them: only counted, not removed)")
+  }, "") |> stats::na.omit(), collapse = "; ")
+}
+```
+
+Per batch`r if (BY_BATCH) " and for all batches pooled"`, the number of targeted and non-targeted features whose QC
+RSD% is above the limit, out of those with a QC RSD% (on each bar: above / all), for
+`r method_label[MAT]` values. The QC RSD% of a feature is the median over the QC groups, after the
+blank filter and blank subtraction`r if (BY_BATCH) " (without the zero values)"`. Limits: `r cnt_txt %||% "–"`. A
+batch with many features above the limit points to a problem in that batch.
+
+```{r}
+if (is.null(qc_cnt)) note("Not available for data processed by an older version.") else
+  if (nrow(qc_cnt) == 0) note(NO_QC) else show$plotly_qc_rsd_counts(qc_cnt)
 ```
 
 ```{r}
@@ -1473,7 +1587,7 @@ window.addEventListener('load', function () {
   }
 
   // ---- QC samples (4.6): the figure of the app (QuantaFigs.qcConc of app/www/quanta_figs.js):
-  //      a control chart or per batch with the CV%; the compound chosen here ----
+  //      a control chart or per batch with the RSD%; the compound chosen here ----
   var Q = window.QCVIEW;
   if (Q && document.getElementById('qcv') && window.QuantaFigs) {
     viewer('qcv', Q.comps, function (c) { return c.name; }, function (root) {

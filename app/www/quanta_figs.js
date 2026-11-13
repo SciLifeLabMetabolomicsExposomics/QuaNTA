@@ -8,7 +8,7 @@
 //   (both `conc_figs_data()`).
 //
 //   QuantaFigs.isDistribution(element, data, i);    // i: the row of table 3.1 (null: none)
-//   QuantaFigs.isRsdTable(element, data, i);        // table 3.4 of the same IS
+//   QuantaFigs.isRsdTable(element, data, i, batch); // table 3.2 of the same IS, in a batch
 //   QuantaFigs.concByClass(element, data, id, log); // id: the compound (null: none)
 //   QuantaFigs.qcConc(element, data, id);
 //   QuantaFigs.message(element, text);
@@ -36,11 +36,47 @@
   }
   var CONFIG = { displaylogo: false, responsive: true };
 
-  // The Log / Linear buttons; the choice is kept per element (`el._qfLog`)
-  function logButtons(el, log, x) {
-    var b = function (label, type) { return { label: label, method: "relayout", args: [{ "yaxis.type": type }] }; };
-    return [{ type: "buttons", direction: "right", x: x || 0.55, y: 1.02, xanchor: "center", yanchor: "bottom",
-              pad: { t: 0, r: 0 }, active: log ? 1 : 0, buttons: [b("Linear", "linear"), b("Log", "log")] }];
+  // The Linear / Log buttons above a plot, as a button group like the modes of 4.6 and 4.4 (not
+  // inside the plot, where they covered long titles). The choice is kept per plot (`plot._qfLog`)
+  // and applied without drawing the plot again.
+  function logGroup(plot) {
+    if (plot._qfLogGroup) return plot._qfLogGroup;
+    addStyle();
+    var g = document.createElement("div");
+    g.className = "qf-group qf-log";
+    ["Linear", "Log"].forEach(function (lab) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = lab;
+      b.addEventListener("click", function () {
+        plot._qfLog = lab === "Log";
+        markLog(plot);
+        if (plot.data) Plotly.relayout(plot, { "yaxis.type": plot._qfLog ? "log" : "linear" });
+      });
+      g.appendChild(b);
+    });
+    plot._qfLogGroup = g;
+    return g;
+  }
+  function markLog(plot) {
+    var g = plot._qfLogGroup;
+    if (!g) return;
+    g.style.display = "";
+    Array.prototype.forEach.call(g.querySelectorAll("button"), function (b) {
+      b.classList.toggle("on", (b.textContent === "Log") === !!plot._qfLog);
+    });
+  }
+  // A plot drawn into `el` directly (3.5, 4.5): the buttons in a bar just above it (made once)
+  function logBarAbove(el, log) {
+    if (el._qfLog === undefined) el._qfLog = log;
+    if (!el._qfLogGroup) {
+      var bar = document.createElement("div");
+      bar.className = "qf-bar";
+      bar.appendChild(logGroup(el));
+      el.parentNode.insertBefore(bar, el);
+    }
+    markLog(el);
+    return el._qfLog;
   }
   function react(el, traces, layout) {
     var msg = el.querySelector(".qf-msg");
@@ -55,6 +91,7 @@
   }
   // A message in place of the plot (as `plotly_empty()` with a grey text)
   function message(el, text, height) {
+    if (el._qfLogGroup) el._qfLogGroup.style.display = "none";   // No axis to switch
     whenPlotly(function () {
       react(el, [], {
         height: height || el._qfHeight || 460, font: { family: "Lato" },
@@ -89,7 +126,7 @@
                       marker: { color: col, size: 6, symbol: k.map(function (j) { return s.out[j] ? "x" : "circle"; }) },
                       xaxis: "x2", yaxis: "y" });
       });
-      var log = el._qfLog === undefined ? true : el._qfLog;
+      var log = logBarAbove(el, true);   // Log at the start
       var name = esc(d.names[i]);
       react(el, traces, {
         height: el._qfHeight, font: { family: "Lato" }, hovermode: "closest",
@@ -99,17 +136,129 @@
         xaxis: { domain: [0, 0.27], tickangle: -30, fixedrange: true },
         xaxis2: { domain: [0.32, 1], title: { text: "Injection order" } },
         yaxis: { title: { text: "Peak area" }, type: log ? "log" : "linear", exponentformat: "E", hoverformat: ".3e" },
-        legend: { orientation: "v", x: 1.02, y: 1 },
-        updatemenus: logButtons(el, log)
+        legend: { orientation: "v", x: 1.02, y: 1 }
       });
     });
   }
 
-  // Table 3.4: the RSD% of the IS of row `i` of table 3.1 in each QC group and sample class, with
+  // 3.11: one feature in the blanks next to the QCs, study samples (and calibrants), with the
+  // threshold of the blank filter. `d`: the samples (`smp`: g group, k category, i injection order,
+  // n name, b batch), `colors` (group -> colour), `factor`, `used`, `y_lab`; `f`: the feature
+  // (`name`, `r` removed, `y` its values, one per sample); `opts`: `view` ("groups" / "samples"),
+  // `withCal` (show the calibrants)
+  function blankFigure(el, d, f, opts) {
+    el._qfHeight = 500;
+    if (!d || !f) { message(el, opts && opts.msg || "Choose a feature."); return; }
+    whenPlotly(function () {
+      var s = d.smp, view = opts.view || "groups";
+      var mean2 = function (a) { return a.reduce(function (x, y) { return x + y; }, 0) / a.length; };
+      var sd2 = function (a) { var m = mean2(a); return a.length > 1 ? Math.sqrt(a.reduce(function (x, y) { return x + (y - m) * (y - m); }, 0) / (a.length - 1)) : 0; };
+      var ix = idx(f.y.length).filter(function (j) { return f.y[j] !== null && (opts.withCal || s.k[j] !== "CalCurve"); });
+      var groups = {};
+      ix.forEach(function (j) { (groups[s.g[j]] = groups[s.g[j]] || []).push(j); });
+      // Blanks first, then QCs, the study groups and the calibrants
+      var order = ["Blank", "QC"].concat(Object.keys(d.colors).filter(function (g) { return g !== "Blank" && g !== "QC" && g !== "Calibrant"; }), ["Calibrant"])
+        .filter(function (g) { return groups[g]; });
+      Object.keys(groups).forEach(function (g) { if (order.indexOf(g) < 0) order.push(g); });
+      var blanks = (groups.Blank || []).map(function (j) { return f.y[j]; });
+      var thr = blanks.length ? d.factor * mean2(blanks) : null;
+      var txt = function (j) {
+        return "<b>" + esc(s.n[j]) + "</b><br>" + esc(s.g[j]) + " · batch " + esc(s.b[j]) + " · inj. " + s.i[j] + "<br>" + sci(f.y[j]);
+      };
+      var traces = [], xaxis;
+      if (view === "groups") {
+        order.forEach(function (g, i) {
+          var k = groups[g], y = k.map(function (j) { return f.y[j]; }), col = d.colors[g] || "#999999";
+          traces.push({ type: "bar", x: [i + 1], y: [mean2(y)], name: g, legendgroup: g, width: 0.7,
+                        error_y: { type: "data", array: [sd2(y)], color: "#4d4d4d" },
+                        marker: { color: col, opacity: 0.55, line: { color: col, width: 1.5 } },
+                        hovertemplate: "<b>" + esc(g) + "</b><br>mean " + sci(mean2(y)) + " (n = " + k.length + ")<extra></extra>" });
+          traces.push({ type: "scatter", mode: "markers", name: g, legendgroup: g, showlegend: false,
+                        x: k.map(function (j) { return i + 1 + (((j * 7919) % 100) / 100 - 0.5) * 0.5; }), y: y,
+                        marker: { color: col, size: 6, opacity: 0.8, line: { color: "#fff", width: 0.5 } },
+                        text: k.map(txt), hovertemplate: "%{text}<extra></extra>" });
+        });
+        xaxis = { tickvals: order.map(function (g, i) { return i + 1; }), ticktext: order, range: [0.4, order.length + 0.6], zeroline: false };
+      } else {
+        order.forEach(function (g) {
+          var k = groups[g];
+          traces.push({ type: "bar", x: k.map(function (j) { return s.i[j]; }), y: k.map(function (j) { return f.y[j]; }), name: g, width: 0.9,
+                        marker: { color: d.colors[g] || "#999999" }, text: k.map(txt), textposition: "none", hovertemplate: "%{text}<extra></extra>" });
+        });
+        xaxis = { title: { text: "Injection order" } };
+      }
+      // The threshold of the blank filter as a dashed line (a trace: it follows the log scale)
+      if (thr !== null && ix.length) {
+        var inj = ix.map(function (j) { return s.i[j]; });
+        var xs = view === "groups" ? [0.4, order.length + 0.6] : [Math.min.apply(null, inj) - 1, Math.max.apply(null, inj) + 1];
+        traces.push({ type: "scatter", mode: "lines", x: xs, y: [thr, thr], name: "Blank filter threshold (" + d.factor + " × blank mean)",
+                      line: { color: "#c23636", dash: "dash", width: 2 }, hovertemplate: "threshold " + sci(thr) + "<extra></extra>" });
+      }
+      var sub = !d.used ? "Blank filter not used in this processing" :
+        (f.r ? "<span style='color:#c23636'><b>Removed by the blank filter</b></span>" :
+               "<span style='color:#2E9E5B'><b>Kept by the blank filter</b></span>");
+      var log = logBarAbove(el, false);
+      react(el, traces, {
+        height: el._qfHeight, font: { family: "Lato" }, hovermode: "closest", barmode: "overlay",
+        bargap: view === "samples" ? 0 : 0.2,
+        title: { text: esc(f.name) + "<br><sup>" + sub + "</sup>", x: 0.02 },
+        xaxis: xaxis, yaxis: { title: { text: d.y_lab }, type: log ? "log" : "linear", exponentformat: "E" },
+        legend: { orientation: "v", x: 1.02, y: 1 }, margin: { t: 70, r: 20, b: 60, l: 80 }
+      });
+    });
+  }
+
+  // 3.8: the RSD% of the targeted compounds among the QC replicates under each method, a panel per
+  // QC group, each compound a line coloured by its method with the lowest RSD%. `d`: `methods`
+  // (labels), `sign_colors`; `b`: the batch (`groups`, `comps`: name, `r` per group the RSD% per
+  // method or null, `s` per group the lowest method, `z` per group the zeros left out, `n` per group)
+  function rsdCompare(el, d, b, height) {
+    el._qfHeight = height || 550;
+    if (!d || !b || !b.comps || !b.comps.length) { message(el, "No QC group with at least 2 injections in this batch."); return; }
+    whenPlotly(function () {
+      var nG = b.groups.length, nC = Math.min(nG, 3), nR = Math.ceil(nG / nC);
+      var traces = [], layout = { height: Math.max(el._qfHeight, 300 * nR), font: { family: "Lato" }, hovermode: "closest",
+                                  margin: { t: 40, r: 20, b: 40, l: 70 }, annotations: [],
+                                  legend: { title: { text: "Lowest RSD%<br>(click to filter)" } } };
+      var signs = Object.keys(d.sign_colors), shown = {};
+      b.groups.forEach(function (g, gi) {
+        var ax = gi === 0 ? "" : String(gi + 1), col = gi % nC, row = Math.floor(gi / nC);
+        var xd = [col / nC + 0.03, (col + 1) / nC - 0.02], yd = [1 - (row + 1) / nR + 0.08, 1 - row / nR - 0.06];
+        layout["xaxis" + ax] = { domain: xd, anchor: "y" + ax, type: "category", categoryorder: "array", categoryarray: d.methods };
+        layout["yaxis" + ax] = { domain: yd, anchor: "x" + ax, title: { text: col === 0 ? "RSD%" : "" }, rangemode: "tozero" };
+        layout.annotations.push({ text: "<b>" + esc(g) + "</b>", x: (xd[0] + xd[1]) / 2, y: yd[1], xref: "paper", yref: "paper",
+                                  xanchor: "center", yanchor: "bottom", showarrow: false });
+        // One trace per lowest method (the legend filters them), the compounds separated by gaps
+        signs.forEach(function (sg) {
+          var x = [], y = [], t = [];
+          b.comps.forEach(function (c) {
+            var r = c.r[gi];
+            if (!r || c.s[gi] !== sg) return;
+            var txt = "<b>" + esc(c.name) + "</b> (" + esc(g) + ")<br>" + d.methods.map(function (m, mi) {
+              return esc(m) + ": " + (r[mi] === null ? "no RSD%" : r[mi].toFixed(1) + "%");
+            }).join("<br>") + (c.z && c.z[gi] ? "<br>Zeros left out: " + esc(c.z[gi]) + " of " + c.n[gi] : "") +
+              "<br>Lowest: " + esc(sg.replace(/^\S+ /, ""));
+            d.methods.forEach(function (m, mi) { if (r[mi] !== null) { x.push(m); y.push(r[mi]); t.push(txt); } });
+            x.push(null); y.push(null); t.push(null);
+          });
+          if (!x.length) return;
+          traces.push({ type: "scatter", mode: "lines+markers", x: x, y: y, text: t, hovertemplate: "%{text}<extra></extra>",
+                        connectgaps: false, name: sg, legendgroup: sg, showlegend: !shown[sg],
+                        line: { color: d.sign_colors[sg], width: 1 }, marker: { color: d.sign_colors[sg], size: 4 }, opacity: 0.6,
+                        xaxis: "x" + ax, yaxis: "y" + ax });
+          shown[sg] = true;
+        });
+      });
+      react(el, traces, layout);
+    });
+  }
+
+  // Table 3.2: the RSD% of the IS of row `i` of table 3.1 in each QC group and sample class, with
   // the number of samples and why an RSD% is missing. The table is made once; another IS only
   // changes its caption and cells (no redraw of the whole table, so it does not jump)
-  function isRsdTable(el, d, i) {
-    var r = d && d.rsd;
+  function isRsdTable(el, d, i, batch) {
+    // Per batch ("Global": all batches pooled); older data has one table
+    var r = d && d.rsd && (d.rsd.groups ? d.rsd : (d.rsd[batch || "Global"] || d.rsd.Global));
     if (!r || i === null || i === undefined || !r.v[i]) {
       el.innerHTML = '<div class="qf-msg" style="color:#667085;padding:12px 0;">' +
         (r ? "Select an internal standard in table 3.1 (left) to show it here." : "No RSD% of the internal standards.") + "</div>";
@@ -117,31 +266,50 @@
       return;
     }
     var v = r.v[i];
+    // The zeros of this IS per group (none known for data processed by older versions); n: the
+    // values the RSD% is computed on (without the zeros when they are left out, per batch)
+    var z = r.z ? r.z[i] : null, hasZ = !!z;
+    var nUsed = r.groups.map(function (g, k) { return z && r.nz ? r.n[k] - z[k] : r.n[k]; });
     var notes = r.groups.map(function (g, k) {
       return r.n[k] < 2 ? "Too few samples (n = " + r.n[k] + "): RSD% needs at least 2" :
+             nUsed[k] < 2 ? "Too few values above 0 (n = " + nUsed[k] + "): RSD% needs at least 2" :
              !finite(v[k]) ? "Not computable: all values 0 or missing" : "";
     });
     var hasNote = notes.some(function (t) { return t !== ""; });
     var t = el._qfTable;
-    // Made again only when the rows or the Note column change
-    if (!t || t.rows !== r.groups.length || t.note !== hasNote) {
-      var th = function (s) { return '<th style="color:green;font-weight:bold;text-align:center;">' + s + "</th>"; };
-      el.innerHTML = '<div style="max-height:400px;overflow:auto;">' +
+    // Made again only when the rows, the zeros column or the Note column change
+    if (!t || t.rows !== r.groups.length || t.note !== hasNote || t.z !== hasZ) {
+      var th = function (s, tip) { return '<th style="color:green;font-weight:bold;text-align:center;"' + (tip ? ' title="' + esc(tip) + '"' : "") + ">" + s + "</th>"; };
+      // A scrolling box that can be made taller or shorter (www/quanta_ui.js), keeping its height
+      var hh = el._qHeight ? el._qHeight + "px" : null;
+      el.innerHTML = '<div class="q-resizable" style="max-height:' + (hh || "400px") + ';' + (hh ? "height:" + hh + ";" : "") + 'overflow:auto;">' +
         '<table class="display dataTable no-footer" style="width:100%;">' +
         '<caption style="caption-side:top;text-align:left;color:#667085;"></caption>' +
-        "<thead><tr>" + th("") + th("RSD%") + th("n") + (hasNote ? th("Note") : "") + "</tr></thead><tbody>" +
+        "<thead><tr>" + th("") + th("RSD%") +
+        th("n", r.nz ? "The injections the RSD% is computed on: without the zero values" : "The injections the RSD% is computed on (zeros included)") +
+        (hasZ ? th("n zeros", "Injections where the IS is 0 (not found)" + (r.nz ? ": left out of the RSD%" : "")) : "") +
+        (hasNote ? th("Note") : "") + "</tr></thead><tbody>" +
         r.groups.map(function (g) {
           return "<tr><td>" + esc(g) + '</td><td style="text-align:center;"></td><td style="text-align:center;"></td>' +
+                 (hasZ ? '<td style="text-align:center;"></td>' : "") +
                  (hasNote ? '<td style="text-align:center;"></td>' : "") + "</tr>";
         }).join("") + "</tbody></table></div>";
-      t = el._qfTable = { rows: r.groups.length, note: hasNote, caption: el.querySelector("caption"),
+      t = el._qfTable = { rows: r.groups.length, note: hasNote, z: hasZ, caption: el.querySelector("caption"),
                           cells: Array.prototype.map.call(el.querySelectorAll("tbody tr"), function (tr) { return tr.children; }) };
+      if (global.QuantaUI) global.QuantaUI.scan();   // The bar to drag under it
     }
     t.caption.textContent = d.names[i];
     t.cells.forEach(function (c, k) {
-      c[1].textContent = finite(v[k]) ? (+v[k]).toFixed(2) : "";
-      c[2].textContent = r.n[k];
-      if (hasNote) c[3].textContent = notes[k];
+      var j = 1;
+      c[j++].textContent = finite(v[k]) ? (+v[k]).toFixed(2) : "";
+      c[j++].textContent = nUsed[k];
+      if (hasZ) {
+        c[j].textContent = z[k] ? z[k] : "0";
+        c[j].style.color = z[k] ? "#B42318" : "";   // Zeros in red
+        c[j].style.fontWeight = z[k] ? "600" : "";
+        j++;
+      }
+      if (hasNote) c[j].textContent = notes[k];
     });
   }
 
@@ -168,7 +336,7 @@
   // LOD/LLOQ rules (as in the exported tables)
   function concByClass(el, d, id, log) {
     el._qfHeight = 460;
-    if (!d || id === null || id === undefined) { message(el, "Select a chemical in table 4.2 (left) to show it here."); return; }
+    if (!d || id === null || id === undefined) { message(el, "Select a chemical in table 4.1 (left) to show it here."); return; }
     var r = valuesOf(d, d.samples, id);
     if (!r) { message(el, "No concentrations: the chemical was not calibrated."); return; }
     if (!r.v.length) {
@@ -202,7 +370,7 @@
           marker: { color: d.kind_colors[kd], size: 7, opacity: 0.85, line: { color: "white", width: 0.5 } }
         });
       });
-      var isLog = el._qfLog === undefined ? !!log : el._qfLog;
+      var isLog = logBarAbove(el, !!log);
       var note = noValueNote(r.noValue);
       react(el, traces, {
         height: el._qfHeight, font: { family: "Lato" }, hovermode: "closest", title: { text: esc(nameOf(d, id)), x: 0.02 },
@@ -212,8 +380,7 @@
         legend: { orientation: "v", x: 1.02, y: 1, title: { text: "Value" } },
         annotations: note ? [{ text: esc(note), x: 0, y: 1.02, xref: "paper", yref: "paper", xanchor: "left", yanchor: "bottom",
                                showarrow: false, font: { size: 12, color: "#666666" } }] : [],
-        margin: { t: 70 },
-        updatemenus: logButtons(el, isLog)
+        margin: { t: 70 }
       });
     });
   }
@@ -224,10 +391,10 @@
   //   injection order, green within ±the limit (`d.qc_limit`: the QC RSD% filter limit of targeted
   //   compounds, else 30%) and red outside it, the batches shaded and a trend (moving mean of the
   //   deviations within each batch);
-  // - "Per batch": the QC values of each batch and QC group, with mean ± SD, the CV% above
+  // - "Per batch": the QC values of each batch and QC group, with mean ± SD, the RSD% above
   //   (red above 15%), and the mean of all batches as a dashed line (Log / Linear buttons).
-  // Chips above: QCs beyond the limit, and per QC group the CV% per batch and between batches.
-  // Only measured values count for the median, the means, SD and CV%; values replaced by the
+  // Chips above: QCs beyond the limit, and per QC group the RSD% per batch and between batches.
+  // Only measured values count for the median, the means, SD and RSD%; values replaced by the
   // LOD/LLOQ rules are shown open, values without one ("n.d." / "n.q.") are counted in the title.
   var QC_BAND = 15, QC_LIMIT = 30;
   var QF_CSS = [
@@ -238,7 +405,11 @@
     ".qf-group button.on { background: #1A0DF2; color: #fff; }",
     ".qf-chips { font-size: .9rem; }",
     ".qf-chip { display: inline-block; background: #EEF4FE; border-radius: 4px; padding: 1px 7px; margin: 0 6px 3px 0; }",
-    ".qf-chip.warn { background: #FDECEA; color: #c23636; }"
+    ".qf-chip.warn { background: #FDECEA; color: #c23636; }",
+    ".qf-filter-note { font-size: .88rem; color: #475467; margin: 0 0 4px; }",
+    ".qf-filter-on, .qf-filter-off { font-weight: 600; padding: 1px 7px; border-radius: 4px; }",
+    ".qf-filter-on { background: #E3F4EA; color: #146C3A; }",
+    ".qf-filter-off { background: #F2F4F7; color: #344054; }"
   ].join("\n");
   function addStyle() {
     if (document.getElementById("qf-style")) return;
@@ -274,11 +445,23 @@
       grp.appendChild(b);
     });
     bar.appendChild(grp);
-    bar.appendChild(chips);
+    // The Linear / Log buttons of the "Per batch" view, next to the modes (hidden in the other)
+    bar.appendChild(logGroup(plot));
+    // Whether the QC RSD% filter was used: one line under the buttons (the RSD% and the QCs beyond
+    // the limit are in the plot itself)
+    chips.className = "qf-filter-note";
     el.appendChild(bar);
+    el.appendChild(chips);
     el.appendChild(plot);
     el._qfParts = { bar: bar, chips: chips, plot: plot, buttons: grp.querySelectorAll("button") };
     return el._qfParts;
+  }
+  // Switch the mode of figure 4.6 (`d`: +1 / -1; the arrow keys ← / → when it is active)
+  function qcStepMode(el, d) {
+    var keys = Object.keys(QC_MODES), i = keys.indexOf(el._qfMode || "control") + d;
+    if (i < 0 || i >= keys.length || !el._qfRedraw) return;
+    el._qfMode = keys[i];
+    el._qfRedraw();
   }
   function qcMessage(el, text) {
     var p = qcParts(el);
@@ -288,7 +471,7 @@
   }
 
   function qcConc(el, d, id) {
-    if (!d || id === null || id === undefined) { qcMessage(el, "Select a chemical in table 4.2 (left) to show it here."); return; }
+    if (!d || id === null || id === undefined) { qcMessage(el, "Select a chemical in table 4.1 (left) to show it here."); return; }
     var v = [], nv = {}, any = false;
     (d.qc || []).forEach(function (part) {
       var r = valuesOf(d, part, id);
@@ -323,7 +506,7 @@
     groups.forEach(function (g) { med[g] = median(v.filter(function (x) { return x.cls === g && measured(x); }).map(function (x) { return x.y; })); });
     v.forEach(function (x) { x.dev = finite(med[x.cls]) && med[x.cls] > 0 ? 100 * (x.y / med[x.cls] - 1) : null; });
 
-    // Chips: QCs beyond the limits; per QC group the CV% per batch and between the batch means
+    // Chips: QCs beyond the limits; per QC group the RSD% per batch and between the batch means
     var m = v.filter(function (x) { return measured(x) && finite(x.dev); });
     var limit = finite(d.qc_limit) ? d.qc_limit : QC_LIMIT;
     var nOut = m.filter(function (x) { return Math.abs(x.dev) > limit; }).length;
@@ -342,10 +525,10 @@
       });
       between[g] = means.length > 1 ? 100 * sd(means) / mean(means) : NaN;
     });
-    // The CV% per batch and between batches: one chip per QC group, or with more than two groups
+    // The RSD% per batch and between batches: one chip per QC group, or with more than two groups
     // one chip with their median (each group in the hover text of the chip)
     var cvText = function (cv, bt) {
-      return "CV per batch " + batches.map(function (b) { return esc(b) + ": <b>" + pct(cv[b]) + "</b>"; }).join(", ") +
+      return "RSD per batch " + batches.map(function (b) { return esc(b) + ": <b>" + pct(cv[b]) + "</b>"; }).join(", ") +
              (batches.length > 1 ? " · between batches <b>" + pct(bt) + "</b>" : "");
     };
     var worstOf = function (vals) { return Math.max.apply(null, vals.filter(finite).concat([0])); };
@@ -369,8 +552,14 @@
       html.push('<span class="qf-chip' + (worst > QC_BAND ? " warn" : "") + '" title="' + esc(tip) + '" style="cursor:help;">Median of ' +
                 withCv.length + " QC groups · " + cvText(medCv, medBt) + "</span>");
     }
-    if (!withCv.length) html.push(chip("CV: too few measured QCs", false));
-    p.chips.innerHTML = html.join("");
+    if (!withCv.length) html.push(chip("RSD: too few measured QCs", false));
+    // (The chips are not shown: the same information is in the plot.) Instead, whether the QC
+    // RSD% filter was used, and what the band of the control chart is
+    p.chips.innerHTML = d.qc_filter_used ?
+      '<span class="qf-filter-on">QC RSD% filter used</span>: targeted compounds with a QC RSD% above ' + limit +
+        "% were removed before calibration; the green band of the control chart is ±" + limit + "%." :
+      '<span class="qf-filter-off">QC RSD% filter not used</span>: no compound was removed for its QC RSD%; the band ' +
+        "of the control chart (±" + limit + "%) is for reading only.";
 
     var note = noValueNote(nv);
     var title = { text: esc(nameOf(d, id)) + (note ? "<br><sup>" + esc(note) + "</sup>" : ""), x: 0.02 };
@@ -449,6 +638,7 @@
       layout.yaxis = { title: { text: "Deviation from the QC median (%)" }, range: [-ext, ext], zeroline: false, ticksuffix: "%" };
       layout.shapes = shapes;
       layout.annotations = ann;
+      p.plot._qfLogGroup.style.display = "none";   // No log axis in this view
       react(p.plot, traces, layout);
     } else {
       // Per batch: a column per batch, the QC groups side by side in it
@@ -459,7 +649,7 @@
       v.forEach(function (x, j) { idxOf[x.name + "|" + x.inj] = j; });
       var traces = pointTraces(function (x) { return xpos(x.batch, x.cls) + jit(idxOf[x.name + "|" + x.inj]); }, function (x) { return x.y; },
                                function () { return true; });
-      var shapes = [], ann = [];
+      var shapes = [], ann = [], dashKey = [];
       groups.forEach(function (g) {
         var col = d.qc_colors[g] || "#999999";
         var mx = [], my = [], me = [];
@@ -468,25 +658,41 @@
           if (!finite(s.mean)) return;
           mx.push(xpos(b, g)); my.push(s.mean); me.push(finite(s.sd) ? s.sd : 0);
           if (finite(s.cv)) ann.push({ x: xpos(b, g), y: s.mean + (finite(s.sd) ? s.sd : 0), xref: "x", yref: "y", yanchor: "bottom", yshift: 4,
-                                       text: "CV " + pct(s.cv), showarrow: false, font: { size: ng > 3 ? 10 : 11, color: s.cv > QC_BAND ? "#c23636" : "#52514e" } });
+                                       text: "RSD " + pct(s.cv), showarrow: false, font: { size: ng > 3 ? 10 : 11, color: s.cv > QC_BAND ? "#c23636" : "#52514e" } });
         });
         traces.push({ type: "scatter", mode: "markers", name: g + " mean ± SD", legendgroup: g, showlegend: false, x: mx, y: my,
                       error_y: { type: "data", array: me, visible: true, color: col, thickness: 1.5, width: 0 },
                       marker: { color: col, size: Math.max(14, 50 * wdt), symbol: "line-ew-open", line: { color: col, width: 3 } },
                       hovertext: my.map(function (y, i) { return esc(g) + ": mean " + num(y) + " ± " + num(me[i]); }), hoverinfo: "text" });
         var all = v.filter(function (x) { return x.cls === g && measured(x); }).map(function (x) { return x.y; });
-        if (all.length) shapes.push({ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: mean(all), y1: mean(all),
-                                      line: { color: col, width: 1, dash: "dash" } });
+        if (all.length) {
+          shapes.push({ type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: mean(all), y1: mean(all),
+                        line: { color: col, width: 1, dash: "dash" } });
+          dashKey.push({ g: g, col: col, m: mean(all) });
+        }
       });
-      // Only this view has the Log / Linear buttons: their last choice (`react()` keeps it in `_qfLog`)
+      // The legend of the dashed lines: right of the plot, from the bottom up (under the legend of
+      // the QC groups), a line each: the line in its colour and what it is
+      dashKey.reverse().forEach(function (k, i) {
+        ann.push({ xref: "paper", yref: "paper", x: 1.02, y: 0, xanchor: "left", yanchor: "bottom", yshift: i * 18,
+                   align: "left", showarrow: false, font: { size: 11, color: "#344054" },
+                   text: "<span style='color:" + k.col + "'><b>- - -</b></span> " + esc(k.g) + ": mean of all batches (" + num(k.m) + ")" });
+      });
+      if (dashKey.length) {
+        ann.push({ xref: "paper", yref: "paper", x: 1.02, y: 0, xanchor: "left", yanchor: "bottom", yshift: dashKey.length * 18,
+                   align: "left", showarrow: false, font: { size: 11, color: "#344054" }, text: "<b>Dashed lines</b>" });
+      }
+      // Only this view has the Linear / Log buttons (above the plot): their last choice
       var log = !!p.plot._qfLog;
+      markLog(p.plot);
       layout.xaxis = { tickvals: batches.map(function (b, i) { return i + 1; }), ticktext: batches.map(function (b) { return "Batch " + esc(b); }),
                        range: [0.5, batches.length + 0.5], zeroline: false };
       layout.yaxis = { title: { text: d.y_title }, type: log ? "log" : "linear", exponentformat: "E" };
       layout.shapes = shapes;
       layout.annotations = ann;
       layout.margin.t = 70;
-      layout.updatemenus = logButtons(p.plot, log);
+      // Room for the legend of the dashed lines on the right
+      if (dashKey.length) layout.margin.r = Math.min(320, 40 + 7 * Math.max.apply(null, dashKey.map(function (k) { return k.g.length + 30; })));
       react(p.plot, traces, layout);
     }
   }
@@ -496,6 +702,7 @@
 
   global.QuantaFigs = {
     isDistribution: isDistribution, isRsdTable: isRsdTable, concByClass: concByClass, qcConc: qcConc, message: message,
+    qcStepMode: qcStepMode, blankFigure: blankFigure, rsdCompare: rsdCompare,
     // Fit a plot to its width (4.6 has its plot inside)
     redraw: function (el) {
       var p = el && (el.querySelector(".qf-plot") || el);

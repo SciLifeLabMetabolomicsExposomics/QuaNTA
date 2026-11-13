@@ -20,7 +20,8 @@
 # ============================================================================================ #
 
 ## ---- 1. Data file and project information ---------------------------------------------------
-input_file         <- "example_data/QuaNTA_example_ESIpos.zip"   # .txt, or .zip / .gz with one .txt
+input_file         <- "example_data/QuaNTA_example_ESIpos.zip"   # .txt / .csv / .xlsx, or .zip / .gz of one
+sheet              <- NULL     # For an .xlsx file with several sheets: the sheet name with the data
 output_dir         <- "quanta_output"                              # Created if missing
 project_title      <- ""
 user               <- ""
@@ -43,6 +44,7 @@ processing <- list(
   blank_filter        = TRUE,    # Blank filtering (after normalization, before blank subtraction)
   blank_filter_factor = 5,       # Kept when the study sample max (or mean) > factor x blank mean (>= 0)
   blank_filter_stat   = "max",   # "max" or "mean" of the study samples (not QCs or calibration standards)
+  blank_subtract      = TRUE,    # Subtract the blank mean from the QCs and study samples
   rsd_filter          = FALSE,   # Remove features with a high QC RSD%
   rsd_filter_scope    = "both",  # "both", "targeted" or "nontargeted"
   rsd_max_targeted    = 30,      # Maximum QC RSD% of targeted features (1-80)
@@ -56,7 +58,7 @@ processing <- list(
   r2_filter           = FALSE,   # Minimum R2 of the calibration curves ...
   min_r2              = 0.99,    # ... namely this (0-1)
   linear_only         = FALSE,   # Linear models only (no quadratic)
-  linear_range_tol    = 15,      # ULOQ of linear curves: top levels deviating more than this % (1-50)
+  linear_range_tol    = 15,      # ULOQ of linear curves: top levels deviating more than this % (5-30)
                                  # when back-calculated are above the linear range (log: SCALiR)
   enforce_linear_range = FALSE,  # Cut the curves at the ULOQ and refit them
   log_calibration     = FALSE,   # Straight lines in log-log scale (weighting 1, no quadratic curves)
@@ -103,28 +105,17 @@ out <- abs_path(output_dir)
 dirs <- c(input = "input", intermediate = "intermediate", tables = "tables", report = "reports")
 dirs <- vapply(dirs, function(d) { p <- file.path(out, d); dir.create(p, recursive = TRUE, showWarnings = FALSE); p }, "")
 
-# The data file: a .txt as it is; a .zip / .gz unpacked into input/
+# The data file, ready for reading in input/ (as in the app): a .zip / .gz unpacked, an .xlsx sheet
+# converted to text, text not separated by tabs (or in UTF-16, or with decimal commas) rewritten
 if (!file.exists(input_file)) stop("Data file not found: ", input_file)
-ext <- tolower(tools::file_ext(input_file))
-data_file <- if (ext == "zip") {
-  inner <- utils::unzip(input_file, list = TRUE)$Name
-  inner <- inner[!grepl("/$|(^|/)__MACOSX/|(^|/)\\.", inner)]
-  if (length(inner) != 1 || !grepl("\\.txt$", inner, ignore.case = TRUE)) {
-    stop("The zip file must contain exactly one .txt file.")
-  }
-  utils::unzip(input_file, files = inner, exdir = dirs[["input"]], junkpaths = TRUE)
-  file.path(dirs[["input"]], basename(inner))
-} else if (ext == "gz") {
-  dest <- file.path(dirs[["input"]], sub("\\.gz$", "", basename(input_file), ignore.case = TRUE))
-  con_in <- gzfile(input_file, "rb"); con_out <- file(dest, "wb")
-  repeat { x <- readBin(con_in, "raw", 1e7); if (length(x) == 0) break; writeBin(x, con_out) }
-  close(con_in); close(con_out)
-  dest
-} else if (ext == "txt") {
-  abs_path(input_file)
-} else {
-  stop("The data file must be a .txt file, or a .zip / .gz file with one .txt file inside.")
+box::use(prep = projlib/input_file)
+prepared <- prep$prepare(abs_path(input_file), basename(input_file), dirs[["input"]], sheet = sheet)
+if (!is.null(prepared$sheets)) {
+  stop("The workbook has several sheets; set `sheet` to the one with the data: ",
+       paste0("\"", prepared$sheets, "\"", collapse = ", "))
 }
+if (length(prepared$notes) > 0) cat(paste0(prepared$notes, "\n"), sep = "")
+data_file <- prepared$path
 
 # The parameters file of the scripts
 params_file <- file.path(out, "params.yml")

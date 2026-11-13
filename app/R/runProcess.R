@@ -101,6 +101,18 @@ runProcessUI <- function(uiId) {
       )
     )
     ),
+    option_group(
+    shiny::checkboxInput(
+      inputId = ns("blank_subtract"),
+      label = label_tip("Blank subtraction",
+                        paste("After the blank filter: the mean of the blanks (of the batch, or of all blanks",
+                              "for a batch without blanks) is subtracted from the QCs and study samples;",
+                              "values below it become 0. Calibration standards are never blank-subtracted.",
+                              "Unticked: nothing is subtracted, and the calibration, the RSD% (3.8, 3.9), the",
+                              "QC RSD% filter and the 'blank-subtracted' tables use the normalized values as they are.")),
+      value = TRUE,
+    )
+    ),
     # QC RSD% filter: remove features with a high RSD% among the QC replicates (after
     # normalization and blank subtraction)
     option_group(
@@ -305,7 +317,7 @@ runProcessUI <- function(uiId) {
                               "left out and the curve refitted, down to 3 levels. With",
                               "log-scale fitting the linear range is found by SCALiR instead.",
                               "Quadratic curves have no ULOQ. Greyed out when the data has no targeted (Quant) features.")),
-      value = 20, min = 5, max = 50, step = 5
+      value = 20, min = 5, max = 30, step = 5
     ),
     shiny::uiOutput(ns("hint_linear_range_tol"))   # Why the option above is greyed out (see the server)
     ),
@@ -613,6 +625,15 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
                                      paste0("The first 20 of ", n_all, " Comment values are shown.")),
           "To use them as intended, correct the Comment column and upload the file again.")))
       }
+      # Calibration standard names that are likely mistakes
+      if (length(caps$calibrant_notes) > 0) {
+        msgs <- c(msgs, list(shiny::tags$li(
+          shiny::tags$b(shiny::tags$u("Calibration standard names:")), "calibration standards are of File type",
+          shiny::tags$code("Standard"), "with", shiny::tags$code("Cal<concentration>"), "in the name, with",
+          shiny::tags$code("-"), "as the decimal point (e.g.", shiny::tags$code("Cal0-5_..."), "= 0.5).",
+          shiny::tags$ul(lapply(caps$calibrant_notes, shiny::tags$li)),
+          "If these are mistakes, correct the names and upload the file again.")))
+      }
       batch_txt <- function(b) paste(if (length(b) > 1) "Batches" else "Batch", paste(b, collapse = ", "),
                                      if (length(b) > 1) "have" else "has")
       if (!isTRUE(caps$has_targeted)) {
@@ -702,6 +723,7 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       "blank_filter",
       "blank_filter_factor",
       "blank_filter_stat",
+      "blank_subtract",
       "rsd_filter",
       "rsd_filter_scope",
       "rsd_max_targeted",

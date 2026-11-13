@@ -153,10 +153,10 @@ uploadLimitServer <- function(input, session) {
 upload_hint <- function(session = shiny::getDefaultReactiveDomain()) {
   if (is_on_serve(session)) {
     shiny::helpText(sprintf(paste(
-      "Plain text, or compressed as .gz or .zip (with one file). SciLifeLab Serve accepts files",
-      "of at most %d MB: compress larger files (typically 5-10 times smaller)."
+      "Text (.txt, .csv) or Excel (.xlsx), or compressed as .gz or .zip (with one file). SciLifeLab",
+      "Serve accepts files of at most %d MB: compress larger files (typically 5-10 times smaller)."
     ), .serve_upload_limit_mb))
   } else {
-    shiny::helpText("Plain text, or compressed as .gz or .zip (with one file).")
+    shiny::helpText("Text (.txt, .csv) or Excel (.xlsx), or compressed as .gz or .zip (with one file).")
   }
 }

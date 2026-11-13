@@ -67,10 +67,13 @@ FILE$o <- local({
   paste_file_name <- function(x, p) {
     file.path(user_inputs$table_dir, paste0(b, ".", x, ".", p, ".xlsx"))
   }
+  # One table of peak areas: the blank-subtracted one when the data was blank-subtracted (processing
+  # option `--blank_subtract`), otherwise the normalized one
+  peak_tbl <- if (isFALSE(to_report$params$blank_subtract)) "norm" else "norm_blk"
   out_data <- if (IS_TARGET_MODE) {
-    c("norm", "norm_blk", "conc", "history")
+    c(peak_tbl, "conc", "history")
   } else {
-    c("norm", "norm_blk", "history")
+    c(peak_tbl, "history")
   }
   lapply(setNames(nm = out_data), \(.x) {
     lapply(ns, paste_file_name, p = .x)
@@ -113,6 +116,11 @@ if (length(not_available) > 0) {
 }
 # `--max_xlsx_cells=<number>` (given by the app on SciLifeLab Serve): larger tables as CSV only
 max_xlsx_cells <- as.numeric(arg("max_xlsx_cells", "Inf"))
+# `--formats=xlsx,csv` (default both): the .xlsx files and / or their CSV copies (one per sheet).
+# A table too large for Excel is always written as CSV.
+formats <- intersect(trimws(strsplit(arg("formats", "xlsx,csv"), ",", fixed = TRUE)[[1]]), c("xlsx", "csv"))
+if (length(formats) == 0) formats <- c("xlsx", "csv")
+cat("File formats:", paste(formats, collapse = ", "), "\n")
 # The injections of the tables and their order
 layout <- msdial$export_layout(
   by_type = arg_lgl("group_by_type", TRUE),
@@ -138,13 +146,14 @@ export_method <- function(mat_id) {
   is_closest_norm <- mat_id == "closest_norm"
   cat("\nExporting", mat_id, "data.\n")
 
-  # Normalized data
+  # Normalized data (only without blank subtraction: otherwise the blank-subtracted table below)
+  if (!is.null(FILE$o[["norm"]])) {
   se <- msdial$read_full_normalized(user_inputs, to_report, mat_id, keep = not_std)
   msdial$export_data_with_feature_table_xlsx(
     sumexp_lst = se,
     mat_id = mat_id,
     org_feature_table = org_feature_table,
-    out_file = FILE$o$norm[[ii]],
+    out_file = FILE$o[["norm"]][[ii]],
     is_closest_norm = is_closest_norm,
     max_xlsx_cells = max_xlsx_cells,
     layout = layout
@@ -152,18 +161,19 @@ export_method <- function(mat_id) {
   cat(glue::glue("{mat_id} data has been saved."), "\n")
   rm(se)
   invisible(gc(FALSE))
+  }
 
-  # Blank subtracted normalized data (the blanks are left out)
-  msdial$export_data_with_feature_table_xlsx(
+  # Blank subtracted normalized data (the blanks are left out); only with blank subtraction
+  if (!is.null(FILE$o[["norm_blk"]])) msdial$export_data_with_feature_table_xlsx(
     sumexp_lst = msdial$split_by_batch(msdial$read_full_blank_subtracted(user_inputs, to_report, blk_mat_id, keep = not_std)),
     mat_id = blk_mat_id,
     org_feature_table = org_feature_table,
-    out_file = FILE$o$norm_blk[[ii]],
+    out_file = FILE$o[["norm_blk"]][[ii]],
     is_closest_norm = is_closest_norm,
     max_xlsx_cells = max_xlsx_cells,
     layout = layout
   )
-  cat(glue::glue("{blk_mat_id} data has been saved."), "\n")
+  if (!is.null(FILE$o[["norm_blk"]])) cat(glue::glue("{blk_mat_id} data has been saved."), "\n")
   invisible(gc(FALSE))
 
   # Concentration values
@@ -185,7 +195,7 @@ export_method <- function(mat_id) {
   if (with_conc) {
     msdial$export_concentration_xlsx(
       sumexp_lst = lst_proc,
-      file = FILE$o$conc[[ii]],
+      file = FILE$o[["conc"]][[ii]],
       is_closest_norm = is_closest_norm,
       calcurve_lst = lapply(proc_blk, \(ea) ea[["calcurve"]]),
       # Blank samples, quantified without blank subtraction (NULL for a batch without blanks, and
@@ -193,7 +203,7 @@ export_method <- function(mat_id) {
       blank_lst = lapply(proc_blk, \(ea) ea[["blank"]]),
       layout = layout
     )
-    cat(glue::glue("{mat_id} concentration data has been saved to {basename(FILE$o$conc[[ii]])}."), "\n")
+    cat(glue::glue("{mat_id} concentration data has been saved to {basename(FILE$o[['conc']][[ii]])}."), "\n")
   }
   rm(list = intersect(c("proc_blk", "lst_proc"), ls()))
   invisible(gc(FALSE))
@@ -202,14 +212,14 @@ export_method <- function(mat_id) {
   if (is.null(to_report[["feature history"]])) {   # Processed with an older version
     cat("No processing history in the processed data (re-run the processing to add it).\n")
   } else {
-    history$write_history_xlsx(to_report, mat_id, FILE$o$history[[ii]])
-    cat(glue::glue("The processing history has been saved to {basename(FILE$o$history[[ii]])}."), "\n")
+    history$write_history_xlsx(to_report, mat_id, FILE$o[["history"]][[ii]])
+    cat(glue::glue("The processing history has been saved to {basename(FILE$o[['history']][[ii]])}."), "\n")
   }
 
   # CSV copies: one CSV per worksheet, with the same layout as the sheet:
   # "(base name).(method).(norm|norm_blk|conc|history).(sheet).csv" (not the "Legend" sheet)
   xlsx_files <- unlist(lapply(FILE$o, \(x) x[[ii]]))
-  for (xlsx in xlsx_files[file.exists(xlsx_files)]) {
+  for (xlsx in if ("csv" %in% formats) xlsx_files[file.exists(xlsx_files)]) {
     for (sheet in setdiff(openxlsx::getSheetNames(xlsx), "Legend")) {
       tbl <- openxlsx::read.xlsx(xlsx, sheet = sheet, colNames = FALSE,
                                  skipEmptyRows = FALSE, skipEmptyCols = FALSE)
@@ -226,9 +236,19 @@ export_method <- function(mat_id) {
                          qmethod = "double", fileEncoding = "UTF-8")
     }
   }
-  cat("CSV copies (one per worksheet) have been saved.\n")
+  if ("csv" %in% formats) cat("CSV copies (one per worksheet) have been saved.\n")
+  # CSV only: the .xlsx files are removed (after their CSV copies)
+  if (!"xlsx" %in% formats) {
+    unlink(xlsx_files[file.exists(xlsx_files)])
+    cat("Only CSV files are kept (option).\n")
+  }
   invisible(gc(FALSE))
 }
 
 # One method after the other (the memory of one at a time)
 for (m in norm_methods) export_method(m)
+
+# The last line of the log: the export is done (only reached when every method was exported)
+n_files <- length(list.files(user_inputs$table_dir, pattern = "\\.(xlsx|csv)$"))
+cat("\nExport finished: ", length(norm_methods), " normalization method(s), ", n_files,
+    " file(s). Download them with \"Download exported tables (.zip)\".\n", sep = "")

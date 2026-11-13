@@ -71,6 +71,13 @@ The options of the box choose the columns of the tables:
   the grouping above too: by type within each batch).
 - **Keep in the tables**: the QCs, blanks and calibration points (all ticked at first). The study
   samples are always in the tables.
+- **File formats**: Excel (`.xlsx`), CSV (one `.csv` file per sheet, without the *Legend* sheet),
+  or both (both ticked at first).
+
+With outlier removal off (processing settings), the outlier injections found by the internal
+standards (3.3) stay in the data: in the tables, their names are orange and the row *IS outlier
+(not removed)* gives the number of outlying internal standards. The history file has a sheet
+*Settings* with the processing settings of the results.
 
 **Download parameters (.yml)** under the export saves these options with the processing settings, in
 the same file as on page 1; loading the file sets them again.
@@ -101,7 +108,7 @@ tut_table(utils::head(body[!is.na(body$Chemical), ], 25), height = "380px")
 
 - **Sheets**: *Full* has one row per compound over all batches (average and median of the measured
   values, the curve used per batch); then one sheet per batch with its limits, statistics, model
-  and **Notes**, the full text of the note icons of table 4.2.
+  and **Notes**, the full text of the note icons of table 4.1.
 - **Statistics** (minimum, maximum, average, median) use the measured values of the study samples
   only: values replaced by the LOD/LLOQ rules are left out.
 - **Coloured cells** in the sample columns are values that were replaced or are above the ULOQ;
@@ -110,7 +117,7 @@ tut_table(utils::head(body[!is.na(body$Chemical), ], 25), height = "380px")
 ```{r}
 #| label: table-legend
 leg <- openxlsx::read.xlsx(conc_file, sheet = "Legend", colNames = TRUE)
-fills <- c("#FAAFAF", "#FCEACF", "#D3EBF2", "#E3E0B8", "#A8A05A")   # The fills of the exported cells
+fills <- c("#FAAFAF", "#FCEACF", "#D3EBF2", "#E0E0E0", "#9E9E9E")   # The fills of the exported cells
 leg <- leg[!is.na(leg$Meaning) & nzchar(leg$Meaning), "Meaning", drop = FALSE][seq_along(fills), , drop = FALSE]
 leg$Colour <- ""
 DT::datatable(leg[, c("Colour", "Meaning")], rownames = FALSE, selection = "none",

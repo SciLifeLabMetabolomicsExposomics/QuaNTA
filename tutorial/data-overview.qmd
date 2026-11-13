@@ -121,5 +121,5 @@ show$plotly_value_distribution(SumExp::metadata(raw)$value_bins %||% raw[["raw"]
 - **The log panel** shows the dynamic range of the data; most peak areas usually span several
   orders of magnitude.
 - **Many zeros** are normal for non-targeted features (not found in every sample), but a large
-  share of zeros in the internal standards fails them (see 3.2).
+  share of zeros in the internal standards fails them (see 3.4).
 :::

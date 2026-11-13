@@ -67,7 +67,7 @@ option_list <- rlang::list2(
   optparse::make_option(
     c("--linear_range_tol"),
     type = "double", default = 15,
-    help = "Maximum deviation (%, 1-50) of the top level of a linear curve, for its ULOQ [default: %default]"
+    help = "Maximum deviation (%, 5-30) of the top level of a linear curve, for its ULOQ [default: %default]"
   ),
   optparse::make_option(
     c("--vis_prenorm"),
@@ -143,6 +143,14 @@ option_list <- rlang::list2(
     )
   ),
   optparse::make_option(
+    c("--blank_subtract"),
+    type = "logical", default = TRUE,
+    help = paste(
+      "Subtract the blank mean (per batch) from the QCs and study samples. FALSE: the 'blank-subtracted'",
+      "data versions are the normalized data as they are (calibration and exports on them) [default: %default]"
+    )
+  ),
+  optparse::make_option(
     c("--rsd_filter"),
     type = "logical", default = FALSE,
     help = "Quality control: remove features with a QC RSD% above a threshold [default: %default]"
@@ -215,6 +223,7 @@ cat(
   if (!isFALSE(params$impute_llox)) "replaced (LLOQ/4, LLOQ/2)" else "n.d. / n.q. (no value)", "\n",
   "  - Blank filtering: ", params$blank_filter, "\n",
   "  - Blank filtering factor: ", paste0(params$blank_filter_factor, " (", params$blank_filter_stat, " of the study samples)"), "\n",
+  "  - Blank subtraction: ", isTRUE(params$blank_subtract), "\n",
   "  - QC RSD% filtering: ", params$rsd_filter,
   if (isTRUE(params$rsd_filter)) {
     paste0(" (max. ", paste(c(
@@ -416,15 +425,27 @@ cat("Internal standards check done (N = ", sum(is_failed), " failed have been re
 
 ##  OUTLIER SAMPLE REMOVAL  --------------------------------
 
-if (params$rm_outlier) { # Controlled by the command line option
+# Outliers are always found and listed (app and report 3.3); they are removed only with
+# `--rm_outlier`. Otherwise they stay in the data and are marked in the exported tables. Processed
+# per batch, the mean and SD of each IS are of its batch (otherwise of all injections).
+{
   # Number of outlying internal standard features per sample
-  n_out <- proc$count_outliers_per_sample(internal_std_se, "raw", times = 3)
+  out_batch <- as.character(SumExp::col_df(internal_std_se)$batch_id)
+  n_out <- if (length(unique(out_batch)) > 1) {
+    unlist(unname(lapply(split(seq_along(out_batch), out_batch), function(j) {
+      proc$count_outliers_per_sample(internal_std_se[, j], "raw", times = 3)
+    })))[colnames(internal_std_se)]
+  } else {
+    proc$count_outliers_per_sample(internal_std_se, "raw", times = 3)
+  }
   n_internal_std <- nrow(internal_std_se)
   # Outlier samples: number of outlying features > 20% of the total number of features
   is_outlier <- n_out > (0.2 * n_internal_std)
+  to_report[["outliers removed"]] <- isTRUE(params$rm_outlier)
+  to_report[["outliers per batch"]] <- length(unique(out_batch)) > 1
   # `--rm_outlier_scope=no_calib`: the calibration samples are always kept (they still count for
   # the mean and SD of the internal standards)
-  if (identical(params$rm_outlier_scope, "no_calib")) {
+  if (isTRUE(params$rm_outlier) && identical(params$rm_outlier_scope, "no_calib")) {
     is_cal <- util$ctrl_smpl_cat(internal_std_se) == "CalCurve"
     if (any(is_outlier & is_cal)) {
       cat("Calibration samples kept although outlying (option): ", sum(is_outlier & is_cal), "\n", sep = "")
@@ -437,7 +458,18 @@ if (params$rm_outlier) { # Controlled by the command line option
   }
   to_report[["number of outlier internal std. per sample"]] <- n_out
   to_report[["is outlier sample"]] <- is_outlier
-  
+  to_report[["number of internal std. for outliers"]] <- n_internal_std
+
+  if (!isTRUE(params$rm_outlier)) {
+    # Kept: marked in the exported tables ("IS outlier" row, coloured injection name)
+    log_event("Outlier samples", "sample", names(is_outlier)[is_outlier], "Flagged, not removed",
+              sprintf("%d of %d IS beyond 3 SD (log scale) or missing; the limit is 20%%. Not removed (option off)",
+                      n_out[is_outlier], n_internal_std), "fallback")
+    SumExp::col_df(proc_sumexp)[["is_outlier_flag"]] <- ifelse(
+      is_outlier[colnames(proc_sumexp)] %in% TRUE,
+      sprintf("Yes (%d of %d IS)", as.integer(n_out[colnames(proc_sumexp)]), n_internal_std), "")
+    cat("Outlier samples (N = ", sum(is_outlier), ") found but not removed (option off).\n", sep = "")
+  } else {
   log_event("Outlier samples", "sample", names(is_outlier)[is_outlier], "Removed",
             sprintf("%d of %d IS beyond 3 SD (log scale) or missing; the limit is 20%%",
                     n_out[is_outlier], n_internal_std), "removed")
@@ -450,6 +482,7 @@ if (params$rm_outlier) { # Controlled by the command line option
     cat("Outlier samples (N = ", sum(is_outlier), ") are removed.\n", sep = "")
   } else {
     cat("No outlier samples are found.\n")
+  }
   }
 }
 
@@ -589,13 +622,19 @@ to_report[["batches without blank"]] <- batches_without_blank
 SumExp::col_df(shell)[["blank_source"]] <- ifelse(
   batch_ids %in% batches_without_blank, "Average of all batches", "Batch"
 )
+if (!isTRUE(params$blank_subtract)) {
+  SumExp::col_df(shell)[["blank_source"]] <- "Not subtracted (option off)"
+  log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "Option off: nothing subtracted", "fallback")
+}
 
 # QC RSD% filter: features whose RSD% among the QC replicates exceeds the threshold are removed,
 # per normalization method, after normalization and blank subtraction (the matrices used for
-# calibration). RSD% is computed on the QC samples of all batches. Skipped with a warning without
-# QC replicates.
+# calibration). RSD% is computed within each QC group, the median over the groups; processed per
+# batch, within each batch, the median over the batches (otherwise on the QC samples of all batches
+# pooled). Skipped with a warning without QC replicates.
 rsd_filter <- list(
   enabled = isTRUE(params$rsd_filter),
+  by_batch = has_multiple_batches,
   scope = params$rsd_filter_scope,
   max_targeted = if (params$rsd_filter_scope %in% c("both", "targeted")) params$rsd_max_targeted else NA_real_,
   max_nontargeted = if (params$rsd_filter_scope %in% c("both", "nontargeted")) params$rsd_max_nontargeted else NA_real_,
@@ -635,6 +674,9 @@ nt_rsd_se <- if (!has_targets) proc_sumexp[!is_is_row, util$ctrl_smpl_cat(proc_s
 ##  THE DATA VERSIONS, ONE AT A TIME  ----------------------
 
 core_norm <- list()     # The internal standards and targeted compounds, per version
+qc_rsd_rows <- list()   # QC RSD% of the targeted compounds per QC group (and batch), per version
+qc_count_rows <- list() # Features above the QC RSD% limit per batch and type, per version (3.12)
+core_blk <- list()      # The same after blank subtraction (before the QC RSD% filter; for 3.13)
 core_filtered <- list() # The same after the blank filter (without the IS)
 i_core <- which(is_core[!is_is_row])   # The rows of `shell` kept in memory
 for (mat_id in to_blk_subt) {
@@ -720,13 +762,39 @@ for (mat_id in to_blk_subt) {
     sumexp = se,
     no_change = util$ctrl_smpl_cat(se) == "CalCurve",
     mat_ids = mat_id,
-    out_mat_ids = blk_mat_id
+    out_mat_ids = blk_mat_id,
+    subtract = isTRUE(params$blank_subtract)   # `--blank_subtract=FALSE`: the values as they are
   )
   invisible(gc(FALSE))
 
+  core_blk[[mat_id]] <- sub_labelled(se[[blk_mat_id]], i_core)   # For 3.13
+
+  ## QC RSD% of the targeted compounds within each QC group, without zeros (app 3.8 and 3.9, the
+  ## internal report): after the blank filter and blank subtraction, all batches pooled and, when
+  ## processed per batch, per batch
+  qc_cols <- util$ctrl_smpl_cat(se) %in% "QC"
+  if (has_targets && any(qc_cols)) {
+    qc_cd <- SumExp::col_df(se)[qc_cols, , drop = FALSE]
+    qc_rsd_rows[[mat_id]] <- proc$qc_rsd_by_group(
+      se[[blk_mat_id]][targeted, qc_cols, drop = FALSE], as.character(qc_cd$Class), qc_cd$batch_id,
+      by_batch = has_multiple_batches
+    ) |> dplyr::mutate(mat_id = mat_id, .before = 1)
+  }
+
+  ## Features above the QC RSD% limit, per batch and type (app and report 3.12): the limits of the
+  ## QC RSD% filter, or 30% where it is not used (then only counted)
+  if (proc$has_qc_replicates(se)) {
+    used_lim <- rsd_filter$enabled & !rsd_filter$skipped & !is.na(rsd_limit)
+    qc_count_rows[[mat_id]] <- proc$qc_rsd_counts(
+      proc$qc_rsd_feature_by_batch(se, blk_mat_id, by_batch = has_multiple_batches),
+      targeted = targeted, counted = !is_vis & !is_all_na_row(se[[blk_mat_id]]),
+      limit = ifelse(used_lim, rsd_limit, 30), used = used_lim
+    ) |> dplyr::mutate(mat_id = mat_id, .before = 1)
+  }
+
   ## QC RSD% filter
   if (rsd_filter$enabled && !rsd_filter$skipped) {
-    rsd <- proc$qc_rsd_per_feature(se, blk_mat_id)
+    rsd <- proc$qc_rsd_per_feature(se, blk_mat_id, by_batch = rsd_filter$by_batch)
     already_removed <- is_all_na_row(se[[blk_mat_id]])
     to_remove <- !already_removed & !is_vis & !is.na(rsd_limit) & !is.na(rsd) & rsd > rsd_limit
     se[[blk_mat_id]] <- util$extract_with_na(se[[blk_mat_id]], i = !to_remove)
@@ -744,6 +812,12 @@ for (mat_id in to_blk_subt) {
   invisible(gc(FALSE))
 }
 
+# `mat_id` (the version before blank subtraction), `batch` ("Global" or the batch), `QC`,
+# `feature_id`, `rsd`, `n`, `n_zero` (see `proc$qc_rsd_by_group()`)
+to_report[["qc rsd per group"]] <- dplyr::bind_rows(qc_rsd_rows)
+to_report[["qc rsd by batch"]] <- has_multiple_batches
+# `mat_id`, `batch` ("Global" or the batch), `type`, `n_above`, `n_total`, `limit`, `used` (3.12)
+to_report[["qc rsd counts"]] <- dplyr::bind_rows(qc_count_rows)
 # What is needed to put the files of the versions back together with their features and samples
 to_report[["full data"]] <- list(
   norm_rows = SumExp::row_df(proc_sumexp), norm_cols = SumExp::col_df(proc_sumexp),
@@ -790,7 +864,7 @@ proc_sumexp <- normalized_se[!util$is_internal_std(normalized_se), ]
 SumExp::row_df(proc_sumexp) <- SumExp::row_df(core_shell[i_core, 1])
 SumExp::col_df(proc_sumexp) <- SumExp::col_df(shell)
 for (m in to_blk_subt) proc_sumexp[[m]] <- core_filtered[[m]]
-rm(core_shell, core_norm, core_filtered)
+rm(core_shell, core_norm)   # (`core_filtered`, small, is kept for 3.13)
 invisible(gc(FALSE))
 
 flush_later("blank")
@@ -824,7 +898,8 @@ for (batch_id in unique(batch_ids)) {
     sumexp = se,
     no_change = util$ctrl_smpl_cat(se) == "CalCurve",
     mat_ids = to_blk_subt,
-    out_mat_ids = mat_ids_after_blk_subt
+    out_mat_ids = mat_ids_after_blk_subt,
+    subtract = isTRUE(params$blank_subtract)
   )
 }
 
@@ -838,7 +913,8 @@ proc_sumexp <- proc$add_blank_subtracted_sumexp(
   sumexp = proc_sumexp,
   no_change = util$ctrl_smpl_cat(proc_sumexp) == "CalCurve",
   mat_ids = to_blk_subt,
-  out_mat_ids = mat_ids_after_blk_subt
+  out_mat_ids = mat_ids_after_blk_subt,
+  subtract = isTRUE(params$blank_subtract)
 )
 # A batch without blanks is not blank-subtracted on its own: take its globally subtracted data
 for (batch_id in batches_without_blank) {
@@ -909,11 +985,11 @@ prepare_app_data <- function(tr) {
   app[["export table values"]] <- msdial$export_table_values(tr)   # For the note in the export box
   tick()
   prep <- list()
-  # 3.4: RSD% of each IS per QC group and sample class
-  prep[["is rsd"]] <- show$is_rsd_by_group(tr[["internal std. before qc"]])
+  # 3.2: RSD% of each IS per QC group and sample class, all batches pooled ("Global") and, when
+  # processed per batch, per batch
+  prep[["is rsd"]] <- show$is_rsd_by_batch(tr[["internal std. before qc"]], by_batch = isTRUE(tr[["qc rsd by batch"]]))
   tick()
-  # 3.8, 3.9: RSD% of the targeted compounds per QC group and method
-  if (show$has_enough_qc(norm) && any(targeted)) prep[["qc rsd"]] <- show$qc_rsd_by_method(norm)
+  # (3.8, 3.9: `qc rsd per group`, computed with the blank subtraction above)
   tick()
   # 3.11: the samples and features (all but the internal standards), and their values per method
   all_rows <- tr[["full data"]]$norm_rows
@@ -926,11 +1002,70 @@ prepare_app_data <- function(tr) {
   cat("The data of the app saved to:", FILE$app, "\n")
 }
 
+#' The QC RSD% of each targeted compound after each step (app 3.13, temporary): raw peak areas,
+#' normalized, after the blank filter, after blank subtraction, and concentrations. Per data
+#' version, QC group, all batches pooled ("Global") and, processed per batch, per batch. All values
+#' count (also zeros; values without a number, e.g. removed or "n.d.", do not).
+#'
+#' @param lst_proc The calibrated data (`NULL` without calibration: no concentrations)
+#' @returns A tibble of `method`, `batch`, `QC`, `feature_id`, `n` and one column per step; `NULL`
+#'   without targeted compounds or QC replicates
+qc_rsd_steps <- function(lst_proc) {
+  norm <- to_report[["normalized"]]
+  tg <- rownames(norm)[util$is_targeted_feature(norm)]
+  cd <- SumExp::col_df(norm)
+  qc <- rownames(cd)[util$ctrl_smpl_cat(norm) %in% "QC"]
+  if (length(tg) == 0 || length(qc) < 2) return(NULL)
+  qc_cl <- stats::setNames(as.character(cd[qc, "Class"]), qc)
+  qc_b <- stats::setNames(as.character(cd[qc, "batch_id"]), qc)
+  # A matrix of the targeted compounds x the QCs (NA where a step has no value)
+  fill <- function(a) {
+    out <- matrix(NA_real_, length(tg), length(qc), dimnames = list(tg, qc))
+    if (is.null(a)) return(out)
+    r <- intersect(tg, rownames(a))
+    cc <- intersect(qc, colnames(a))
+    if (length(r) && length(cc)) out[r, cc] <- unclass(a[r, cc, drop = FALSE])
+    out
+  }
+  conc_of <- function(m) {
+    l <- lst_proc[[util$mat_id_of_blank_subtracted(m)]]
+    out <- fill(NULL)
+    for (x in l) if (!is.null(x$concn)) {
+      a <- fill(x$concn[["conc"]])
+      out[!is.na(a)] <- a[!is.na(a)]
+    }
+    out
+  }
+  rsd <- function(m) apply(m, 1, function(x) {
+    x <- x[!is.na(x)]
+    if (length(x) < 2 || mean(x) == 0) NA_real_ else round(100 * stats::sd(x) / mean(x), 1)
+  })
+  sets <- c(list(Global = qc), if (has_multiple_batches) split(qc, qc_b))
+  purrr::map_dfr(intersect(c("raw", "closest_norm", "loess_norm", "mvis_norm"), names(norm)), function(m) {
+    steps <- list(`Raw peak area` = fill(norm[["raw"]]), Normalized = fill(norm[[m]]),
+                  `After blank filter` = fill(core_filtered[[m]]), `Blank-subtracted` = fill(core_blk[[m]]),
+                  Concentration = conc_of(m))
+    purrr::map_dfr(names(sets), function(b) {
+      purrr::map_dfr(unique(qc_cl[sets[[b]]]), function(cl) {
+        cols <- sets[[b]][qc_cl[sets[[b]]] == cl]
+        if (length(cols) < 2) return(NULL)
+        tibble::tibble(method = m, batch = b, QC = cl, feature_id = tg, n = length(cols),
+                       !!!lapply(steps, function(s) unname(rsd(s[, cols, drop = FALSE]))))
+      })
+    })
+  })
+}
+
 #' Mark the expected processing has been completed
 #'
 #' @param lst_proc The calibrated data (`NULL` without calibration), for the feature history
 mark_completed_and_save_to_report <- function(lst_proc = NULL) {
   cat("Processing steps are completed.\n")
+  # The QC RSD% after each step (app 3.13); never stops the processing
+  to_report[["qc rsd steps"]] <- tryCatch(qc_rsd_steps(lst_proc), error = function(e) {
+    cat("The QC RSD% per step (3.13) could not be computed:", conditionMessage(e), "\n")
+    NULL
+  })
   # What happened to each feature and sample (exported with the tables, shown in the reports)
   to_report[["events"]] <- history$event_table(events, to_report[["before normalization"]])
   to_report[["feature history"]] <- history$feature_history(to_report, lst_proc)

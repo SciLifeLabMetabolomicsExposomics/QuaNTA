@@ -9,7 +9,7 @@ in_log <- isTRUE(tr$params$log_calibration)
 npts <- function(...) lapply(list(...), I)
 model_label <- function(nm) if (is.null(nm) || is.na(nm)) NULL else sub("_div_", "/", nm)
 
-# The limits, model and notes of each compound and curve, for table 4.2 (the viewer in 4.4 has its
+# The limits, model and notes of each compound and curve, for table 4.1 (the viewer in 4.4 has its
 # own data, `show$calib_viewer_data()`)
 global_view <- function(fid) {
   i <- match(fid, gcal$limits$feature_id)
@@ -40,7 +40,7 @@ in_calib_ids <- rownames(lst[[1]]$concn)
 cal_data <- lapply(seq_len(nrow(tcomps)), function(k) {
   fid <- tcomps$feature_id[k]
   in_calib <- fid %in% in_calib_ids
-  # Removed compounds have no calibration (not in table 4.2)
+  # Removed compounds have no calibration (not in table 4.1)
   v <- lapply(view_names, function(nm) {
     if (!in_calib) NULL else if (nm == "Global") global_view(fid) else batch_view(lst[[view_ids[[nm]]]], fid)
   })
@@ -57,16 +57,7 @@ cal_data <- lapply(seq_len(nrow(tcomps)), function(k) {
 
 `r if (AVERAGE_CAL) paste0('<div class="callout-q">The calibration replicates were averaged within each batch (one point per concentration level and batch, named "CalAvg_B&lt;batch&gt;_&lt;concentration&gt;"). ', if (length(batch_ids) > 1) 'Each batch is calibrated with its own averaged points (the global curve, on the averaged points of all batches, where a batch curve is not valid).' else 'The curve of all samples has one point per concentration level and batch.', ' The RSD% 20% threshold and the SD of the zero calibrant are not used.</div>') else ""`
 
-## 4.1 Calibration curve samples
-
-```{r}
-# The same table as 2.2 (and the app's 2.2)
-show$calib_samples_per_batch(raw, unit) |>
-  knitr::kable(align = "l") |>
-  kableExtra::kable_styling(full_width = FALSE, position = "left")
-```
-
-## 4.2 Calibration curve limits {#calib-limits}
+## 4.1 Calibration curve limits {#calib-limits}
 
 The LOD and LLOQ are the lowest calibration levels whose mean signal exceeds 3 and 10 times the blank
 (Cal0) signal, the usual signal-to-noise criteria [@ichq2r2]; with the RSD% option, the replicates of
@@ -109,7 +100,7 @@ dt(lim_tbl, escape = setdiff(names(lim_tbl), "Notes"),   # The note icons are HT
                   backgroundColor = DT::styleEqual(c("Not valid", "Kept (not valid)"), c(FAILED_BG, KEPT_BG)))
 ```
 
-### 4.2.1 Calibration models
+### 4.1.1 Calibration models
 
 ```{r}
 r2_long <- purrr::map_dfr(batch_ids, function(b) {
@@ -151,6 +142,15 @@ ggplot(best, aes(n, model, fill = curve)) + geom_col(position = "dodge") +
 ```
 
 :::
+
+## 4.2 Calibration curve samples
+
+```{r}
+# The same table as 2.2 (and the app's 2.2)
+show$calib_samples_per_batch(raw, unit) |>
+  knitr::kable(align = "l") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
 
 ## 4.3 Removal of chemicals with no measurement samples
 
@@ -282,11 +282,13 @@ the app, in two views:
   order, green within the limit of the QC RSD% filter for targeted compounds (30% if that filter is
   not used) and red outside it, the batches shaded and a trend line (a moving mean within each
   batch). Drift within a batch and steps between batches show here.
-- **Per batch**: the QC values of each batch with mean ± SD and their CV% (red above 15%); the dashed
+- **Per batch**: the QC values of each batch with mean ± SD and their RSD% (red above 15%); the dashed
   line is the mean of all batches.
 
-The chips above give the QCs beyond the limit, and per QC group the CV% per batch and between
-batches. Only measured values count for the median, the means and the CV%; open points are values
+The line under the buttons says whether the QC RSD% filter was used (its limit is then the green
+band) or not (the band is for reading only). The RSD% is relative (SD / mean): the same RSD% is a
+larger spread at a higher concentration; the Log scale shows them alike. Only measured values count
+for the median, the means and the RSD%; open points are values
 replaced by the LOD/LLOQ rules. Choose the compound in the dropdown or search; hover over a point for
 the sample.
 

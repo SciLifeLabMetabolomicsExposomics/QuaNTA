@@ -185,8 +185,7 @@ a:hover { color: var(--q-blue-hover); }
 .bslib-grid-item:has(> .q-report-box), .bslib-grid-item:has(> .q-export-box) { align-self: start; }
 .card.q-report-box, .card.q-export-box { flex: 0 0 auto; }
 /* The long labels (methods with their RSD%) wrap in the narrow boxes instead of being cut off */
-.q-report-box .shiny-input-container label, .q-report-box .shiny-input-container span,
-.q-export-box .shiny-input-container label, .q-export-box .shiny-input-container span {
+.q-p5 .shiny-input-container label, .q-p5 .shiny-input-container span {
   white-space: normal !important; overflow: visible !important; text-overflow: clip !important;
 }
 /* A report not generated yet: its download button greyed out */
@@ -202,12 +201,13 @@ a:hover { color: var(--q-blue-hover); }
 .q-order-hint { font-size: .85em; color: var(--q-muted, #667085); margin: 0 0 4px; }
 .q-order { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 6px;
            border: 1px dashed var(--q-border); border-radius: 6px; background: #FAFBFC; }
-.q-order-item { width: 38px; height: 130px; display: flex; align-items: center; justify-content: center;
-                border: 1px solid var(--q-border); border-radius: 4px; background: #FFFFFF;
-                cursor: grab; user-select: none; overflow: hidden; }
+/* Chips with upright text and a grip, in a row that wraps (from left to right: the column order) */
+.q-order-item { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px;
+                border: 1px solid var(--q-border); border-radius: 6px; background: #FFFFFF;
+                cursor: grab; user-select: none; max-width: 100%; }
 .q-order-item:hover { border-color: var(--q-blue); }
-.q-order-item span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap;
-                     overflow: hidden; text-overflow: ellipsis; max-height: 122px; font-size: .9em; }
+.q-order-item::before { content: "⋮⋮"; color: #98A2B3; letter-spacing: -2px; font-size: .85em; }
+.q-order-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .9em; }
 .q-order-item.q-dragging { opacity: .45; border-style: dashed; cursor: grabbing; }
 
 /* Outputs with a spinner only the first time (`spinner(once = TRUE)` in app.R): later updates
@@ -325,6 +325,11 @@ table.dataTable tbody tr:nth-child(even) { background-color: #F9FAFC !important;
 table.dataTable tbody tr:hover { background-color: #F2F4FE !important; }
 table.dataTable.no-footer { border-bottom: 1px solid var(--q-border) !important; }
 table.dataTable tbody tr.failed-row td { background-color: #F8D0D0 !important; color: var(--q-text) !important; }
+/* The state of a calibration curve (table 4.1): before the selection rule, which overrides them */
+table.dataTable tbody tr.q-state-bad > td { background-color: lightcoral !important; color: #000 !important; }
+table.dataTable tbody tr.q-state-kept > td { background-color: #FFD9A0 !important; color: #000 !important; }
+table.dataTable tbody tr.q-state-global > td { background-color: lightblue !important; color: #000 !important; }
+table.dataTable tbody tr.q-state-removed > td { background-color: #D9D9D9 !important; color: #000 !important; }
 /* Selected rows: the violet-blue in the middle of the logo's blue-orange fade, with white text
    (DataTables draws its own selection colour as an inset shadow on the cells, replaced here) */
 table.dataTable tbody tr.selected, table.dataTable tbody tr.selected > td,
@@ -338,6 +343,11 @@ table.dataTable tbody tr.selected:hover, table.dataTable tbody tr.selected:hover
   box-shadow: none !important;
 }
 table.dataTable tbody tr.selected > td:first-child { box-shadow: inset 3px 0 0 var(--q-orange) !important; }
+/* Also a coloured row (failed IS, curve states) when selected: the selection colour and bold text */
+table.dataTable tbody tr.selected.failed-row > td,
+table.dataTable tbody tr.selected[class*="q-state-"] > td {
+  background-color: var(--q-row-selected) !important; color: #FFFFFF !important; font-weight: 600;
+}
 table.dataTable tbody tr.selected a { color: #FFFFFF !important; }
 /* Tables with column filters keep room for a whole filter dropdown (at most 200px before it
    scrolls), also when filtered down to a row or two: the scroll area would clip it */
@@ -387,3 +397,81 @@ table.dataTable tbody tr.selected a { color: #FFFFFF !important; }
 .modal-dialog:has(.q-proc-popup) { margin-top: 1rem; margin-bottom: 1rem; }
 /* An empty line between its messages (not between the lines within a message) */
 .q-proc-popup > ul > li + li { margin-top: 1em; }
+/* Page 3: the batch of the RSD% (above 3.1) and the batch shown above 3.8 and 3.9 */
+/* The top of a Tables card (pages 3 and 4), frozen while the tables scroll under it */
+.q-sticky-head { position: sticky; top: -8px; z-index: 30; background: #FFFFFF;
+  margin: -8px -22px 6px; padding: 6px 22px 6px; border-bottom: 1px solid #EAECF0; }
+.q-sticky-head .q-note-line, .q-sticky-head .callout-q { margin-bottom: 2px !important; }
+.q-sticky-head .form-group, .q-sticky-head .shiny-input-container { margin-bottom: 4px; }
+.q-sticky-head .control-label { margin-bottom: 2px; }
+/* A batch choice: the batch in a box, an arrow on each side; the box opens the list */
+.q-stepper { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.q-stepper-label { font-weight: 600; color: var(--q-navy); margin-right: 2px; }
+.q-stepper .form-group, .q-stepper .shiny-input-container { margin: 0 !important; width: auto !important; }
+.q-stepper select { min-width: 110px; padding: 3px 26px 3px 10px; border: 1px solid #D0D5DD; border-radius: 6px;
+  background-color: #FFFFFF; font-weight: 600; color: var(--q-navy); cursor: pointer; height: 32px; }
+.q-bstep { border: 1px solid #D0D5DD; background: #FFFFFF; color: var(--q-navy); border-radius: 6px;
+  width: 30px; height: 32px; padding: 0; font-size: 12px; line-height: 1; cursor: pointer; }
+.q-bstep:hover { background: var(--q-blue-light); }
+.q-stepper-hint { font-size: 0.8em; color: var(--q-muted); }/* The batch of 3.8 / 3.9, right of the info icon of the title */
+.q-batch-label { display: inline-block; margin-left: 10px; padding: 1px 10px; border-radius: 12px; vertical-align: middle;
+  background: #E8F0FB; color: #0B4F8A; font-size: 0.6em; font-weight: 600; line-height: 1.7; }
+
+/* The eye button of a title (www/quanta_ui.js): open eye = shown, closed eye = hidden */
+.q-eye { display: inline-flex; align-items: center; margin-left: 8px; padding: 1px 5px; border-radius: 4px;
+  color: var(--q-muted); cursor: pointer; font-size: 0.75em; vertical-align: middle; user-select: none; }
+.q-eye:hover { color: var(--q-navy); background: var(--q-blue-light); }
+.q-eye .q-eye-closed { display: none; }
+.q-collapsed .q-eye .q-eye-open { display: none; }
+.q-collapsed .q-eye .q-eye-closed { display: inline; }
+.q-collapsed .q-eye { color: #B54708; background: #FEF0C7; }
+.q-eye-hidden { display: none !important; }
+
+/* Tables with a scroll bar: the bar under them to drag (www/quanta_ui.js) */
+.q-table-resize { position: relative; height: 8px; cursor: ns-resize; }   /* The area to grab */
+.q-table-resize::before { content: ""; position: absolute; left: 0; right: 0; top: 3px; height: 2px; border-radius: 2px;
+  background: repeating-linear-gradient(90deg, #D0D5DD 0 6px, transparent 6px 10px); }
+.q-table-resize:hover::before { top: 2px; height: 4px; background: #98A2B3; }
+body.q-resizing, body.q-resizing * { cursor: ns-resize !important; user-select: none !important; }
+
+/* The best method in the frozen head of page 4: close to the normalization buttons */
+.q-sticky-head .q-best-norm { margin: 0 0 2px 0 !important; padding-top: 2px; padding-bottom: 2px; }
+
+/* The head of every card of the analysis pages (Tables, Figures) ends with the same thin grey line
+   as the frozen head of the Tables cards (.q-sticky-head), so that it is clear where the fixed part
+   stops; a card with a frozen head has that head's line instead */
+.split-pane > div > .card:not(:has(.q-sticky-head)) > .card-header { border-bottom: 1px solid #EAECF0 !important; }
+
+/* Page 4: the normalization method and the batch on one row of the frozen head */
+.q-head-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 22px; }
+.q-head-row > .form-group, .q-head-row > .shiny-input-container { margin-bottom: 4px; width: auto; }
+.q-head-row .q-stepper { margin-bottom: 4px; }
+/* A keyboard key next to a label (e.g. N: the next normalization method) */
+.q-key-hint { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid #D0D5DD; border-bottom-width: 2px;
+  border-radius: 4px; font-size: .75em; font-weight: 600; color: var(--q-muted); line-height: 1.4; vertical-align: 1px; }
+
+/* Page 5, layout B: the reports in one row on top; below, the export settings (2/3) and what the
+   export gives with its buttons (1/3); one column on narrow screens */
+.q-p5 { display: flex; flex-direction: column; gap: 16px; max-width: 1500px; }
+.q-p5 > .card, .q-p5-grid > .card { margin-bottom: 0; }
+.q-p5-report-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 28px; }
+.q-p5-report-method { flex: 0 1 380px; min-width: 260px; }
+.q-p5-report-method .form-group { margin-bottom: 4px; }
+.q-p5-report-buttons { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: flex-start; }
+.q-p5-report-buttons .q-gen-group + .q-gen-group { margin-top: 0; }
+.q-p5-report-buttons .q-gen-btn { min-width: 180px; }
+.q-p5-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .q-p5-grid { grid-template-columns: minmax(0, 1fr); } }
+.q-p5-sec { border-top: 1px solid #EAECF0; padding: 10px 0 4px; }
+.q-p5-sec:first-child { border-top: 0; padding-top: 0; }
+.q-p5-sec-title { font-weight: 600; color: var(--q-navy); margin-bottom: 4px; }
+.q-p5-sec .form-group, .q-p5-sec .shiny-input-container { margin-bottom: 4px; }
+.q-p5-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 24px; border-top: 1px solid #EAECF0; }
+.q-p5-two > .q-p5-sec { border-top: 0; }
+.q-p5-sum { font-size: .9em; margin-bottom: 12px; }
+.q-p5-sum-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; padding: 4px 0; border-bottom: 1px solid #F2F4F7; }
+.q-p5-sum-label { color: var(--q-muted); }
+.q-p5-sum-row ul { margin: 0; padding-left: 16px; }
+.q-p5-sum-warn { color: #B42318; font-weight: 600; }
+.q-p5-sum-empty { color: var(--q-muted); margin-bottom: 10px; }
+.q-p5-summary .btn, .q-p5-summary .shiny-download-link { width: 100%; }

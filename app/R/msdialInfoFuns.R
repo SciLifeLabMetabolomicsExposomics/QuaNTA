@@ -108,19 +108,15 @@ read_params_file <- function(path) {
 
 #' Why an uploaded data file has a type that cannot be used
 #'
-#' Accepted: `.txt`, `.txt.gz` and `.zip` (whose single file must be a `.txt`; checked by
-#' `scripts/decompress_input.R`).
+#' Accepted: `.txt`, `.csv`, `.xlsx`, `.txt.gz` / `.csv.gz` and `.zip` (whose single file must be
+#' one of these; checked by `scripts/prepare_input.R`). See `projlib/input_file.R`.
 #'
 #' @param name The original file name
 #' @returns A message, or `NULL` when the type is accepted
 #' @export
 upload_type_problem <- function(name) {
-  nm <- tolower(name)
-  if (grepl("\\.txt$", nm) || grepl("\\.txt\\.gz$", nm) || grepl("\\.zip$", nm)) return(NULL)
-  if (grepl("\\.gz$", nm)) {
-    return(paste0("\"", name, "\" is a .gz file, but not of a .txt file (the name must end in .txt.gz)."))
-  }
-  paste0("\"", name, "\" is not a .txt, .gz or .zip file.")
+  box::use(input_file = projlib/input_file)
+  input_file$type_problem(name)
 }
 
 #' Write the private, per-session parameter file read by the child processes

@@ -93,13 +93,21 @@ rsd_perc <- function(x, na.rm = FALSE) {
   100 * stats::sd(x, na.rm = na.rm) / mean(x, na.rm = na.rm)
 }
 
+#' RSD% without the zero values (processed per batch); `NA` with fewer than two values above 0
+#' @export
+rsd_perc_no_zero <- function(x) {
+  x <- x[!is.na(x) & x > 0]
+  if (length(x) < 2) NA_real_ else 100 * stats::sd(x) / mean(x)
+}
+
 #' RSD% across all samples
 #'
 #' @param mat A numeric matrix
+#' @param exclude_zero Leave the zero values out (processed per batch)
 #' @returns A numeric vector of RSD% across the samples in columns
 #' @export
-compute_rsd_per_feature <- function(mat) {
-  apply(mat, 1, rsd_perc) |>
+compute_rsd_per_feature <- function(mat, exclude_zero = FALSE) {
+  apply(mat, 1, if (exclude_zero) rsd_perc_no_zero else rsd_perc) |>
     labelled::set_label_attribute("RSD%")
 }
 
@@ -236,24 +244,24 @@ calc_rsd_qstd <- function(qc_se_lst, mat_ids) {
 #' Colors of the `sign` levels from [mark_lowest_rsd_norm()]
 #' @export
 norm_sign_colors <- c(okabe_ito[["skyblue"]], okabe_ito[["orange"]], okabe_ito[["green"]], "#7f7f7f") |>
-  stats::setNames(c(paste(intToUtf8(0x2193), c("LOESS", "Closest", "Multivariate")), "All 0s"))
+  stats::setNames(c(paste(intToUtf8(0x2193), c("LOESS", "Closest", "Multivariate")), "No RSD%"))
 
 #' Mark the normalization method with the lowest RSD% per feature
 #'
 #' @param rsd_df A data frame from [calc_rsd_qstd()]
 #' @param labs A named character vector: names are labels, values are matrix IDs (columns of
 #'   `rsd_df`). `raw` is not a normalization method and is never marked.
-#' @returns `rsd_df` with a factor column `sign`, e.g. "↓ LOESS", or "All 0s" when no method has
+#' @returns `rsd_df` with a factor column `sign`, e.g. "↓ LOESS", or "No RSD%" when no method has
 #'   a valid RSD%
 #' @md
 #' @export
 mark_lowest_rsd_norm <- function(rsd_df, labs) {
   norm_labs <- labs[labs != "raw"]
-  levs <- c(paste(intToUtf8(0x2193), names(norm_labs)), "All 0s")   # Down arrow
+  levs <- c(paste(intToUtf8(0x2193), names(norm_labs)), "No RSD%")   # Down arrow
   m <- as.matrix(rsd_df[unname(norm_labs)])
   m[!is.finite(m)] <- Inf
   i_min <- max.col(-m, ties.method = "first")
-  sign <- ifelse(rowSums(is.finite(m)) == 0, "All 0s", levs[i_min])
+  sign <- ifelse(rowSums(is.finite(m)) == 0, "No RSD%", levs[i_min])
   rsd_df$sign <- factor(sign, levels = levs)
   rsd_df
 }
@@ -529,7 +537,7 @@ calib_view_removed <- function(se, mat_id, ids, reasons, batch = NULL) {
   rd <- data.frame(row.names = ids, has_proper_range = rep(FALSE, length(ids)))
   v <- .calib_view_rd(rd)
   v$why <- paste("Removed before calibration:", reasons[match(ids, names(reasons))])
-  v$fill <- "#D9D9D9"   # Grey, as their rows in table 4.2
+  v$fill <- "#D9D9D9"   # Grey, as their rows in table 4.1
   calib_view(v, list(sig = sig, used = matrix(FALSE, nrow(sig), ncol(sig)), conc = util$spiked_conc_pts(se)[keep],
                      info = data.frame(name = cd$sample_name[keep], batch = measured_batch(cd)[keep],
                                        inj = cd$injection_order[keep])))
@@ -550,7 +558,7 @@ calib_views_of_batch <- function(lst, batch, to_report, norm_method) {
   mat_blk <- util$mat_id_of_blank_subtracted(norm_method)
   x <- lst[[batch]]
   rd <- SumExp::row_df(x$calcurve)
-  # Removed before calibration (blank filter / QC RSD% filter), as at the end of table 4.2
+  # Removed before calibration (blank filter / QC RSD% filter), as at the end of table 4.1
   rem <- to_report[["removed features"]]
   rem <- if (is.null(rem)) data.frame(feature_id = character(), feature_name = character()) else
     rem[rem$mat_id == norm_method & rem$targeted, ]
@@ -570,10 +578,11 @@ calib_views_of_batch <- function(lst, batch, to_report, norm_method) {
   multi <- length(lst) > 1
   views <- list()
   if (multi) {
+    # No box saying that the global curve was used: the failure note of the compound says so. Only
+    # the reason when the whole batch uses the global curve (not in the notes of the compounds)
     views[["All batches (global curve)"]] <- list(
       parts = list(calib_view_all_batches(lst, batch, mat_blk)),
-      info = paste0("Concentrations in batch ", batch, " were calculated with the global curve, fitted on the ",
-                    "calibration points of all batches shown here.", why_global))
+      info = if (nzchar(why_global)) trimws(why_global))
   }
   views[[if (multi) paste0("Batch ", batch, " only") else "All samples"]] <- list(
     parts = list(calib_view_of_batch(x, mat_blk), removed_v),
@@ -693,9 +702,10 @@ calib_viewer_json <- function(data) {
 #'   of table 3.1
 #' @param outlier `NULL`, or a logical vector named by sample ID: outlier samples
 #' @param failed `NULL`, or a logical vector: failed internal standards (rows of `se`)
-#' @param rsd `NULL`, or the RSD% of each IS per QC group and sample class for table 3.4 (a list of
-#'   `rsd`, a matrix with the groups in rows and the IS in columns in the order of `se`, and `n`,
-#'   as [is_rsd_by_group()])
+#' @param rsd `NULL`, or the RSD% of each IS per QC group and sample class for table 3.2: a named
+#'   list ("Global", and per batch the batch IDs, as [is_rsd_by_batch()]) of lists of `rsd`, a
+#'   matrix with the groups in rows and the IS in columns in the order of `se`, and `n` (as
+#'   [is_rsd_by_group()]); a single such list is used as "Global"
 #' @returns A list, for [calib_viewer_json()]
 #' @export
 is_distribution_data <- function(se, outlier = NULL, failed = NULL, rsd = NULL) {
@@ -710,12 +720,51 @@ is_distribution_data <- function(se, outlier = NULL, failed = NULL, rsd = NULL) 
     smp = list(name = I(cd$sample_name), cls = I(as.character(cd$Class)), batch = I(measured_batch(cd)),
                inj = I(cd$injection_order), grp = I(grp), out = I(out)),
     colors = .hex_colors(sample_group_colors(grp)),
-    # Table 3.4: the groups, their number of samples, and the RSD% of each IS (a column each)
-    rsd = if (!is.null(rsd)) list(
-      groups = I(rownames(rsd$rsd)), n = I(unname(as.integer(rsd$n))),
-      v = lapply(seq_len(ncol(rsd$rsd)), \(j) I(.r6(rsd$rsd[, j])))
-    )
+    # Table 3.2, per batch ("Global": all batches): the groups, their number of samples, and the
+    # RSD% of each IS (a column each)
+    rsd = if (!is.null(rsd)) {
+      if (!is.null(rsd$rsd)) rsd <- list(Global = rsd)   # One table (older processed data)
+      lapply(rsd, function(r) list(
+        groups = I(rownames(r$rsd)), n = I(unname(as.integer(r$n))),
+        v = lapply(seq_len(ncol(r$rsd)), \(j) I(.r6(r$rsd[, j]))),
+        # The zeros of each IS per group (`NULL` for data processed by older versions), and whether
+        # they are left out of the RSD% (then also of n)
+        z = if (!is.null(r$zeros)) lapply(seq_len(ncol(r$zeros)), \(j) I(unname(as.integer(r$zeros[, j])))),
+        nz = isTRUE(r$exclude_zero)
+      ))
+    }
   )
+}
+
+#' The data of figure 3.11 of the app, for `QuantaFigs.blankFigure()`: the samples, and the
+#' values of some features (all of the chosen kind when they are few; otherwise one at a time)
+#'
+#' @param cd The `col_df` of the samples (all injections)
+#' @param vals The values (features x samples) of the chosen data version
+#' @param ids The features to include (rows of `vals`)
+#' @param labels Their names
+#' @param removed Whether each of them was removed by the blank filter
+#' @param factor,used The factor of the blank filter and whether it was used
+#' @param y_lab The title of the y axis
+#' @returns A list, for [calib_viewer_json()]
+#' @export
+blank_figure_data <- function(cd, vals, ids, labels, removed, factor, used, y_lab) {
+  grp <- sample_group(cd)
+  list(
+    smp = list(g = I(grp), k = I(as.character(cd$.ctrl_cat)), i = I(cd$injection_order),
+               n = I(as.character(cd$sample_name)), b = I(measured_batch(cd))),
+    colors = .hex_colors(sample_group_colors(grp)), factor = factor, used = used, y_lab = y_lab,
+    features = blank_feature_values(vals, ids, labels, removed)
+  )
+}
+
+#' The values of features for figure 3.11 (see [blank_figure_data()]): a list named by feature ID
+#' of `name`, `r` (removed by the blank filter) and `y` (one value per sample)
+#' @export
+blank_feature_values <- function(vals, ids, labels, removed) {
+  stats::setNames(lapply(seq_along(ids), function(k) {
+    list(name = labels[k], r = isTRUE(removed[k]), y = I(.r6(vals[ids[k], ])))
+  }), ids)
 }
 
 #' The data of figures 4.5 and 4.6 of the app, for `QuantaFigs.concByClass()` and
@@ -765,7 +814,9 @@ conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_lim
   list(
     names = as.list(stats::setNames(nms[keep], ids[keep])),   # Compound ID -> name (plot titles)
     kinds = I(kinds), kind_colors = .hex_colors(imputed_colors), class_colors = .hex_colors(class_colors),
-    qc_colors = .hex_colors(hue_colors(qc_groups)), y_title = unit_label, qc_limit = qc_limit,
+    qc_colors = .hex_colors(hue_colors(qc_groups)), y_title = unit_label, qc_limit = as.numeric(qc_limit),
+    # Whether the QC RSD% filter was used (its limit is the band of 4.6), from `qc_chart_limit()`
+    qc_filter_used = isTRUE(attr(qc_limit, "used")),
     samples = if (!is.null(batch)) part(lst[[batch]]$concn),
     qc = unname(lapply(qcs, part))
   )
@@ -775,10 +826,12 @@ conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_lim
 #' compounds if that filter was used, otherwise 30
 #'
 #' @param rf The `qc rsd filter` element of the `to_report` list of `process.R`
-#' @returns A number
+#' @returns A number, with the attribute `used` (`TRUE` when the QC RSD% filter removed targeted
+#'   compounds above this limit; `FALSE`: 30, for reading only)
 #' @export
 qc_chart_limit <- function(rf) {
-  if (isTRUE(rf$enabled) && !isTRUE(rf$skipped) && isTRUE(!is.na(rf$max_targeted))) rf$max_targeted else 30
+  used <- isTRUE(rf$enabled) && !isTRUE(rf$skipped) && isTRUE(!is.na(rf$max_targeted))
+  structure(if (used) rf$max_targeted else 30, used = used)
 }
 
 #' The compounds with a value in the QC samples (any batch), from [conc_figs_data()]: the
@@ -1468,15 +1521,138 @@ qc_rsd_by_method <- function(norm_se) {
   list(df = df, labs = labs)
 }
 
+#' RSD% of the targeted compounds under each method for one batch (or all batches pooled), from
+#' the `qc rsd per group` table of process.R (app 3.8 and 3.9)
+#'
+#' @param long `to_report[["qc rsd per group"]]`: `mat_id`, `batch`, `QC`, `feature_id`, `rsd`, `n`,
+#'   `n_zero`, see `proc$qc_rsd_by_group()`
+#' @param batch "Global" (all batches pooled) or a batch ID
+#' @param labs The methods: matrix IDs named by their labels (the first word)
+#' @returns As [qc_rsd_by_method()]: a list of `df` (`QC`, `feature_id`, one column per method,
+#'   `n` (QC injections), `zeros` (the zero values per method, as text: "" when none), `sign`) and
+#'   `labs`
+#' @export
+qc_rsd_of_batch <- function(long, batch, labs) {
+  d <- long[long$batch == batch & long$mat_id %in% labs, ]
+  labs <- labs[labs %in% d$mat_id]
+  wide <- tidyr::pivot_wider(d[c("QC", "feature_id", "mat_id", "rsd")], names_from = mat_id, values_from = rsd)
+  zr <- tidyr::pivot_wider(d[c("QC", "feature_id", "mat_id", "n_zero")], names_from = mat_id, values_from = n_zero)
+  n <- dplyr::distinct(d[c("QC", "feature_id", "n")])
+  z <- as.matrix(zr[unname(labs)])
+  zero_txt <- vapply(seq_len(nrow(z)), function(i) {
+    v <- z[i, ]
+    if (all(is.na(v) | v == 0)) return("")
+    u <- unique(v[!is.na(v)])
+    if (length(u) == 1 && !anyNA(v)) return(as.character(u))
+    paste0(names(labs), " ", ifelse(is.na(v), "–", v), collapse = ", ")
+  }, "")
+  df <- wide |>
+    dplyr::left_join(n, by = c("QC", "feature_id")) |>
+    dplyr::mutate(zeros = zero_txt[match(paste(QC, feature_id), paste(zr$QC, zr$feature_id))])
+  df <- df[c("QC", "feature_id", unname(labs), "n", "zeros")] |> mark_lowest_rsd_norm(labs)
+  list(df = df, labs = labs)
+}
+
+#' Figure 3.12: the number of features above the QC RSD% limit per batch, targeted and
+#' non-targeted, with the numbers on the bars
+#'
+#' @param counts `to_report[["qc rsd counts"]]` of one data version (`batch`, `type`, `n_above`,
+#'   `n_total`, `limit`, `used`)
+#' @param height The height of the plot (px)
+#' @returns A plotly object
+#' @export
+plotly_qc_rsd_counts <- function(counts, height = 420) {
+  b <- unique(counts$batch)
+  b_lab <- stats::setNames(ifelse(b == "Global", if (length(b) > 1) "Global (pooled)" else "All injections",
+                                  paste("Batch", b)), b)
+  cols <- c(Targeted = okabe_ito[["vermillion"]], `Non-targeted` = okabe_ito[["skyblue"]])
+  p <- plotly::plot_ly(height = height)
+  for (tp in c("Targeted", "Non-targeted")) {
+    d <- counts[counts$type == tp, ]
+    if (nrow(d) == 0 || all(d$n_total == 0)) next
+    pct <- ifelse(d$n_total > 0, 100 * d$n_above / d$n_total, NA)
+    p <- plotly::add_bars(
+      p, x = unname(b_lab[d$batch]), y = d$n_above, name = paste0(tp, " (limit ", d$limit[1], "%",
+                                                                   if (!isTRUE(d$used[1])) ", not used to filter" else "", ")"),
+      marker = list(color = cols[[tp]]), text = paste0(d$n_above, " / ", d$n_total), textposition = "outside",
+      hovertext = paste0("<b>", b_lab[d$batch], "</b><br>", tp, ": ", d$n_above, " of ", d$n_total,
+                         " features above ", d$limit, "% (", round(pct, 1), "%)"),
+      hoverinfo = "text", cliponaxis = FALSE
+    )
+  }
+  plotly::layout(p, barmode = "group",
+                 xaxis = list(title = "", categoryorder = "array", categoryarray = unname(b_lab)),
+                 yaxis = list(title = "Features above the QC RSD% limit", rangemode = "tozero"),
+                 legend = list(orientation = "h", y = -0.15), margin = list(t = 30)) |>
+    plotly::config(displaylogo = FALSE)
+}
+
+#' The data of figure 3.8 of the app for all batches at once, for `QuantaFigs.rsdCompare()` (the
+#' browser draws the batch chosen, without asking the server)
+#'
+#' @param views A named list ("Global", batch IDs) of [qc_rsd_of_batch()] (or [qc_rsd_by_method()])
+#'   results
+#' @param names A named character vector: feature ID -> name
+#' @returns A list, for [calib_viewer_json()]
+#' @export
+rsd_compare_data <- function(views, names) {
+  labs <- views[[1]]$labs
+  list(
+    methods = I(names(labs)), sign_colors = as.list(norm_sign_colors),
+    batches = lapply(views, function(v) {
+      df <- v$df
+      groups <- sort(unique(as.character(df$QC)))
+      ids <- unique(df$feature_id)
+      ids <- ids[order(names[ids])]
+      key <- paste(df$QC, df$feature_id)
+      list(groups = I(groups), comps = lapply(ids, function(id) {
+        i <- match(paste(groups, id), key)
+        list(name = unname(names[id]),
+             r = lapply(i, function(k) if (is.na(k)) NULL else I(unname(round(unlist(df[k, unname(labs)]), 1)))),
+             s = I(ifelse(is.na(i), "", as.character(df$sign[i]))),
+             z = I(if ("zeros" %in% names(df)) ifelse(is.na(i), "", df$zeros[i]) else rep("", length(i))),
+             n = I(if ("n" %in% names(df)) ifelse(is.na(i), NA, df$n[i]) else rep(NA, length(i))))
+      }))
+    })
+  )
+}
+
+#' The batches of the RSD% of 3.8 and 3.9: "Global" and, when processed per batch, the batches
+#' @param long `to_report[["qc rsd per group"]]`
+#' @export
+qc_rsd_batches <- function(long) {
+  b <- unique(long$batch)
+  c("Global", setdiff(b, "Global"))
+}
+
+#' RSD% of the raw peak areas of each internal standard per QC group and sample class, for all
+#' batches pooled and, when processed per batch, for each batch (app 3.2; prepared by process.R)
+#'
+#' @param is_se A [`SumExp::SumExp`] object of the internal standards (with the `raw` matrix)
+#' @param by_batch Also per batch (`batch_id`)
+#' @returns A named list ("Global", then the batch IDs) of the results of [is_rsd_by_group()]
+#' @export
+is_rsd_by_batch <- function(is_se, by_batch = FALSE) {
+  b <- as.character(SumExp::col_df(is_se)$batch_id)
+  by_batch <- by_batch && length(unique(b)) > 1
+  # Processed per batch: without the zero values (as all RSD% of page 3 then)
+  out <- list(Global = is_rsd_by_group(is_se, exclude_zero = by_batch))
+  if (by_batch) {
+    for (bb in unique(b)) out[[bb]] <- is_rsd_by_group(is_se[, b == bb], exclude_zero = TRUE)
+  }
+  out
+}
+
 #' RSD% of the raw peak areas of each internal standard within each QC group and each sample class
-#' (app 3.4; prepared by process.R)
+#' (app 3.2; prepared by process.R)
 #'
 #' @param is_se A [`SumExp::SumExp`] object of the internal standards (with the `raw` matrix)
 #' @returns A list of `rsd` (a matrix: groups in rows, internal standards (names) in columns; 2
 #'   decimals) and `n` (the number of samples of each group)
 #' @export
-is_rsd_by_group <- function(is_se) {
-  rsd_rows <- function(se) apply(se[["raw"]], 1, \(.x) round(rsd_perc(.x), 2))
+is_rsd_by_group <- function(is_se, exclude_zero = FALSE) {
+  f <- if (exclude_zero) rsd_perc_no_zero else rsd_perc
+  rsd_rows <- function(se) apply(se[["raw"]], 1, \(.x) round(f(.x), 2))
   qc_lst <- extract_qc_samples_to_list(is_se)
   m_rsd1 <- if (length(qc_lst) > 0) {
     m <- do.call(cbind, lapply(qc_lst, rsd_rows))   # A matrix even for a single value
@@ -1495,7 +1671,13 @@ is_rsd_by_group <- function(is_se) {
   m_rsd2 <- data.frame(m_rsd2, check.names = FALSE)
   n <- c(vapply(qc_lst, ncol, integer(1)),
          vapply(colnames(m_rsd2), \(cls) sum(SumExp::col_df(se)$Class == cls), integer(1)))
-  list(rsd = t(cbind.data.frame(m_rsd1, m_rsd2)), n = n)
+  # The zero (or missing) values of each IS in each group, in the same layout as `rsd`
+  zero_rows <- function(s) apply(s[["raw"]], 1, \(.x) sum(is.na(.x) | .x <= 0))
+  z1 <- if (length(qc_lst) > 0) do.call(cbind, lapply(qc_lst, zero_rows)) else NULL
+  z2 <- do.call(cbind, lapply(colnames(m_rsd2), function(cls) zero_rows(se[, SumExp::col_df(se)$Class == cls])))
+  zeros <- t(cbind(z1, z2))
+  dimnames(zeros) <- list(names(n), SumExp::row_df(is_se)$feature_name)
+  list(rsd = t(cbind.data.frame(m_rsd1, m_rsd2)), n = n, zeros = zeros, exclude_zero = exclude_zero)
 }
 
 #' RSD% of the volumetric internal standards (vIS) within groups of samples
