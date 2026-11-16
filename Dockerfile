@@ -16,10 +16,11 @@ WORKDIR /proj
 COPY /app/envs/SumExp_0.2.1.tar.gz /tmp/SumExp_0.2.1.tar.gz
 COPY /app/envs/Lato/ /usr/local/share/fonts/Lato/
 
-# General updates (curl and cmake added: curl for renv downloads, cmake for nloptr)
+# General updates (curl and cmake added: curl for renv downloads, cmake for nloptr; xz-utils to
+# unpack TinyTeX, a .tar.xz file)
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y git curl cmake libxml2-dev libmagick++-dev libssl-dev libharfbuzz-dev libfribidi-dev && \
+    apt-get install -y git curl cmake xz-utils libxml2-dev libmagick++-dev libssl-dev libharfbuzz-dev libfribidi-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -84,7 +85,7 @@ RUN set -e; \
       *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac; \
     cd /tmp; \
-    wget -q -O tinytex.tar.xz \
+    wget -nv -O tinytex.tar.xz \
       "https://github.com/rstudio/tinytex-releases/releases/download/${TINYTEX_VERSION}/TinyTeX-linux-${tt_arch}-${TINYTEX_VERSION}.tar.xz"; \
     tar -xJf tinytex.tar.xz -C "$HOME"; \
     rm tinytex.tar.xz; \
