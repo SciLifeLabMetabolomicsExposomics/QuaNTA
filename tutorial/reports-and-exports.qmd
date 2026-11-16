@@ -82,9 +82,9 @@ standards (3.3) stay in the data: in the tables, their names are orange and the 
 **Download parameters (.yml)** under the export saves these options with the processing settings, in
 the same file as on page 1; loading the file sets them again.
 
-On SciLifeLab Serve, very large tables (more than 5 million values, e.g. tens of thousands of
-non-targeted features) are written as `.csv` files only, with the same layout, since an Excel file
-of that size takes too much memory to create there. This concerns `….norm` and `….norm_blk`, and
+On SciLifeLab Serve, very large tables (more than 55 million values, e.g. 60,000 features in
+900 injections) are written as `.csv` files only, with the same layout, since an Excel file
+of that size takes too much memory to create there. This concerns the table of peak areas, and
 the export box says so in advance. Run locally, QuaNTA always writes the Excel files as well.
 
 This is the start of a batch sheet of the concentration table of the example

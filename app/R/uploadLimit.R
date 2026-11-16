@@ -10,8 +10,8 @@
 
 .serve_host_regex <- "(^|\\.)serve\\.scilifelab\\.se$"   # Also used in the JavaScript below
 .serve_upload_limit_mb <- 1000
-.serve_xlsx_max_cells <- 5e6     # On Serve, larger tables are exported as CSV only (memory)
-.serve_warn_values <- 4.8e6      # On Serve, a popup after uploading a file with more values
+.serve_xlsx_max_cells <- 55e6    # On Serve, larger tables are exported as CSV only (memory; 8 GB)
+.serve_warn_values <- 50e6       # On Serve, a popup after uploading a file with more values
 
 #' Whether the app is opened on SciLifeLab Serve
 #'
@@ -90,8 +90,8 @@ warn_if_large_upload <- function(path, session = shiny::getDefaultReactiveDomain
     shiny::p(sprintf("This dataset has %.1f million values (features × injections).", n / 1e6),
              "On SciLifeLab Serve this limits what you can do with it:"),
     shiny::tags$ul(
-      shiny::tags$li(sprintf(paste("The normalized and blank-subtracted tables are exported as CSV only",
-                                   "if they have more than %.0f million values, not as Excel files."),
+      shiny::tags$li(sprintf(paste("The table of peak areas is exported as CSV only",
+                                   "if it has more than %.0f million values, not as an Excel file."),
                              .serve_xlsx_max_cells / 1e6)),
       shiny::tags$li("Processing and the reports take long, and the server may run out of memory.")
     ),
