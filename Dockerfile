@@ -71,7 +71,29 @@ USER shiny
 # as root it would end up in /root/.TinyTeX, which `shiny` cannot use. Then render a test document
 # with the same PDF settings as the external report, so that all the LaTeX packages it needs are
 # installed now (at build time) and never downloaded at runtime.
-RUN quarto install tinytex --no-prompt
+# A fixed version, downloaded from its release file: `quarto install tinytex` asks GitHub's API for
+# the latest version, which fails on GitHub Actions when the API's rate limit for the shared build
+# machines is reached ("403 - Forbidden"); downloading a release file does not use the API. The same
+# bundle as Quarto installs ("TinyTeX"), in the same place (~/.TinyTeX), where Quarto finds it.
+# Update it deliberately: https://github.com/rstudio/tinytex-releases/releases
+ARG TINYTEX_VERSION=v2026.11
+RUN set -e; \
+    case "${TARGETARCH}" in \
+      amd64) tt_arch=x86_64; tt_bin=x86_64-linux ;; \
+      arm64) tt_arch=arm64; tt_bin=aarch64-linux ;; \
+      *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    cd /tmp; \
+    wget -q -O tinytex.tar.xz \
+      "https://github.com/rstudio/tinytex-releases/releases/download/${TINYTEX_VERSION}/TinyTeX-linux-${tt_arch}-${TINYTEX_VERSION}.tar.xz"; \
+    tar -xJf tinytex.tar.xz -C "$HOME"; \
+    rm tinytex.tar.xz; \
+    test -x "$HOME/.TinyTeX/bin/${tt_bin}/tlmgr"; \
+    mkdir -p "$HOME/bin"; \
+    "$HOME/.TinyTeX/bin/${tt_bin}/tlmgr" option sys_bin "$HOME/bin"; \
+    "$HOME/.TinyTeX/bin/${tt_bin}/tlmgr" path add; \
+    "$HOME/.TinyTeX/bin/${tt_bin}/tlmgr" option repository ctan
+ENV PATH="/home/shiny/bin:${PATH}"
 COPY --chown=shiny:shiny docker/latex-smoketest.qmd /tmp/latex-smoketest/latex-smoketest.qmd
 RUN cd /tmp/latex-smoketest && \
     quarto render latex-smoketest.qmd --to pdf && \
