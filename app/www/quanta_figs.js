@@ -315,10 +315,19 @@
 
   // The values of a compound in a part of `conc_figs_data()`: shown ones and the number of those
   // without a value per flag ("n.d." / "n.q.")
-  function valuesOf(d, part, id) {
+  function valuesOf(d, part, id, signal) {
     var e = part.c[id];
     if (!e) return null;
     var out = [], noValue = {};
+    // The signals (4.6, "Signal"): all measured; zeros (at most the blank) are left out and counted
+    if (signal) {
+      if (!e.s) return null;
+      e.s.forEach(function (y, j) {
+        if (!finite(y) || y <= 0) { noValue["zero"] = (noValue["zero"] || 0) + 1; return; }
+        out.push({ y: y, kind: "Measured", name: part.info.name[j], cls: part.info.cls[j], batch: part.info.batch[j], inj: part.info.inj[j] });
+      });
+      return { v: out, noValue: noValue };
+    }
     e.y.forEach(function (y, j) {
       var kind = d.kinds[e.kind[j]] || "";
       if (/no value/.test(kind)) { var f = kind.replace(" (no value)", ""); noValue[f] = (noValue[f] || 0) + 1; return; }
@@ -328,6 +337,7 @@
     return { v: out, noValue: noValue };
   }
   function noValueNote(nv) {
+    if (nv.zero) return "Not shown: " + nv.zero + " QC" + (nv.zero > 1 ? "s" : "") + " with a signal of 0 (at most the blank)";
     var k = Object.keys(nv);
     return k.length ? "Not shown (no value): " + k.map(function (f) { return f + " " + nv[f]; }).join(", ") : "";
   }
@@ -419,6 +429,9 @@
     document.head.appendChild(s);
   }
   var QC_MODES = { control: "Control chart", batch: "Per batch" };
+  // What 4.7 shows (key S): the signal the concentrations were calculated from (first), or the
+  // concentrations
+  var QC_QTY = { signal: "Signal", conc: "Concentration" };
   var QC_SYMBOLS = ["circle", "square", "diamond", "triangle-up", "triangle-down", "cross", "star", "hexagon"];
 
   function mean(a) { return a.reduce(function (s, x) { return s + x; }, 0) / a.length; }
@@ -434,6 +447,20 @@
     el.innerHTML = "";
     var bar = document.createElement("div"), chips = document.createElement("div"), plot = document.createElement("div");
     bar.className = "qf-bar"; chips.className = "qf-chips"; plot.className = "qf-plot";
+    // What is shown (key S): the signal the concentrations were calculated from (first), or the
+    // concentrations
+    var qty = document.createElement("div");
+    qty.className = "qf-group qf-qty";
+    Object.keys(QC_QTY).forEach(function (k) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = QC_QTY[k];
+      b.dataset.key = k;
+      b.title = "Signal or concentration (key S)";
+      b.addEventListener("click", function () { el._qfQty = k; if (el._qfRedraw) el._qfRedraw(); });
+      qty.appendChild(b);
+    });
+    bar.appendChild(qty);
     var grp = document.createElement("div");
     grp.className = "qf-group";
     Object.keys(QC_MODES).forEach(function (k) {
@@ -453,8 +480,16 @@
     el.appendChild(bar);
     el.appendChild(chips);
     el.appendChild(plot);
-    el._qfParts = { bar: bar, chips: chips, plot: plot, buttons: grp.querySelectorAll("button") };
+    el._qfParts = { bar: bar, chips: chips, plot: plot, buttons: grp.querySelectorAll("button"),
+                    qtyGroup: qty, qtyButtons: qty.querySelectorAll("button") };
     return el._qfParts;
+  }
+  // Switch between signal and concentration (key S)
+  function qcToggleQty(el) {
+    if (!el || !el._qfRedraw) return false;
+    el._qfQty = (el._qfQty || "signal") === "signal" ? "conc" : "signal";
+    el._qfRedraw();
+    return true;
   }
   // Switch the mode of figure 4.6 (`d`: +1 / -1; the arrow keys ← / → when it is active)
   function qcStepMode(el, d) {
@@ -466,33 +501,49 @@
   function qcMessage(el, text) {
     var p = qcParts(el);
     p.bar.style.visibility = "hidden";
+    p.chips.innerHTML = "";   // No filter note without a figure
     el._qfRedraw = null;
     message(p.plot, text, 440);
   }
 
   function qcConc(el, d, id) {
     if (!d || id === null || id === undefined) { qcMessage(el, "Select a chemical in table 4.1 (left) to show it here."); return; }
-    var v = [], nv = {}, any = false;
-    (d.qc || []).forEach(function (part) {
-      var r = valuesOf(d, part, id);
-      if (!r) return;
-      any = true;
-      v = v.concat(r.v);
-      Object.keys(r.noValue).forEach(function (f) { nv[f] = (nv[f] || 0) + r.noValue[f]; });
-    });
-    if (!any) {
+    // The values of the QCs of all batches: the signals or the concentrations
+    var collect = function (signal) {
+      var v = [], nv = {}, any = false;
+      (d.qc || []).forEach(function (part) {
+        var r = valuesOf(d, part, id, signal);
+        if (!r) return;
+        any = true;
+        v = v.concat(r.v);
+        Object.keys(r.noValue).forEach(function (f) { nv[f] = (nv[f] || 0) + r.noValue[f]; });
+      });
+      return { v: v, nv: nv, any: any };
+    };
+    var conc = collect(false);
+    if (!conc.any) {
       qcMessage(el, d.samples && !d.samples.c[id] ? "No concentrations: the chemical was not calibrated." : "No QC samples");
       return;
     }
-    if (!v.length && !Object.keys(nv).length) { qcMessage(el, "No concentrations in the QC samples"); return; }
+    var sig = collect(true);   // Not there for data processed by older versions
     var p = qcParts(el);
     p.bar.style.visibility = "";
-    el._qfRedraw = function () { qcDraw(el, d, id, v, nv); };
+    p.qtyGroup.style.display = sig.any ? "" : "none";
+    el._qfRedraw = function () {
+      var q = sig.any && (el._qfQty || "signal") === "signal" ? "signal" : "conc";
+      var r = q === "signal" ? sig : conc;
+      p.qtyButtons.forEach(function (b) { b.classList.toggle("on", b.dataset.key === q); });
+      if (!r.v.length && !Object.keys(r.nv).length) {
+        message(p.plot, q === "signal" ? "No signals in the QC samples" : "No concentrations in the QC samples", 440);
+        return;
+      }
+      qcDraw(el, d, id, r.v, r.nv, q);
+    };
     whenPlotly(el._qfRedraw);
   }
 
-  function qcDraw(el, d, id, v, nv) {
-    var p = qcParts(el), mode = el._qfMode || "control";
+  function qcDraw(el, d, id, v, nv, q) {
+    var p = qcParts(el), mode = el._qfMode || "control", signal = q === "signal";
     p.buttons.forEach(function (b) { b.classList.toggle("on", b.dataset.key === mode); });
     v = v.slice().sort(function (a, b) { return a.inj - b.inj; });
     var groups = Object.keys(d.qc_colors).filter(function (g) { return v.some(function (x) { return x.cls === g; }); });
@@ -562,12 +613,12 @@
         "of the control chart (±" + limit + "%) is for reading only.";
 
     var note = noValueNote(nv);
-    var title = { text: esc(nameOf(d, id)) + (note ? "<br><sup>" + esc(note) + "</sup>" : ""), x: 0.02 };
+    var title = { text: esc(nameOf(d, id)) + (signal ? " <span style='color:#667085;font-size:0.8em'>(signal)</span>" : "") + (note ? "<br><sup>" + esc(note) + "</sup>" : ""), x: 0.02 };
     var sym = {};
     groups.forEach(function (g, i) { sym[g] = QC_SYMBOLS[i % QC_SYMBOLS.length]; });
     var hover = function (x) {
       return "<b>" + esc(x.name) + "</b><br>" + esc(x.cls) + " · batch " + esc(x.batch) + " · inj. " + x.inj +
-             "<br>conc. " + num(x.y) + " (" + esc(x.kind) + ")" +
+             (signal ? "<br>signal " + num(x.y) : "<br>conc. " + num(x.y) + " (" + esc(x.kind) + ")") +
              (finite(x.dev) ? "<br>" + (x.dev >= 0 ? "+" : "") + x.dev.toFixed(1) + "% from the " + esc(x.cls) + " median" : "");
     };
     var pointTraces = function (xOf, yOf, keep) {
@@ -687,7 +738,7 @@
       markLog(p.plot);
       layout.xaxis = { tickvals: batches.map(function (b, i) { return i + 1; }), ticktext: batches.map(function (b) { return "Batch " + esc(b); }),
                        range: [0.5, batches.length + 0.5], zeroline: false };
-      layout.yaxis = { title: { text: d.y_title }, type: log ? "log" : "linear", exponentformat: "E" };
+      layout.yaxis = { title: { text: signal ? (d.signal_title || "Signal") : d.y_title }, type: log ? "log" : "linear", exponentformat: "E" };
       layout.shapes = shapes;
       layout.annotations = ann;
       layout.margin.t = 70;
@@ -701,8 +752,8 @@
   function nameOf(d, id) { return (d.names && d.names[id]) || id; }
 
   global.QuantaFigs = {
-    isDistribution: isDistribution, isRsdTable: isRsdTable, concByClass: concByClass, qcConc: qcConc, message: message,
-    qcStepMode: qcStepMode, blankFigure: blankFigure, rsdCompare: rsdCompare,
+    isDistribution: isDistribution, isRsdTable: isRsdTable, concByClass: concByClass, qcConc: qcConc, message: message, qcMessage: qcMessage,
+    qcStepMode: qcStepMode, qcToggleQty: qcToggleQty, blankFigure: blankFigure, rsdCompare: rsdCompare,
     // Fit a plot to its width (4.6 has its plot inside)
     redraw: function (el) {
       var p = el && (el.querySelector(".qf-plot") || el);

@@ -47,3 +47,18 @@ Features built in to try the app on:
 - **Missing values:** zeros for low signals.
 
 Note: the QCs are modelled on QCs that weren't spiked with the environmental chemicals, so many of them are near or below the detection limit in the QCs. Their QC RSD% is therefore high. That's why the example parameters apply the QC RSD% filter to non-targeted features only.
+
+## Large dataset (download)
+
+A much larger synthetic dataset, to try QuaNTA on data the size of a non-targeted study:
+**[QuaNTA_synthetic_50250x915.zip](https://github.com/SciLifeLabMetabolomicsExposomics/QuaNTA/releases/download/example-data-v1/QuaNTA_synthetic_50250x915.zip)**
+(118 MB; 249 MB unzipped). It is too large for the repository, so it is a file of the GitHub release
+`example-data-v1`. Upload the zip file in the app as it is.
+
+- **50,250 features:** the 196 targeted compounds, 22 internal standards, the volumetric IS and the
+  3 features marked for removal of the dataset above, and 50,028 synthetic non-targeted features.
+- **915 injections in 9 batches:** 378 study samples, 378 calibration standards, 90 QCs and 69
+  blanks.
+
+Processing and exporting it takes several minutes. Its table of peak areas has about 42 million
+values (after blank subtraction): exported as Excel, that needs about 3.6 GB of memory.

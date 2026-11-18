@@ -53,6 +53,8 @@
     ".qcv-chip.kept { background: #FFF1D6; color: #8A5300; font-weight: 600; }",
     ".qcv-params { min-height: 1.6em; }",
     ".qcv-notes { margin-top: 2px; }",
+    // A key shown next to a control, as the app's `.q-key-hint` (e.g. [N] on page 4)
+    ".qcv-key { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid #D0D5DD; border-bottom-width: 2px; border-radius: 4px; font-size: .75em; font-weight: 600; color: #667085; line-height: 1.4; vertical-align: 1px; }",
     ".qcv-msg { color: #667085; padding: 40px 0; text-align: center; font-size: 1.1rem; }"
   ].join("\n");
   function addStyle() {
@@ -166,7 +168,7 @@
   function QuantaCalViewer(el, data, opts) {
     opts = opts || {};
     addStyle();
-    var state = { i: 0, mode: opts.mode || "inspect", log: !!data.log_scale, view: null, viewPref: null };
+    var state = { i: 0, mode: opts.mode || "inspect", log: !!data.log_scale, view: null, viewPref: data.default_view || null };
     el.innerHTML = "";
     el.classList.add("qcv");
     var bar = document.createElement("div");
@@ -193,8 +195,8 @@
     });
     var viewLabel = document.createElement("label");
     viewLabel.className = "qcv-view";
-    viewLabel.innerHTML = "Curve <select></select>";
-    viewLabel.title = "The curve shown (key B: the next one)";
+    viewLabel.innerHTML = "Curve <select></select>" + (opts.keys ? ' <span class="qcv-key" title="Key G: the other curve">G</span>' : "");
+    viewLabel.title = "The curve shown (key G: the other one)";
     var viewSel = viewLabel.querySelector("select");
     // The curve chosen by the user is kept for the next compounds that have it; otherwise each
     // compound starts with its first curve (in the app: the one used for its concentrations)
@@ -249,7 +251,7 @@
     // while typing in a field (but up / down in the search box go through its matches), nor when
     // the viewer is hidden (e.g. on another page of the app)
     if (opts.keys && global.QuantaActive) {
-      el._qB = function () { return api.nextView(); };   // Key B (QuantaActive of the report)
+      el._qG = function () { return api.nextView(); };   // Key G (QuantaActive of the report)
       global.QuantaActive.register(el, function (key) {
         if (key === "ArrowLeft" || key === "ArrowRight") {
           api.setMode(key === "ArrowLeft" ? "inspect" : "final");
@@ -268,8 +270,8 @@
         // Another figure of the page has the keys (the app: clicked, outlined `.q-key-area`, e.g. 4.6)
         var other = document.querySelector(".q-key-area.q-active");
         if (other && !other.contains(el) && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
-        // B: the other curve of the compound (its batch's own, not valid, and the global one)
-        if ((e.key === "b" || e.key === "B") && !typing) {
+        // G: the other curve of the compound (the global one, and its batch's own, not valid)
+        if ((e.key === "g" || e.key === "G") && !typing) {
           if (api.nextView()) e.preventDefault();
           return;
         }
@@ -563,7 +565,7 @@
         if (k >= 0 && k < sel.options.length) api.show(+sel.options[k].value);
       },
       setMode: function (m) { if (MODES[m] && m !== state.mode) { state.mode = m; draw(); } },
-      // The next curve of the compound (key B), e.g. from the global curve to the batch's own one
+      // The next curve of the compound (key G), e.g. from the global curve to the batch's own one
       // that was not valid, and back; `false` when the compound has a single curve
       nextView: function () {
         var n = viewSel.options.length;
@@ -574,9 +576,11 @@
         return true;
       },
       setLog: function (on) { state.log = !!on; draw(); },
-      // New data (e.g. another batch or normalization method): the compound, mode and axes stay
+      // New data (e.g. another batch or normalization method): the compound, mode and axes stay;
+      // the curve is the data's `default_view` when it has one (the app: the chosen batch's)
       setData: function (d) {
         data = d;
+        if (d.default_view) state.viewPref = d.default_view;
         if (sel) fill(search.value.trim().toLowerCase());
         api.show(state.i);
       },

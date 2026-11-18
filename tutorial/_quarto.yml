@@ -85,23 +85,25 @@ website:
                 href: normalization-and-blanks.qmd#blanks-compared-to-samples
       - section: "4 Calibration and quantification"
         contents:
-          - section: "Calibration limits (4.1–4.3)"
+          - section: "Calibration limits (4.1–4.4)"
             href: calibration-limits.qmd
             contents:
-              - text: "4.1 Calibration curve samples"
-                href: calibration-limits.qmd#calibration-curve-samples
-              - text: "4.2 Calibration curve limits"
+              - text: "4.1 Calibration curve limits"
                 href: calibration-limits.qmd#calibration-curve-limits
-              - text: "4.3 Chemicals with concentrations"
+              - text: "4.2 Calibration per batch"
+                href: calibration-limits.qmd#calibration-per-batch
+              - text: "4.3 Calibration curve samples"
+                href: calibration-limits.qmd#calibration-curve-samples
+              - text: "4.4 Chemicals with concentrations"
                 href: calibration-limits.qmd#chemicals-with-concentrations
-          - text: "4.4 Calibration curves per chemical"
+          - text: "4.5 Calibration curves per chemical"
             href: calibration-curves.qmd
-          - section: "Concentrations (4.5 and 4.6)"
+          - section: "Concentrations (4.6 and 4.7)"
             href: concentrations.qmd
             contents:
-              - text: "4.5 Concentration per class"
+              - text: "4.6 Concentration per class"
                 href: concentrations.qmd#concentration-per-class
-              - text: "4.6 QC samples"
+              - text: "4.7 QC samples"
                 href: concentrations.qmd#qc-samples
       - section: "5 Report export"
         contents:

@@ -77,6 +77,29 @@
     e.preventDefault();
   });
 
+  // ---- Key B on page 4: the next batch (after the last: the first again) ----
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "b" && e.key !== "B") return;
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    var t = e.target;
+    if (t && t.matches && t.matches("input:not([type=radio]):not([type=checkbox]), textarea, [contenteditable]")) return;
+    var sel = document.getElementById("calib_batch");
+    if (!sel || sel.offsetParent === null || sel.options.length < 2) return;   // Only when page 4 is shown
+    e.preventDefault();
+    window.quantaStepSelect(sel, sel.selectedIndex >= sel.options.length - 1 ? -sel.selectedIndex : 1);
+  });
+
+  // ---- Key S on page 4: figure 4.6 between signal and concentration ----
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "s" && e.key !== "S") return;
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    var t = e.target;
+    if (t && t.matches && t.matches("input:not([type=radio]):not([type=checkbox]), textarea, select, [contenteditable]")) return;
+    var el = document.getElementById("qc_conc_plot");
+    if (!el || el.offsetParent === null || !window.QuantaFigs) return;   // Only when page 4 is shown
+    if (window.QuantaFigs.qcToggleQty(el)) e.preventDefault();
+  });
+
   // ---- 2. Resizable tables ----
   // A bar under the scrolling body of a table (DataTables with `scrollY`), or under any other
   // scrolling box of class `q-resizable` (e.g. table 3.2): dragging it sets the height of the

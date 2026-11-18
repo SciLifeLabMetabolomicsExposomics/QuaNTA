@@ -4,18 +4,26 @@
 # `raw`) or `--norm_method=auto` (default: the method with the lowest median QC RSD%, determined
 # by `process.R`). Per method:
 # 1. Normalized data of overall features including non-targets
-# 2. Blank subtracted normalized data of overall features (never with the blanks)
+# 2. Blank subtracted normalized data of overall features (the blanks, when kept, not subtracted)
 # 3. Concentration data of targeted features (blank subtracted)
 # 4. What happened to each feature and sample during the processing (from its event log)
 #
 # The injections in the tables (1-3) and their order (columns):
-#   --keep_qc, --keep_blank, --keep_cal   Keep the QCs / blanks / calibration standards (TRUE);
-#                                         the study samples are always kept
+#   --keep_qc, --keep_blank, --keep_cal, --keep_samples   Keep the QCs / blanks / calibration
+#                     standards / study samples (TRUE)
 #   --group_by_type   Group the columns by injection type (TRUE), in the order of --group_order
+#   --split_samples   With --group_by_type, the study samples as a group per class (TRUE), in the
+#                     order of --group_order; otherwise all study samples together ("Samples")
 #   --group_by_batch  Group the columns by batch first (FALSE), then by injection order
+#   --group_by_class  Within each injection type, group the columns by class (FALSE; e.g. the QC
+#                     groups), then by injection order
 #   --group_order     The injection types in their order, as a JSON array (default
 #                     ["QC","Samples","Blank","CalCurve"]): "QC", "Blank", "CalCurve" and the study
 #                     sample groups as "grp:<Class>" ("Samples": all study groups not named)
+#   --export_norm     With blank subtraction, also the normalized peak areas without it (FALSE)
+#   --export_failed   Concentration tables: also the compounds with a failed calibration curve and
+#                     those with no study sample at or above the LLOQ, with the signals of their
+#                     calibration points only (no concentrations) (FALSE)
 #
 # Output file names are based on the input file name and normalization method.
 # 1. (base name).(normalized method).norm.xlsx
@@ -68,8 +76,10 @@ FILE$o <- local({
     file.path(user_inputs$table_dir, paste0(b, ".", x, ".", p, ".xlsx"))
   }
   # One table of peak areas: the blank-subtracted one when the data was blank-subtracted (processing
-  # option `--blank_subtract`), otherwise the normalized one
-  peak_tbl <- if (isFALSE(to_report$params$blank_subtract)) "norm" else "norm_blk"
+  # option `--blank_subtract`), otherwise the normalized one. With blank subtraction,
+  # `--export_norm=TRUE` adds the normalized one (not blank-subtracted)
+  export_norm <- any(toupper(sub("^--export_norm=", "", grep("^--export_norm=", commandArgs(TRUE), value = TRUE))) == "TRUE")
+  peak_tbl <- if (isFALSE(to_report$params$blank_subtract)) "norm" else c(if (export_norm) "norm", "norm_blk")
   out_data <- if (IS_TARGET_MODE) {
     c(peak_tbl, "conc", "history")
   } else {
@@ -126,14 +136,27 @@ layout <- msdial$export_layout(
   by_type = arg_lgl("group_by_type", TRUE),
   by_batch = arg_lgl("group_by_batch", FALSE),
   order = jsonlite::fromJSON(arg("group_order", '["QC","Samples","Blank","CalCurve"]')),
-  keep = c(QC = arg_lgl("keep_qc", TRUE), Blank = arg_lgl("keep_blank", TRUE), CalCurve = arg_lgl("keep_cal", TRUE))
+  keep = c(QC = arg_lgl("keep_qc", TRUE), Blank = arg_lgl("keep_blank", TRUE), CalCurve = arg_lgl("keep_cal", TRUE),
+           Samples = arg_lgl("keep_samples", TRUE)),
+  split_samples = arg_lgl("split_samples", TRUE),
+  by_class = arg_lgl("group_by_class", FALSE)
 )
-cat("Injections in the tables: study samples",
-    if (layout$keep[["QC"]]) ", QCs", if (layout$keep[["Blank"]]) ", blanks (not in the blank-subtracted tables)",
-    if (layout$keep[["CalCurve"]]) ", calibration standards", ".\n", sep = "")
+kept <- c(Samples = "study samples", QC = "QCs", Blank = "blanks (in the blank-subtracted tables: not blank-subtracted)",
+          CalCurve = "calibration standards")
+kept <- kept[names(kept) %in% names(layout$keep)[layout$keep]]
+# `--export_failed`: the compounds with a failed curve or without a quantified study sample, with
+# the signals of their calibration points only
+EXPORT_FAILED <- arg_lgl("export_failed", FALSE)
+if (EXPORT_FAILED && IS_TARGET_MODE) {
+  cat("Concentration tables: also the compounds with a failed calibration curve or no quantified study sample",
+      if (layout$keep[["CalCurve"]]) "(the signals of their calibration points, no concentrations).\n" else
+        "(no concentrations; their calibration points need the calibration standards included).\n")
+}
+cat("Injections in the tables: ", if (length(kept)) paste(kept, collapse = ", ") else "none", ".\n", sep = "")
 cat("Column order: ",
     if (layout$by_batch) "by batch, then ",
-    if (layout$by_type) "by injection type, then ",
+    if (layout$by_type) paste0("by injection type", if (layout$split_samples) " (study samples per class)", ", then "),
+    if (layout$by_class) "by class, then ",
     "by injection order.\n", sep = "")
 
 # Internal standards (IS) and volumetric internal standards (vIS) are not exported
@@ -146,9 +169,10 @@ export_method <- function(mat_id) {
   is_closest_norm <- mat_id == "closest_norm"
   cat("\nExporting", mat_id, "data.\n")
 
-  # Normalized data (only without blank subtraction: otherwise the blank-subtracted table below)
+  # Normalized data (without blank subtraction; with it only with `--export_norm=TRUE`)
   if (!is.null(FILE$o[["norm"]])) {
-  se <- msdial$read_full_normalized(user_inputs, to_report, mat_id, keep = not_std)
+  # Per batch (a sheet each, after the "Full" sheet of all batches)
+  se <- msdial$split_by_batch(msdial$read_full_normalized(user_inputs, to_report, mat_id, keep = not_std))
   msdial$export_data_with_feature_table_xlsx(
     sumexp_lst = se,
     mat_id = mat_id,
@@ -163,9 +187,11 @@ export_method <- function(mat_id) {
   invisible(gc(FALSE))
   }
 
-  # Blank subtracted normalized data (the blanks are left out); only with blank subtraction
+  # Blank subtracted normalized data; only with blank subtraction. The blanks (when kept) with their
+  # normalized values, not blank-subtracted
   if (!is.null(FILE$o[["norm_blk"]])) msdial$export_data_with_feature_table_xlsx(
-    sumexp_lst = msdial$split_by_batch(msdial$read_full_blank_subtracted(user_inputs, to_report, blk_mat_id, keep = not_std)),
+    sumexp_lst = msdial$split_by_batch(msdial$read_full_blank_subtracted(
+      user_inputs, to_report, blk_mat_id, keep = not_std, with_blanks = layout$keep[["Blank"]])),
     mat_id = blk_mat_id,
     org_feature_table = org_feature_table,
     out_file = FILE$o[["norm_blk"]][[ii]],
@@ -186,7 +212,8 @@ export_method <- function(mat_id) {
     # Concentration has been computed on the blank subtracted data
     lst_proc <- lapply(proc_blk, \(ea) ea[["concn"]])
     # No chemical exported in any batch (e.g. no study sample above any LLOQ): no concentration table
-    if (!any(unlist(lapply(lst_proc, \(se) SumExp::row_df(se)$to_export)) %in% TRUE)) {
+    # (with `--export_failed`, the table of their calibration points is written)
+    if (!any(unlist(lapply(lst_proc, \(se) SumExp::row_df(se)$to_export)) %in% TRUE) && !EXPORT_FAILED) {
       cat("No chemical is exported (none has a study sample above its LLOQ; see the processing history):",
           "the concentration table is not written.\n")
       with_conc <- FALSE
@@ -201,7 +228,10 @@ export_method <- function(mat_id) {
       # Blank samples, quantified without blank subtraction (NULL for a batch without blanks, and
       # for data processed by older versions)
       blank_lst = lapply(proc_blk, \(ea) ea[["blank"]]),
-      layout = layout
+      layout = layout,
+      # The compounds with a failed curve or no quantified study sample: their calibration points
+      include_failed = EXPORT_FAILED,
+      signal_mat = blk_mat_id
     )
     cat(glue::glue("{mat_id} concentration data has been saved to {basename(FILE$o[['conc']][[ii]])}."), "\n")
   }

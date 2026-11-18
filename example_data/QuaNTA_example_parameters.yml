@@ -11,7 +11,6 @@ processing:
   set_minimum_number: no
   min_cal_points: 3
   average_cal_reps: no
-  keep_all_calcurves: no
   r2_filter: no
   min_r2: 0.99
   linear_only: no

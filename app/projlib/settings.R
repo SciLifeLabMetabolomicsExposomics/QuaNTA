@@ -20,7 +20,6 @@ processing_options <- tibble::tribble(
   "set_minimum_number",  "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
   "min_cal_points",      "proc",        "numeric",  list(3),                         list(NULL),                                           3,    NA,   TRUE,
   "average_cal_reps",    "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
-  "keep_all_calcurves",  "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
   "r2_filter",           "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
   "min_r2",              "proc",        "numeric",  list(0.99),                      list(NULL),                                           0,    1,    FALSE,
   "linear_only",         "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,

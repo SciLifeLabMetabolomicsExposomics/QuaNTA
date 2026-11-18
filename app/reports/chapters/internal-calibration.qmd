@@ -9,7 +9,7 @@ in_log <- isTRUE(tr$params$log_calibration)
 npts <- function(...) lapply(list(...), I)
 model_label <- function(nm) if (is.null(nm) || is.na(nm)) NULL else sub("_div_", "/", nm)
 
-# The limits, model and notes of each compound and curve, for table 4.1 (the viewer in 4.4 has its
+# The limits, model and notes of each compound and curve, for table 4.1 (the viewer in 4.5 has its
 # own data, `show$calib_viewer_data()`)
 global_view <- function(fid) {
   i <- match(fid, gcal$limits$feature_id)
@@ -63,14 +63,15 @@ The LOD and LLOQ are the lowest calibration levels whose mean signal exceeds 3 a
 (Cal0) signal, the usual signal-to-noise criteria [@ichq2r2]; with the RSD% option, the replicates of
 the LLOQ level must also have an RSD% of at most 20% [@ichm10]. The curves are linear or quadratic, with
 the weighting 1, 1/x or 1/x² [@almeida2002].
-`r uloq_txt <- if (in_log) "The ULOQ is the top of the linear range of the log–log curve found by SCALiR (slope 1; the points farthest from the line are left out until the mean squared residual is at most 0.01, with at least 3 points) [@ponce2024], but at least the minimum number of levels." else if (is.null(tr$params$linear_range_tol)) "The ULOQ is the highest calibration level of a linear curve; a quadratic curve has no ULOQ (empty)." else paste0("The ULOQ is the top of the linear range of a linear curve: while the back-calculated mean signal of the top level deviates more than ", tr$params$linear_range_tol, "% from its nominal concentration, that level is left out and the curve refitted, keeping at least ", tr$params$min_cal_points, " levels. A quadratic curve has no ULOQ (empty)."); paste(uloq_txt, if (is.null(tr$params$linear_range_tol)) "Concentrations above the ULOQ are extrapolated." else if (isTRUE(tr$params$enforce_linear_range)) "The curves were cut at the ULOQ and refitted (the levels above it are named in the notes); higher concentrations are extrapolated." else "The curves were not cut at the ULOQ: concentrations between the ULOQ and the top of the curve are above the linear range (\"> ULOQ, within curve\"), higher ones are extrapolated. The levels above the ULOQ are named in the notes.")`
+`r uloq_txt <- if (in_log) "The ULOQ is the top of the linear range of the log–log curve found by SCALiR (slope 1; the points farthest from the line are left out until the mean squared residual is at most 0.01, with at least 3 points) [@ponce2024]." else if (is.null(tr$params$linear_range_tol)) "The ULOQ is the highest calibration level of a linear curve; a quadratic curve has no ULOQ (empty)." else paste0("The ULOQ is the top of the linear range of a linear curve: while the back-calculated mean signal of the top level deviates more than ", tr$params$linear_range_tol, "% from its nominal concentration, that level is left out and the curve refitted, keeping at least 3 levels. A quadratic curve has no ULOQ (empty)."); paste(uloq_txt, if (is.null(tr$params$linear_range_tol)) "Concentrations above the ULOQ are extrapolated." else if (isTRUE(tr$params$enforce_linear_range)) "The curves were cut at the ULOQ and refitted (the levels above it are named in the notes); higher concentrations are extrapolated." else "The curves were not cut at the ULOQ: concentrations between the ULOQ and the top of the curve are above the linear range (\"> ULOQ, within curve\"), higher ones are extrapolated. The levels above the ULOQ are named in the notes.")`
 
 One row per compound and curve. *IS* is the internal standard assigned to the compound (closest in
 retention time), used by the Closest RT normalization. *Notes* shows an icon per kind of note (hover
-it for the full note): why a curve is not valid (red rows), why a curve was kept although it is not
-valid (orange rows; option "Keep all calibration curves"`r if (isTRUE(tr$params$keep_all_calcurves)) ", selected for this report" else ", not selected for this report"`),
+it for the full note): why a curve is not valid (red rows; no concentrations),
 why a batch uses the global curve, the levels above the ULOQ, and when no sample reaches the LLOQ.
-The exported tables have the notes as text.
+The exported tables have the notes as text; with the export option "Keep failed and with no
+quantified study samples" they also have the calibration points of these compounds (signals, no
+concentrations).
 
 ```{r}
 is_of <- SumExp::row_df(lst[[1]]$concn) |> tibble::as_tibble(rownames = "feature_id") |>
@@ -143,7 +144,29 @@ ggplot(best, aes(n, model, fill = curve)) + geom_col(position = "dodge") +
 
 :::
 
-## 4.2 Calibration curve samples
+## 4.2 Calibration per batch
+
+Per compound, the calibration of every batch, one dot each with the batch in it (hover a dot for
+the details): green, the batch's own curve; a blue globe, the global curve was used (the batch curve
+was not valid); a red globe, neither the batch curve nor the global curve was valid (no
+concentrations); grey, removed before calibration.
+
+```{r}
+#| label: calib-per-batch
+bs_tbl <- show$page4_batch_status(lst, tr, MAT)
+htmltools::tagList(
+  htmltools::tags$style(htmltools::HTML(paste(
+    ".q-bdot{display:inline-flex;align-items:center;justify-content:center;gap:1px;min-width:18px;height:18px;padding:0 4px;margin:1px 2px 1px 0;border-radius:9px;font-size:11px;font-weight:600;line-height:1;box-sizing:border-box;cursor:help;vertical-align:middle}",
+    ".q-bdot-ok{background:#12B76A;color:#fff}",
+    ".q-bdot-global{background:#E0F0FA;color:#0072B2;border:1px solid #0072B2}",
+    ".q-bdot-failed{background:#FDECEA;color:#B42318;border:1px solid #B42318}",
+    ".q-bdot-kept{background:#E69F00;color:#1A1A1A}",
+    ".q-bdot-removed,.q-bdot-none{background:#D9D9D9;color:#555}"))),
+  dt(bs_tbl[, c("Chemical Name", "Calibration per batch")], escape = "Chemical Name")
+)
+```
+
+## 4.3 Calibration curve samples
 
 ```{r}
 # The same table as 2.2 (and the app's 2.2)
@@ -152,7 +175,7 @@ show$calib_samples_per_batch(raw, unit) |>
   kableExtra::kable_styling(full_width = FALSE, position = "left")
 ```
 
-## 4.3 Removal of chemicals with no measurement samples
+## 4.4 Removal of chemicals with no measurement samples
 
 The number of chemicals per batch with a valid calibration curve and concentrations in the samples
 (as in the app): chemicals without any study sample at or above the LLOQ are not quantified or
@@ -169,10 +192,10 @@ tibble(Batch = batch_label(batch_ids),
   kableExtra::kable_styling(full_width = FALSE, position = "left")
 ```
 
-## 4.4 Calibration curves per chemical
+## 4.5 Calibration curves per chemical
 
 The calibration curve of each targeted compound, also those without a valid calibration or removed
-by a filter, as in the app (4.4), in two modes: **Calibration inspection** shows all calibration
+by a filter, as in the app (4.5), in two modes: **Calibration inspection** shows all calibration
 points coloured by their role (within the calibration range, above the ULOQ, at the LOD, Cal0, out of
 range), one symbol per batch; **Final calibration model** shows the fitted curve, the calibration
 points it was fitted on, and the QCs (blue; the QC group in the hover text) and study samples (by
@@ -215,7 +238,7 @@ cv_data <- show$calib_viewer_data(
 show$calib_viewer_html("calcurve-viewer", cv_data, script = file.path(app_root, "www", "calcurve_viewer.js"))
 ```
 
-## 4.5 Concentration
+## 4.6 Concentration
 
 The concentrations of each compound in all samples of all batches, per class: a box per class and
 the samples as points. `r if (LLOX_IMPUTED) "Points of values replaced by the LOD/LLOQ rules are coloured as in the exported tables (red: not detected, LLOQ/4; yellow: detected but not quantified, LLOQ/2; blue: set to the LLOQ)." else paste0("Values below the LOD (n.d.) and the LLOQ (n.q.) have no value and are not shown (", sum(conc_long$conc_flag %in% 'n.d.' & is.na(conc_long$conc)), " n.d. and ", sum(conc_long$conc_flag %in% 'n.q.' & is.na(conc_long$conc)), " n.q. values of samples and QCs); blue points were set to the LLOQ.")`
@@ -245,7 +268,7 @@ cat('<div class="viewer" id="concv">',
     ';</script>', sep = "")
 ```
 
-### 4.5.1 Average and median per compound
+### 4.6.1 Average and median per compound
 
 Statistics of the study samples only (no QCs), from the measured values at or above the LLOQ: values
 `r if (LLOX_IMPUTED) "replaced by the LOD/LLOQ rules" else "below the LOD / LLOQ (n.d. / n.q.) or set to the LLOQ"` are left out, as in the exported tables. *All batches* pools the measured
@@ -273,10 +296,14 @@ if (nrow(stats_tbl) == 0) note("No measured concentrations at or above the LLOQ 
 
 
 
-## 4.6 QC samples
+## 4.7 QC samples
 
-One compound at a time in the QC samples of all batches (each batch with its own calibration), as in
-the app, in two views:
+One compound at a time in the QC samples of all batches, as in the app, as its **signal** (first) or
+its **concentration** (the buttons, or the key S after a click in the figure). The signal is what the
+concentrations are calculated from: normalized (`r method_label[MAT]`) and blank-subtracted (per
+the settings), without the calibration of each batch, so it shows the measurement and the
+normalization; QCs with a signal of 0 are left out and counted under the title. The concentrations
+include the calibration of each batch (each batch with its own curve). Both in two views:
 
 - **Control chart**: the % deviation of each QC from the median of its QC group along the injection
   order, green within the limit of the QC RSD% filter for targeted compounds (30% if that filter is

@@ -79,7 +79,7 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   /* The viewer that answers the arrow keys (clicked last): a thin outline */
   .q-keys.q-active { outline: 1.5px solid #1A0DF2; outline-offset: 3px; border-radius: 8px; }
   .viewer .chip { display: inline-block; background: #EEF4FE; border-radius: 4px; padding: 1px 7px; margin: 0 6px 3px 0; }
-  .q-eye { display: inline-flex; vertical-align: middle; margin-left: 8px; padding: 2px 4px; border-radius: 4px; color: #667085; cursor: pointer; }
+  .q-eye { display: inline-flex; vertical-align: middle; margin-left: 2px; padding: 2px 3px; border-radius: 4px; color: #667085; cursor: pointer; }
   .q-eye:hover { color: #0D1B3E; background: #EEF0FE; }
   .q-collapsed .q-eye { color: #B54708; background: #FEF0C7; }
   .q-eye-hidden { display: none !important; }
@@ -148,7 +148,7 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
       if (Object.keys(upd).length) Plotly.relayout(el, upd);
     });
   }, 1000);
-  // The arrow keys of the viewers (3.5, 3.8, 3.11, 4.4, 4.5, 4.6): only the viewer clicked last
+  // The arrow keys of the viewers (3.5, 3.8, 3.11, 4.5, 4.6, 4.7): only the viewer clicked last
   // answers them (outlined, `.q-keys.q-active`), each with its own keys (registered by the viewer:
   // `QuantaActive.register(element, function (key) { ...; return handled; })`). A click outside
   // all viewers makes none active. Left / right in a text field move its cursor.
@@ -167,8 +167,10 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
       if (!active || !active._qKeys || active.offsetParent === null) return;
       if (e.ctrlKey || e.altKey || e.metaKey) return;
       var t = e.target, text = t && t.matches && t.matches('input[type=search], input[type=text], textarea');
-      // B: the other curve of the compound in 4.4 (only that viewer has `_qB`)
-      if ((e.key === 'b' || e.key === 'B') && !text) { if (active._qB && active._qB()) e.preventDefault(); return; }
+      // G: the other curve of the compound in 4.5 (only that viewer has `_qG`)
+      if ((e.key === 'g' || e.key === 'G') && !text) { if (active._qG && active._qG()) e.preventDefault(); return; }
+      // S: signal or concentration in 4.7 (only that viewer has `_qS`)
+      if ((e.key === 's' || e.key === 'S') && !text) { if (active._qS && active._qS()) e.preventDefault(); return; }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
       if (text && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
       if (active._qKeys(e.key)) e.preventDefault();
@@ -508,23 +510,28 @@ whole experiment** (by group); batches appear where they matter for quality cont
 
 ::: {.panel-tabset}
 
-### Per batch
-
 ```{r}
-norm_cd <- SumExp::col_df(tr[["normalized"]])
-cpb <- tr[["calibration per batch"]]
-if (is.null(cpb)) cpb <- tibble(mat_id = character(), batch_id = character(), calibration = character(), note = character())
-cpb <- cpb[cpb$mat_id == BLK, ]
-tibble(
-  Batch = batch_label(batch_ids),
-  `Blank samples` = vapply(batch_ids, \(b) sum(norm_cd$batch_id == b & norm_cd$.ctrl_cat == "Blank"), integer(1)),
-  # With one batch only, its own curve / blank mean is the global one (`util$calibration_label()`)
-  `Blank subtracted` = if (isFALSE(tr$params$blank_subtract)) "Not subtracted (option off)" else
-    util$blank_source_label(ifelse(batch_ids %in% tr[["batches without blank"]], "Average of all batches", "Batch"),
-                            length(batch_ids)),
-  Calibration = util$calibration_label(coalesce(cpb$calibration[match(batch_ids, cpb$batch_id)], "None"), length(batch_ids)),
-  Note = coalesce(as.character(cpb$note[match(batch_ids, cpb$batch_id)]), "")
-) |> dt()
+#| results: asis
+# The blank subtraction and calibration of each batch: only with several batches (processed per
+# batch); with one batch (or all injections together) it would only repeat the global settings
+per_batch_tbl <- function() {
+  norm_cd <- SumExp::col_df(tr[["normalized"]])
+  cpb <- tr[["calibration per batch"]]
+  if (is.null(cpb)) cpb <- tibble(mat_id = character(), batch_id = character(), calibration = character(), note = character())
+  cpb <- cpb[cpb$mat_id == BLK, ]
+  tibble(
+    Batch = batch_label(batch_ids),
+    `Blank samples` = vapply(batch_ids, \(b) sum(norm_cd$batch_id == b & norm_cd$.ctrl_cat == "Blank"), integer(1)),
+    `Blank subtracted` = if (isFALSE(tr$params$blank_subtract)) "Not subtracted (option off)" else
+      util$blank_source_label(ifelse(batch_ids %in% tr[["batches without blank"]], "Average of all batches", "Batch"),
+                              length(batch_ids)),
+    Calibration = util$calibration_label(coalesce(cpb$calibration[match(batch_ids, cpb$batch_id)], "None"), length(batch_ids)),
+    Note = coalesce(as.character(cpb$note[match(batch_ids, cpb$batch_id)]), "")
+  ) |> dt()
+}
+if (length(batch_ids) > 1) {
+  cat(knitr::knit_child(text = c("### Per batch", "", "```{r}", "per_batch_tbl()", "```", ""), quiet = TRUE))
+}
 ```
 
 ### Settings
@@ -741,7 +748,7 @@ if (!has_qc) note(paste(NO_QC, "The RSD% per QC group is not available."))
 
 An injection is an outlier when more than 20% of the IS deviate by more than 3 standard deviations from
 the IS mean (log scale; the mean and SD of the non-zero values`r if (isTRUE(tr[["outliers per batch"]])) ", within the batch of the injection"`)
-or are missing (zero) in it. `r if (OUT_REMOVED) "Outlier injections are removed before normalization." else "**Outlier removal is off:** the outliers below are only listed, NOT removed; they are in the data and the results, and marked in the exported tables (row \"IS outlier (not removed)\", injection name in orange)."`
+or are missing (zero) in it. `r if (OUT_REMOVED) "Outlier injections are removed before normalization." else "**Outlier removal is off:** the outliers below are only listed, NOT removed; they are in the data and the results, and marked in the exported tables (row \"IS outlier (not removed)\", injection name in red)."`
 The remaining zeros of the IS are then replaced, for the
 normalization only, by the mean of the IS in the same sample type (in all samples when it has no
 value in that type).
@@ -753,6 +760,10 @@ if (is.null(is_out)) {
 } else if (!any(is_out)) {
   note("No outlier injections were found.")
 } else {
+  # How many, and whether they were removed (as the app's 3.3)
+  n_o <- sum(is_out)
+  cat("**", if (n_o == 1) "1 outlier was" else paste(n_o, "outliers were"), if (OUT_REMOVED) " removed" else " not removed",
+      "**", if (OUT_REMOVED) "." else " (outlier removal is off).", "\n\n", sep = "")
   smp |> filter(sample_id %in% names(which(is_out))) |>
     transmute(Injection = sample_name, `Injection type` = sample_type, `Group (Class)` = Class,
               Batch = ms_batch, `Injection order` = injection_order,
@@ -1369,7 +1380,7 @@ window.addEventListener('load', function () {
 
   // A viewer: dropdown of items, previous / next buttons and redraw on any control change. The
   // arrow keys (when the viewer was clicked last): up / down the previous / next item; left / right
-  // `modes(root, -1 | 1)` if the viewer has modes (e.g. the two of 4.6), otherwise also the item
+  // `modes(root, -1 | 1)` if the viewer has modes (e.g. the two of 4.7), otherwise also the item
   function viewer(id, items, label, draw, modes) {
     var root = document.getElementById(id); if (!root) return;
     var sel = root.querySelector('.sel'), search = root.querySelector('.search'), labels = items.map(label);
@@ -1586,17 +1597,21 @@ window.addEventListener('load', function () {
     });
   }
 
-  // ---- QC samples (4.6): the figure of the app (QuantaFigs.qcConc of app/www/quanta_figs.js):
+  // ---- QC samples (4.7): the figure of the app (QuantaFigs.qcConc of app/www/quanta_figs.js):
   //      a control chart or per batch with the RSD%; the compound chosen here ----
   var Q = window.QCVIEW;
   if (Q && document.getElementById('qcv') && window.QuantaFigs) {
     viewer('qcv', Q.comps, function (c) { return c.name; }, function (root) {
       QuantaFigs.qcConc(root.querySelector('.plot'), Q.data, Q.comps[+root.querySelector('.sel').value].id);
     }, function (root, d) {
-      // Left / right: the first / second mode (control chart, per batch), as its buttons
-      var b = root.querySelectorAll('.qf-group button');
+      // Left / right: the first / second mode (control chart, per batch), as its buttons (not the
+      // Signal / Concentration or Linear / Log buttons)
+      var b = root.querySelectorAll('.qf-group:not(.qf-qty):not(.qf-log) button');
       if (b.length > 1) b[d < 0 ? 0 : b.length - 1].click();
     });
+    // S: signal or concentration (QuantaActive above)
+    var qroot = document.getElementById('qcv');
+    qroot._qS = function () { return QuantaFigs.qcToggleQty(qroot.querySelector('.plot')); };
   }
 
   // ---- Concentrations per compound: a box per class, points coloured by measured / replaced ----

@@ -518,6 +518,49 @@ calib_view_of_global <- function(gcal, samples) {
   )
 }
 
+#' The samples of all batches (calibration points, QCs and study samples), each once, as the
+#' `samples` of [calib_view_of_global()]
+#' @noRd
+.lst_samples <- function(lst) {
+  one <- function(se) {
+    d <- SumExp::col_df(se)
+    n <- ncol(se)
+    data.frame(id = colnames(se), sample_name = d$sample_name, Class = as.character(d$Class %||% rep(NA, n)),
+               batch_id = as.character(d$batch_id), injection_order = d$injection_order %||% rep(NA, n),
+               .ctrl_cat = as.character(d$.ctrl_cat %||% rep(NA, n)),
+               org_batch_id = as.character(d$org_batch_id %||% d$batch_id), check.names = FALSE)
+  }
+  # The row names (sample IDs) set at the end: binding would make repeated ones unique
+  samples <- do.call(rbind, unlist(lapply(unname(lst), \(x) list(one(x$calcurve), one(x$concn))), recursive = FALSE))
+  samples <- samples[!duplicated(samples$id), , drop = FALSE]
+  rownames(samples) <- samples$id
+  samples
+}
+
+#' The global curves of the compounds of a batch that do not use them there (the batch's own
+#' curve is used, or the global curve failed too), with the batch's QCs and study samples: for
+#' the global view of the app (key G), next to [calib_view_all_batches()]
+#'
+#' @param gcal The compact global calibration (`to_report[["global calibration"]][[mat_blk]]`)
+#' @param lst,batch As in [calib_view_all_batches()]
+#' @param ids The compounds to show
+#' @returns A view ([calib_view()]), `NULL` without compounds or without the global calibration
+#' @export
+calib_view_global_unused <- function(gcal, lst, batch, ids) {
+  if (is.null(gcal) || length(ids) == 0) return(NULL)
+  ids <- intersect(ids, gcal$limits$feature_id)
+  if (length(ids) == 0) return(NULL)
+  v <- calib_view_of_global(gcal, .lst_samples(lst))
+  r <- match(ids, v$rd$feature_id)
+  sm <- colnames(gcal$conc0) %in% colnames(lst[[batch]]$concn)   # The batch's samples only
+  v$rd <- v$rd[r, , drop = FALSE]
+  # The global curve is valid but not used: the batch has its own valid curve
+  v$rd$why <- ifelse(v$rd$valid, paste0("Not used in batch ", batch, ": its own curve is valid and used."), v$rd$why)
+  v$cal <- lapply(v$cal, function(m) if (is.matrix(m)) m[r, , drop = FALSE] else m)
+  v$smp <- lapply(v$smp, function(m) if (is.matrix(m)) m[r, sm, drop = FALSE] else if (is.data.frame(m)) m[sm, , drop = FALSE] else m)
+  v
+}
+
 #' The view of compounds removed before calibration (blank filter, QC RSD% filter): their
 #' calibration points only, without a curve
 #'
@@ -556,41 +599,86 @@ calib_view_removed <- function(se, mat_id, ids, reasons, batch = NULL) {
 #' @export
 calib_views_of_batch <- function(lst, batch, to_report, norm_method) {
   mat_blk <- util$mat_id_of_blank_subtracted(norm_method)
-  x <- lst[[batch]]
-  rd <- SumExp::row_df(x$calcurve)
+  gcal <- to_report[["global calibration"]][[mat_blk]]
+  is_global <- identical(batch, "Global")   # The global curves of all compounds (several batches)
   # Removed before calibration (blank filter / QC RSD% filter), as at the end of table 4.1
-  rem <- to_report[["removed features"]]
-  rem <- if (is.null(rem)) data.frame(feature_id = character(), feature_name = character()) else
-    rem[rem$mat_id == norm_method & rem$targeted, ]
+  rem <- page4_removed(to_report, norm_method)
   norm <- to_report[["normalized"]]
-  removed_v <- if (nrow(rem) > 0 && !is.null(norm) && norm_method %in% names(norm)) {
-    rf <- to_report[["qc rsd filter"]]
-    why <- ifelse(rem$reason == "QC RSD%", paste0("QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
-                  "blank filter")
-    calib_view_removed(norm, norm_method, rem$feature_id, stats::setNames(why, rem$feature_id),
-                       batch = if (batch %in% as.character(SumExp::col_df(norm)$batch_id)) batch)
+  removed_of <- function(b) {
+    if (nrow(rem) == 0 || is.null(norm) || !norm_method %in% names(norm)) return(NULL)
+    calib_view_removed(norm, norm_method, rem$feature_id, stats::setNames(rem$why, rem$feature_id),
+                       batch = if (!is.null(b) && b %in% as.character(SumExp::col_df(norm)$batch_id)) b)
   }
   # Why the whole batch uses the global curve (saved by process.R), e.g. too few replicates; a
   # batch with some compounds on the global curve gives their reasons per compound
-  reason <- SumExp::metadata(x$concn)$calibration_note
-  whole <- identical(as.character(SumExp::col_df(x$concn)$calibration[1]), "Global")
-  why_global <- if (whole && length(reason) == 1 && !is.na(reason)) paste0(" Reason for the global curve: ", reason, ".") else ""
+  why_global_of <- function(x) {
+    reason <- SumExp::metadata(x$concn)$calibration_note
+    whole <- identical(as.character(SumExp::col_df(x$concn)$calibration[1]), "Global")
+    if (whole && length(reason) == 1 && !is.na(reason)) paste0(" Reason for the global curve: ", reason, ".") else ""
+  }
+  # The curve each compound uses in batch `b` (its own, or the global one), with b's points and samples
+  batch_view <- function(b) list(
+    parts = list(calib_view_of_batch(lst[[b]], mat_blk), removed_of(b)),
+    info = paste0("Only batch ", b, "'s calibration points are shown: the concentrations were calculated with the ",
+                  "global curve, fitted on the calibration points of all batches.", why_global_of(lst[[b]])),
+    info_warn = TRUE)
   multi <- length(lst) > 1
   views <- list()
-  if (multi) {
-    # No box saying that the global curve was used: the failure note of the compound says so. Only
-    # the reason when the whole batch uses the global curve (not in the notes of the compounds)
-    views[["All batches (global curve)"]] <- list(
-      parts = list(calib_view_all_batches(lst, batch, mat_blk)),
-      info = if (nzchar(why_global)) trimws(why_global))
+  if (!multi) {
+    views[["All samples"]] <- batch_view(names(lst)[1])
+  } else {
+    # The global curve first (key G steps through all), then the curves of every batch; the one of
+    # the chosen batch is shown first (`default_view`)
+    views[["Global curve"]] <- if (is_global) {
+      list(parts = list(calib_view_of_global(gcal, .lst_samples(lst)), removed_of(NULL)),
+           info = "Comparison view: the global curve of each compound, with the samples of all batches.")
+    } else {
+      # The compounds on the global curve in this batch, then the global curves of the others (not
+      # used: the batch's own curve, or failed as well), with the samples of this batch. No box
+      # saying that the global curve was used: the note of the compound says so; only the reason
+      # when the whole batch uses the global curve
+      x <- lst[[batch]]
+      on_global <- SumExp::row_df(x$calcurve)$src_calcurve %in% "Global"
+      wg <- why_global_of(x)
+      list(parts = list(calib_view_all_batches(lst, batch, mat_blk),
+                        calib_view_global_unused(gcal, lst, batch, rownames(x$calcurve)[!on_global])),
+           info = if (nzchar(wg)) trimws(wg))
+    }
+    for (b in names(lst)) views[[paste("Batch", b)]] <- batch_view(b)
   }
-  views[[if (multi) paste0("Batch ", batch, " only") else "All samples"]] <- list(
-    parts = list(calib_view_of_batch(x, mat_blk), removed_v),
-    info = paste0("Only batch ", batch, "'s calibration points are shown: the concentrations were calculated with the ",
-                  "global curve, fitted on the calibration points of all batches.", why_global),
-    info_warn = TRUE)
-  list(compounds = data.frame(id = c(rownames(x$calcurve), rem$feature_id), name = c(rd$feature_name, rem$feature_name)),
-       views = views)
+  ids <- if (is_global) gcal$limits$feature_id else rownames(lst[[batch]]$calcurve)
+  nms <- if (is_global) gcal$limits$feature_name else SumExp::row_df(lst[[batch]]$calcurve)$feature_name
+  list(compounds = data.frame(id = c(ids, rem$feature_id), name = c(nms, rem$feature_name)),
+       views = views,
+       default_view = if (!multi) "All samples" else if (is_global) "Global curve" else paste("Batch", batch))
+}
+
+#' The targeted compounds removed before calibration (blank filter / QC RSD% filter) of a method,
+#' with why (`why`, as in the viewer, and `note`, as in the tables)
+#' @param tr The `to_report` of process.R
+#' @param m The normalization method
+#' @export
+page4_removed <- function(tr, m) {
+  rem <- tr[["removed features"]]
+  if (is.null(rem)) return(data.frame(feature_id = character(), feature_name = character(), why = character(),
+                                      note = character()))
+  rem <- rem[rem$mat_id == m & rem$targeted, ]
+  rf <- tr[["qc rsd filter"]]
+  rem$why <- ifelse(rem$reason == "QC RSD%", paste0("QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
+                    "blank filter")
+  rem$note <- paste0("Removed: ", rem$why)
+  rem
+}
+
+#' The batches of page 4 of the app (the choices of its batch selector): with several batches and
+#' the global calibration, "Global" first
+#' @param lst The calibration of all batches of the method (`proc[[mat_blk]]`)
+#' @param tr The `to_report` of process.R
+#' @param m The normalization method
+#' @export
+page4_batches <- function(lst, tr, m) {
+  gcal <- tr[["global calibration"]][[util$mat_id_of_blank_subtracted(m)]]
+  c(if (length(lst) > 1 && !is.null(gcal)) "Global", names(lst))
 }
 
 #' The data of the calibration curve viewer (`www/calcurve_viewer.js`)
@@ -604,9 +692,11 @@ calib_views_of_batch <- function(lst, batch, to_report, norm_method) {
 #' @param unit The concentration unit
 #' @param y_title The title of the y axis
 #' @param class_colors The colours of the classes of the study samples (named); the QCs are blue
+#' @param default_view The label of the view shown first when the data arrives (`NULL`: the
+#'   viewer keeps the one chosen before, else the first of the compound)
 #' @returns A list, for [calib_viewer_json()]
 #' @export
-calib_viewer_data <- function(compounds, views, log_scale, unit, y_title, class_colors) {
+calib_viewer_data <- function(compounds, views, log_scale, unit, y_title, class_colors, default_view = NULL) {
   r6 <- function(x) { x <- as.numeric(x); x[!is.finite(x)] <- NA; signif(x, 6) }
   part_data <- function(v) {
     rd <- v$rd
@@ -650,6 +740,7 @@ calib_viewer_data <- function(compounds, views, log_scale, unit, y_title, class_
   }
   list(
     log_scale = isTRUE(log_scale), unit = unit %||% "", y_title = y_title,
+    default_view = default_view,   # The curve shown first (`NULL`: the first of the compound)
     group_colors = as.list(c(class_colors, QC = okabe_ito[["blue"]])),
     types = I(.calib_point_types), kinds = I(.calib_conc_kinds()),
     compounds = lapply(seq_len(nrow(compounds)), \(k) list(id = compounds$id[k], name = compounds$name[k])),
@@ -736,6 +827,227 @@ is_distribution_data <- function(se, outlier = NULL, failed = NULL, rsd = NULL) 
   )
 }
 
+#' Page 4 of the app for one normalization method and batch: the data of figures 4.4–4.6 (as JSON,
+#' sent to the browser at once) and the rows of table 4.1. Built by the app when shown, or in
+#' advance by process.R for every method and batch (`page4_file()`), so that switching is fast.
+#'
+#' @param lst The calibration of all batches of the method (`proc[[mat_blk]]`)
+#' @param b The batch (a name of `lst`)
+#' @param tr The `to_report` of process.R
+#' @param m The normalization method (matrix ID, e.g. "loess_norm")
+#' @param class_colors The colours of the classes (`get_colors_of_classes()`)
+#' @param names_tbl A data frame of `feature_id` and `feature_name` (all features)
+#' @param n_batches The number of batches of the data file
+#' @param qc `NULL`, or the result of `conc_figs_data(lst, NULL, ...)` of the same method (the QCs
+#'   of all batches, the same for every batch)
+#' @returns A list of `json` (figures) and `tb41` (a data frame, see [page4_table41()])
+#' @export
+page4_data <- function(lst, b, tr, m, class_colors, names_tbl, n_batches, qc = NULL) {
+  is_global <- identical(b, "Global")   # The comparison view of the global curves (several batches)
+  x <- if (is_global) lst[[1]] else lst[[b]]
+  cv <- calib_views_of_batch(lst, b, tr, m)
+  data <- calib_viewer_data(
+    compounds = cv$compounds,
+    views = cv$views,
+    log_scale = isTRUE(tr[["params"]][["log_calibration"]]),
+    unit = conc_unit(x$concn),
+    y_title = label_if_has(x$concn[[util$mat_id_in_calibration(util$mat_id_of_blank_subtracted(m))]], "Signal"),
+    class_colors = class_colors,
+    default_view = cv$default_view
+  )
+  if (is_global) {
+    # Figures 4.6 and 4.7: nothing (the exported concentrations are those of each batch)
+    data$compare <- TRUE
+  } else {
+    # Figures 4.6 and 4.7 of the same chemical: its concentrations in the batch, and in the QCs of
+    # all batches (built once per method when `qc` is given)
+    limit <- qc_chart_limit(tr[["qc rsd filter"]])
+    figs <- conc_figs_data(lst, b, class_colors, limit, with_qc = FALSE)
+    if (is.null(qc)) qc <- conc_figs_data(lst, NULL, class_colors, limit)
+    figs$qc <- qc$qc
+    figs$qc_colors <- qc$qc_colors
+    figs$signal_title <- qc$signal_title
+    figs$names <- c(figs$names, qc$names[setdiff(names(qc$names), names(figs$names))])
+    data$figs <- figs
+  }
+  tb41 <- if (is_global) {
+    page4_table_global(tr[["global calibration"]][[util$mat_id_of_blank_subtracted(m)]], tr, m)
+  } else page4_table41(x, b, tr, m, names_tbl, n_batches)
+  # `ids`: the compounds of the rows of table 4.1 (and of the viewer), in their order
+  list(json = calib_viewer_json(data), tb41 = tb41, ids = cv$compounds$id,
+       tb42 = page4_batch_status(lst, tr, m))
+}
+
+#' The rows of the compounds removed before calibration, at the end of table 4.1
+#' @noRd
+.page4_removed_rows <- function(tr, m) {
+  rem <- page4_removed(tr, m)
+  if (nrow(rem) == 0) return(NULL)
+  tibble::tibble(
+    "Chemical Name" = rem$feature_name, "LOD" = "", "LLOQ" = "", "Highest cal. conc." = "", "ULOQ" = "",
+    Notes = calib_notes_html(tibble::tibble(removed = rem$note)),
+    is_global = FALSE, is_bad = FALSE, is_removed = TRUE, is_kept = FALSE
+  )
+}
+
+#' The rows of table 4.1 of the app with "Global" chosen: the global curve of every compound (a
+#' comparison view: the concentrations are calculated per batch), then the compounds removed before
+#' calibration
+#'
+#' @param gcal The compact global calibration (`to_report[["global calibration"]][[mat_blk]]`)
+#' @inheritParams page4_data
+#' @returns A data frame with the columns of [page4_table41()]
+#' @export
+page4_table_global <- function(gcal, tr, m) {
+  L <- as.data.frame(gcal$limits)
+  rownames(L) <- L$feature_id
+  valid <- L$has_proper_range %in% TRUE
+  kept <- L$kept_calcurve %in% TRUE
+  num <- function(v) ifelse(is.na(v), "", as.character(signif(v, 6)))
+  show_df <- tibble::tibble(
+    "Chemical Name" = L$feature_name,
+    "LOD" = ifelse(is.na(L$lod), "N.A.", as.character(L$lod)),
+    "LLOQ" = ifelse(is.na(L$lloq), "No valid pts.", as.character(L$lloq)),
+    "Highest cal. conc." = ifelse(valid, num(L$max_c_conc), ""),
+    "ULOQ" = ifelse(valid, num(L$uloq), ""),
+    Notes = calib_notes_html(util$calib_notes(L, batch_view = FALSE)),
+    is_global = FALSE, is_bad = !valid, is_removed = FALSE, is_kept = kept
+  )
+  as.data.frame(dplyr::bind_rows(show_df, .page4_removed_rows(tr, m)), check.names = FALSE)
+}
+
+#' A small globe (the global curve) for the dots of table 4.2, as inline SVG
+#' @param col The colour
+#' @export
+batch_globe_svg <- function(col) sprintf(
+  '<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="%s" stroke-width="2.6"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4.3" ry="10"/><path d="M2 12h20"/></g></svg>', col)
+
+#' The rows of table 4.2 of the app: per compound, the calibration of each batch as a small dot
+#' with the batch number (green: its own curve; globe: the global curve used; red globe: neither
+#' the batch's curve nor the global one valid; orange: kept although not valid); the compounds
+#' removed before calibration at the end, with grey dots
+#'
+#' @inheritParams page4_data
+#' @returns A data frame of `Chemical Name`, `Calibration per batch` (HTML) and `is_removed`
+#' @export
+page4_batch_status <- function(lst, tr, m) {
+  bs <- names(lst)
+  # The batch in its dot: its ID when short, otherwise its number
+  lab <- if (all(nchar(bs) <= 3)) bs else as.character(seq_along(bs))
+  rds <- lapply(lst, \(x) SumExp::row_df(x$calcurve))
+  ids <- unique(unlist(lapply(rds, rownames)))
+  # Unnamed: `unlist()` would put the batch in front of each feature ID
+  nms <- unlist(lapply(unname(rds), \(rd) stats::setNames(rd$feature_name, rownames(rd))))
+  nms <- nms[!duplicated(names(nms))][ids]
+  ids <- ids[order(nms)]
+  globe <- batch_globe_svg
+  dot <- function(state, k, why) {
+    cls <- paste0("q-bdot q-bdot-", state)
+    icon <- switch(state, global = globe("#0072B2"), failed = globe("#B42318"), "")
+    sprintf('<span class="%s" title="%s">%s%s</span>', cls,
+            htmltools::htmlEscape(paste0("Batch ", bs[k], ": ", why), attribute = TRUE), icon, lab[k])
+  }
+  cells <- vapply(ids, function(id) {
+    paste(vapply(seq_along(bs), function(k) {
+      rd <- rds[[k]]
+      if (!id %in% rownames(rd)) return(dot("none", k, "not calibrated (no signal in the batch)"))
+      r <- rd[id, , drop = FALSE]
+      valid <- r$has_proper_range %in% TRUE
+      issue <- if (is.null(r$range_issue) || is.na(r$range_issue)) "" else paste0(" (", r$range_issue, ")")
+      if (!valid) return(dot("failed", k, paste0(if (length(bs) > 1) "the batch curve and the global curve are" else
+        "the curve is", " not valid", issue)))
+      if (r$kept_calcurve %in% TRUE) return(dot("kept", k, paste0("curve kept although not valid", issue)))
+      if (r$src_calcurve %in% "Global") return(dot("global", k, paste0("the global curve is used; the batch curve is not valid", issue)))
+      dot("ok", k, "its own curve")
+    }, ""), collapse = "")
+  }, "")
+  out <- tibble::tibble("Chemical Name" = unname(nms[ids]), "Calibration per batch" = unname(cells), is_removed = FALSE)
+  rem <- page4_removed(tr, m)
+  if (nrow(rem) > 0) {
+    grey <- vapply(seq_len(nrow(rem)), function(i) paste(vapply(seq_along(bs), \(k) dot("removed", k, rem$note[i]), ""),
+                                                         collapse = ""), "")
+    out <- dplyr::bind_rows(out, tibble::tibble("Chemical Name" = rem$feature_name, "Calibration per batch" = grey,
+                                                is_removed = TRUE))
+  }
+  as.data.frame(out, check.names = FALSE)
+}
+
+#' The rows of table 4.1 of the app (the calibration limits of a batch): the calibrated chemicals
+#' in the order of `rownames(calcurve)` (the figures find the selected chemical by it), then those
+#' removed before calibration; helper columns `is_global`, `is_bad`, `is_removed`, `is_kept` for
+#' the row colours
+#'
+#' @param x The calibration of the batch (`proc[[mat_blk]][[b]]`)
+#' @inheritParams page4_data
+#' @returns A data frame
+#' @export
+page4_table41 <- function(x, b, tr, m, names_tbl, n_batches) {
+  se <- x$calcurve
+  rd <- SumExp::row_df(se)
+  limit_df <- rd |>
+    dplyr::select(min_c_conc, max_c_conc, lod, lloq, dplyr::any_of("uloq"), has_proper_range, src_calcurve) |>
+    tibble::as_tibble(rownames = "feature_id") |>
+    dplyr::mutate(batch = b, is_kept = rd$kept_calcurve %in% TRUE)
+  # Detected (signal at or above the LOD signal) / quantified (exported: a value at or above the
+  # LLOQ) in any study sample of the batch
+  concn <- x$concn
+  rd_q <- SumExp::row_df(concn)[limit_df$feature_id, , drop = FALSE]
+  study <- util$extract_ctrl_smpl_cat(concn, "")[limit_df$feature_id, ]
+  sig <- study[[util$src_mat_id_for_conc(concn)]]   # Original scale, as the signals of the limits
+  detected <- rowSums(util$is_detected(sig, rd_q$lod_signal), na.rm = TRUE) > 0
+  # Exported only because of "Keep all calibration curves" (none in older processed data)
+  kept_exp <- if (is.null(rd_q$exported_kept)) rep(FALSE, nrow(rd_q)) else rd_q$exported_kept %in% TRUE
+  limit_df$detection <- dplyr::case_when(
+    !(rd_q$has_proper_range %in% TRUE) ~ "",   # No curve: the reason says why
+    !detected & kept_exp ~ "Not detected in any study sample; exported (Keep all calibration curves)",
+    !detected ~ "Not detected in any study sample",
+    kept_exp ~ "No study sample ≥ LLOQ; exported (Keep all calibration curves)",
+    !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
+    TRUE ~ ""
+  )
+  # The notes as icons by category; the full note on hover
+  limit_df$Notes <- calib_notes_html(util$calib_notes(rd, batch_view = TRUE, detection = limit_df$detection))
+  show_df <- limit_df |>
+    dplyr::rename(min_c = min_c_conc, max_c = max_c_conc) |>
+    dplyr::mutate(
+      lod = ifelse(is.na(lod), "N.A.", as.character(lod)),
+      min_c = dplyr::case_when(
+        is.na(min_c) ~ "No valid pts.",
+        # A curve kept although not valid can start below its LLOQ, or have none; a curve cut at
+        # the ULOQ can start below it (the wished number of levels, with "Optimize")
+        is_kept & is.na(lloq) ~ paste0("None (curve from ", min_c, ")"),
+        !is.na(lloq) & lloq != min_c ~ paste0(lloq, " (curve from ", min_c, ")"),
+        TRUE ~ as.character(min_c)
+      ),
+      is_bad = !has_proper_range,
+      is_global = src_calcurve == "Global",
+      max_c = dplyr::case_when(
+        max_c == -9 ~ "No valid max",
+        max_c == 0 | is.na(max_c) ~ "",
+        TRUE ~ as.character(max_c)
+      ),
+      # Empty for a quadratic curve without log calibration (no ULOQ)
+      uloq = if ("uloq" %in% names(limit_df)) ifelse(is.na(uloq) | !has_proper_range, "", as.character(signif(uloq, 4))) else ""
+    ) |>
+    dplyr::left_join(names_tbl, by = "feature_id") |>
+    dplyr::mutate(is_removed = FALSE) |>
+    # No batch and calibration columns: the batch is chosen above, the note icons tell the curve
+    dplyr::select("Chemical Name" = feature_name,
+                  "LOD" = lod, "LLOQ" = min_c, "Highest cal. conc." = max_c, "ULOQ" = uloq,
+                  Notes, is_global, is_bad, is_removed, is_kept)
+  # Targeted compounds removed before calibration (blank filter / QC RSD% filter): at the end
+  as.data.frame(dplyr::bind_rows(show_df, .page4_removed_rows(tr, m)), check.names = FALSE)
+}
+
+#' The file of [page4_data()] prepared by process.R for a method and batch
+#' @param user_inputs As `msdial$get_user_input()` (or the app's `current_inputs()`)
+#' @param m,b The normalization method and the batch
+#' @export
+page4_file <- function(user_inputs, m, b) {
+  box::use(msdial = ./msdial)
+  msdial$get_raw_data_file_name(user_inputs, suffix = paste0("page4_", m, "_", gsub("[^A-Za-z0-9]", "_", b)))
+}
+
 #' The data of figure 3.11 of the app, for `QuantaFigs.blankFigure()`: the samples, and the
 #' values of some features (all of the chosen kind when they are few; otherwise one at a time)
 #'
@@ -779,21 +1091,29 @@ blank_feature_values <- function(vals, ids, labels, removed) {
 #'   internal report and the tutorial)
 #' @param class_colors The colours of the classes (named), for 4.5
 #' @param qc_limit The limit (%) of the green area of 4.6, see [qc_chart_limit()]
+#' @param with_qc `FALSE`: without the QCs of all batches (4.6), e.g. when they are taken from an
+#'   earlier result of the same data version (they do not depend on `batch`)
 #' @returns A list, for [calib_viewer_json()]
 #' @export
-conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_limit = 30) {
+conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_limit = 30, with_qc = TRUE) {
   kinds <- .calib_conc_kinds()
-  part <- function(se) {
+  # `signal`: also the signal each concentration was calculated from (normalized, blank-subtracted
+  # per the settings), for the "Signal" view of 4.6 (the QCs only)
+  part <- function(se, signal = FALSE) {
     conc <- se[["conc"]]
     flag <- if ("conc_flag" %in% names(se)) se[["conc_flag"]] else NULL
     lloq <- SumExp::row_df(se)$lloq
+    sig_id <- if (signal) tryCatch(util$src_mat_id_for_conc(se), error = function(e) NULL)
+    sig <- if (length(sig_id) == 1 && isTRUE(sig_id %in% names(se))) se[[sig_id]]
     entries <- lapply(seq_len(nrow(se)), function(i) {
       x <- conc[i, ]
       f <- if (is.null(flag)) rep(NA_character_, length(x)) else as.character(flag[i, ])
       k <- match(as.character(imputed_kind(x, lloq[i])), kinds) - 1L
       cens <- is.na(x) & !is.na(f)
       k[cens] <- match(paste0(f[cens], " (no value)"), kinds) - 1L
-      list(y = I(.r6(x)), kind = I(k))
+      out <- list(y = I(.r6(x)), kind = I(k))
+      if (!is.null(sig)) out$s <- I(.r6(sig[i, ]))
+      out
     })
     names(entries) <- rownames(se)
     cd <- SumExp::col_df(se)
@@ -801,7 +1121,7 @@ conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_lim
                      inj = I(cd$injection_order)),
          c = entries)
   }
-  qcs <- lapply(Filter(\(x) !is.null(x$concn), lst), \(x) util$extract_ctrl_smpl_cat(x$concn, "QC"))
+  qcs <- if (with_qc) lapply(Filter(\(x) !is.null(x$concn), lst), \(x) util$extract_ctrl_smpl_cat(x$concn, "QC")) else list()
   qcs <- Filter(\(se) ncol(se) > 0, qcs)
   qc_groups <- sort(unique(unlist(lapply(qcs, \(se) as.character(SumExp::col_df(se)$Class)))))
   first <- if (!is.null(batch)) lst[[batch]]$concn else Filter(Negate(is.null), lapply(lst, `[[`, "concn"))[[1]]
@@ -814,11 +1134,19 @@ conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_lim
   list(
     names = as.list(stats::setNames(nms[keep], ids[keep])),   # Compound ID -> name (plot titles)
     kinds = I(kinds), kind_colors = .hex_colors(imputed_colors), class_colors = .hex_colors(class_colors),
-    qc_colors = .hex_colors(hue_colors(qc_groups)), y_title = unit_label, qc_limit = as.numeric(qc_limit),
+    qc_colors = if (length(qc_groups) > 0) .hex_colors(hue_colors(qc_groups)) else list(),
+    y_title = unit_label, qc_limit = as.numeric(qc_limit),
     # Whether the QC RSD% filter was used (its limit is the band of 4.6), from `qc_chart_limit()`
     qc_filter_used = isTRUE(attr(qc_limit, "used")),
     samples = if (!is.null(batch)) part(lst[[batch]]$concn),
-    qc = unname(lapply(qcs, part))
+    qc = unname(lapply(qcs, part, signal = TRUE)),
+    # The y title of the "Signal" view of 4.6: the data version the concentrations come from
+    signal_title = if (length(qcs)) {
+      lab <- tryCatch(as.character(labelled::get_label_attribute(qcs[[1]][[util$src_mat_id_for_conc(qcs[[1]])]]))[1],
+                      error = function(e) NULL)
+      if (length(lab) == 0 || is.na(lab)) lab <- NULL
+      if (is.null(lab) || !nzchar(lab)) "Signal" else paste0("Signal: ", lab)
+    }
   )
 }
 

@@ -120,12 +120,29 @@ read_full_normalized <- function(user_inputs, tr, mat_id, keep = NULL) {
 #' @param tr The `to_report` list of `process.R`
 #' @param blk_mat_id The matrix ID, e.g. "loess_norm_blk"
 #' @param keep `NULL`, or a function of the `row_df` that gives the features to keep
+#' @param with_blanks `TRUE`: the blanks are added, with their normalized values (not
+#'   blank-subtracted; the features removed from the blank-subtracted table are `NA` for them too)
 #' @returns A [`SumExp::SumExp`] object with this one matrix, the samples ordered by batch
 #' @export
-read_full_blank_subtracted <- function(user_inputs, tr, blk_mat_id, keep = NULL) {
+read_full_blank_subtracted <- function(user_inputs, tr, blk_mat_id, keep = NULL, with_blanks = FALSE) {
   fd <- tr[["full data"]]
   m <- readRDS(full_matrix_file(user_inputs, "blk", blk_mat_id))
-  se <- .full_sumexp(m, blk_mat_id, fd$blk_rows, fd$blk_cols, fd$metadata, keep)
+  cols <- fd$blk_cols
+  is_blank <- fd$norm_cols[[".ctrl_cat"]] %in% "Blank"
+  if (with_blanks && any(is_blank)) {
+    n <- readRDS(full_matrix_file(user_inputs, "norm", sub("_blk$", "", blk_mat_id)))
+    b <- n[rownames(m), is_blank, drop = FALSE]
+    rm(n)
+    b[rowSums(!is.na(m)) == 0, ] <- NA   # Removed from the blank-subtracted table
+    m <- cbind(m, b) |> labelled::copy_labels_from(m)
+    # The columns of the blank-subtracted samples (some are added by the processing: `NA` for the
+    # blanks)
+    bc <- fd$norm_cols[is_blank, intersect(names(cols), names(fd$norm_cols)), drop = FALSE]
+    for (nm in setdiff(names(cols), names(bc))) bc[[nm]] <- cols[[nm]][NA_integer_][seq_len(nrow(bc))]
+    cols <- rbind(cols, bc[, names(cols), drop = FALSE])
+    rm(b)
+  }
+  se <- .full_sumexp(m, blk_mat_id, fd$blk_rows, cols, fd$metadata, keep)
   rm(m)
   o <- unlist(split(seq_len(ncol(se)), as.factor(as.character(SumExp::col_df(se)$batch_id))), use.names = FALSE)
   if (is.unsorted(o)) se[, o] else se
@@ -496,8 +513,8 @@ fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
   return(t(s_rows))  # Horizontal table
 }
 
-#' Fill of the names of the injections flagged as outliers but not removed
-.outlier_style <- function() openxlsx::createStyle(fgFill = "#F4B183", textDecoration = "bold")
+#' The names of the injections flagged as outliers but not removed: red bold text
+.outlier_style <- function() openxlsx::createStyle(fontColour = "#C00000", textDecoration = "bold")
 
 #' Colour the names of the outlier injections kept (outlier removal off) in the header row
 #' @param header_row The row of the sample names
@@ -614,7 +631,10 @@ export_table_values <- function(tr) {
   fd <- tr[["full data"]]
   n_features <- function(rd) sum(!(util$is_internal_std(rd$.std_type) | rd$.std_type %in% "vIS"))
   out <- c(norm = n_features(fd$norm_rows) * as.numeric(nrow(fd$norm_cols)),
-           norm_blk = n_features(fd$blk_rows) * as.numeric(nrow(fd$blk_cols)))
+           # With the blanks, which can be exported in it too
+           norm_blk = n_features(fd$blk_rows) * as.numeric(nrow(fd$norm_cols)))
+  # Several batches: the "Full" sheet of all batches as well
+  if (length(unique(as.character(fd$norm_cols$batch_id))) > 1) out <- out * 2
   # Only the table that is exported: blank-subtracted, or normalized without blank subtraction
   out[if (isFALSE(tr$params$blank_subtract)) "norm" else "norm_blk"]
 }
@@ -660,15 +680,23 @@ export_table_values <- function(tr) {
 #' @param order The injection types in their order: "QC", "Blank", "CalCurve" (calibration
 #'   standards) and the study sample groups, as "grp:<Class>". "Samples" stands for all study
 #'   sample groups not named (by name). Types not in `order` come last.
-#' @param keep Whether to keep the QCs, blanks and calibration standards (the study samples are
-#'   always kept; the blank-subtracted tables never have blanks)
+#' @param keep Whether to keep the QCs, blanks, calibration standards and study samples (named
+#'   `QC`, `Blank`, `CalCurve`, `Samples`; a missing one is kept)
+#' @param split_samples With `by_type`: the study samples as a group per class (in the order of
+#'   `order`); otherwise all of them as one group, at "Samples"
+#' @param by_class Within each injection type, group the injections by class (e.g. the QC groups),
+#'   then by injection order
 #' @returns A list for [export_data_with_feature_table_xlsx()] and [export_concentration_xlsx()]
 #' @export
 export_layout <- function(by_type = TRUE, by_batch = FALSE, order = c("QC", "Samples", "Blank", "CalCurve"),
-                          keep = c(QC = TRUE, Blank = TRUE, CalCurve = TRUE)) {
-  types <- c("QC", "Blank", "CalCurve")
+                          keep = c(QC = TRUE, Blank = TRUE, CalCurve = TRUE, Samples = TRUE),
+                          split_samples = TRUE, by_class = FALSE) {
+  types <- c("QC", "Blank", "CalCurve", "Samples")
+  keep <- keep[types]
+  keep[is.na(keep)] <- TRUE   # Not given: kept
   list(by_type = isTRUE(by_type), by_batch = isTRUE(by_batch), order = as.character(order),
-       keep = stats::setNames(keep[types] %in% TRUE, types))
+       keep = stats::setNames(keep %in% TRUE, types), split_samples = !isFALSE(split_samples),
+       by_class = isTRUE(by_class))
 }
 
 #' The calibration and blank subtraction of the injections as shown, for data of one batch only
@@ -684,7 +712,9 @@ export_layout <- function(by_type = TRUE, by_batch = FALSE, order = c("QC", "Sam
 #' The injections of `sumexp` that `layout` keeps (from [export_layout()])
 .keep_samples <- function(sumexp, layout) {
   drop <- names(layout$keep)[!layout$keep]
-  sumexp[, !as.character(util$ctrl_smpl_cat(sumexp)) %in% drop]
+  cat <- as.character(util$ctrl_smpl_cat(sumexp))
+  cat[is.na(cat) | cat == ""] <- "Samples"   # The study samples
+  sumexp[, !cat %in% drop]
 }
 
 #' The injections of `sumexp` in the order of `layout` (from [export_layout()])
@@ -697,7 +727,9 @@ export_layout <- function(by_type = TRUE, by_batch = FALSE, order = c("QC", "Sam
   cd <- SumExp::col_df(sumexp)
   cat <- as.character(cd$.ctrl_cat)
   cat[is.na(cat)] <- ""
-  key <- ifelse(cat == "", paste0("grp:", as.character(cd$Class)), cat)
+  # The study samples: a group per class, or all together at "Samples" (`split_samples`)
+  split <- !isFALSE(layout$split_samples)
+  key <- ifelse(cat == "", if (split) paste0("grp:", as.character(cd$Class)) else "Samples", cat)
   type_rank <- rep(0, length(key))
   if (layout$by_type) {
     n <- length(layout$order)
@@ -714,12 +746,20 @@ export_layout <- function(by_type = TRUE, by_batch = FALSE, order = c("QC", "Sam
   }
   batch <- .batch_rank(sumexp)
   inj <- .injection_order(sumexp)
+  # `by_class`: within each type, the classes together (e.g. the QC groups), in the order of their
+  # first injection (e.g. the calibration levels from low to high)
+  cls <- if (isTRUE(layout$by_class)) {
+    x <- as.character(cd$Class)
+    x[is.na(x)] <- ""
+    first <- tapply(dplyr::coalesce(.injection_order(sumexp), Inf), x, min)
+    match(x, names(sort(first)))
+  } else rep(0, length(key))
   ord <- if (layout$by_batch) {
-    order(batch, type_rank, inj)
+    order(batch, type_rank, cls, inj)
   } else if (layout$by_type) {
-    order(type_rank, batch, inj)
+    order(type_rank, cls, batch, inj)
   } else {
-    order(inj, batch)
+    order(cls, inj, batch)
   }
   sumexp[, ord]
 }
@@ -788,7 +828,9 @@ export_data_with_feature_table_xlsx <- function(sumexp_lst,
   # Very large tables: as CSV only (one per worksheet, as the CSV copies of the other tables).
   # Building a workbook takes many times the memory of the values.
   lst <- if (inherits(sumexp_lst, "SumExp")) list(Data = sumexp_lst) else stats::setNames(sumexp_lst, paste("Batch", names(sumexp_lst)))
-  n_cells <- sum(vapply(lst, \(se) prod(dim(se)), numeric(1)))
+  # Several batches: also a "Full" sheet of all of them (first), as in the concentration tables
+  with_full <- !inherits(sumexp_lst, "SumExp") && length(sumexp_lst) > 1
+  n_cells <- sum(vapply(lst, \(se) prod(dim(se)), numeric(1))) * (if (with_full) 2 else 1)
   if (n_cells > max_xlsx_cells) {
     cat(sprintf("The table has %.1f million values, above the limit for Excel files here: written as CSV (%s).\n",
                 n_cells / 1e6, basename(tools::file_path_sans_ext(out_file))))
@@ -817,6 +859,13 @@ export_data_with_feature_table_xlsx <- function(sumexp_lst,
     openxlsx::saveWorkbook(wb, file = out_file, overwrite = TRUE)
   } else {  # list of SumExp
     wb <- openxlsx::createWorkbook()
+    if (with_full) {
+      se <- filter_and_reorder_samples(do.call(cbind, unname(sumexp_lst)))
+      wb <- .write_data_to_new_worksheet(wb = wb, sheetName = "Full", sumexp = se, mat_id = mat_id,
+                                         feat_tbl = prepare_feature_table(se))
+      rm(se)
+      invisible(gc(FALSE))
+    }
     for (ii in names(sumexp_lst)) {
       se <- filter_and_reorder_samples(sumexp_lst[[ii]])
       wb <- .write_data_to_new_worksheet(
@@ -852,13 +901,17 @@ tbl_chemical_summary <- function(sumexp) {
     dplyr::rename(chem_name = "feature_name")
   # Concentration
   mat <- sumexp[["conc"]]
-  # Samples with a concentration, or "n.d." / "n.q." instead of one
-  has_result <- !is.na(mat)
-  if ("conc_flag" %in% names(sumexp)) has_result <- has_result | !is.na(sumexp[["conc_flag"]])
   # Measured values at or above the LLOQ, for the min/median/mean/max
   mat_ge_lloq <- measured_conc(sumexp)
   # Signal matrix
   mat_signal <- sumexp[[util$src_mat_id_for_conc(sumexp)]]
+  # The detection and quantification frequencies: of the study samples that are not outliers (by
+  # the IS; removed outliers are not in the data), all of them counted (`n_samples`)
+  # The flag is a text (e.g. "3 of 12") for an outlier kept (outlier removal off), else empty / NA
+  out_flag <- SumExp::col_df(sumexp)[["is_outlier_flag"]]
+  counted <- if (is.null(out_flag)) rep(TRUE, ncol(mat)) else is.na(out_flag) | !nzchar(as.character(out_flag))
+  mat_c <- mat[, counted, drop = FALSE]
+  sig_c <- mat_signal[, counted, drop = FALSE]
   # No need but to be safe
   stopifnot(exprs = {
     identical(colnames(mat), colnames(mat_signal))
@@ -875,9 +928,9 @@ tbl_chemical_summary <- function(sumexp) {
   # Summary about the concentration ranges
   conc_summary <- chemicals |>
     dplyr::mutate(
-      n_det = rowSums(util$is_detected(mat_signal, lod_signal), na.rm = TRUE),
-      n_quant = rowSums(mat >= lloq, na.rm = TRUE),
-      n_samples = rowSums(has_result),
+      n_det = rowSums(util$is_detected(sig_c, lod_signal), na.rm = TRUE),
+      n_quant = rowSums(mat_c >= lloq, na.rm = TRUE),
+      n_samples = sum(counted),
     ) |>
     dplyr::mutate(
       median = apply(mat_ge_lloq, 1, .skip_all_na, fun = stats::median),
@@ -1123,9 +1176,13 @@ measured_conc <- function(sumexp) {
                             "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
   Inf,   "#9E9E9E", NA,     "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
                             "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
+  # Export option "Keep failed and with no quantified study samples" (code `.cal_signal`)
+  -2,    "#E4DAF2", NA,     "Calibration point of a compound with a failed curve or no quantified study sample: its SIGNAL, not a concentration",
+                            "Calibration point of a compound with a failed curve or no quantified study sample: its SIGNAL, not a concentration",
 )
 .extrapolated <- Inf
 .above_linear <- -1
+.cal_signal <- -2
 
 #' Whether the values below the LOD / LLOQ were replaced (`TRUE`, also for data processed by older
 #' versions) or reported as "n.d." / "n.q."
@@ -1139,7 +1196,7 @@ measured_conc <- function(sumexp) {
   conc <- sumexp[["conc"]]
   lloq <- SumExp::row_df(sumexp)$lloq
   code <- matrix(0, nrow(conc), ncol(conc), dimnames = dimnames(conc))
-  for (f in setdiff(.imputed_styles$code, c(.extrapolated, .above_linear))) {
+  for (f in setdiff(.imputed_styles$code, c(.extrapolated, .above_linear, .cal_signal))) {
     code[!is.na(conc) & !is.na(lloq) & conc == lloq * f] <- f
   }
   # Values above the ULOQ (none without a ULOQ, e.g. a quadratic curve, or for older processed
@@ -1157,6 +1214,8 @@ measured_conc <- function(sumexp) {
   for (ii in which(!is.na(.imputed_styles$flag))) {
     code[flag %in% .imputed_styles$flag[ii]] <- .imputed_styles$code[ii]
   }
+  # Signals of calibration points instead of concentrations (`.combine_samples()`)
+  if ("cal_signal" %in% names(sumexp)) code[sumexp[["cal_signal"]] %in% 1] <- .cal_signal
   labelled::set_label_attribute(code, "Replaced value (fraction of the LLOQ)")
 }
 
@@ -1213,7 +1272,8 @@ measured_conc <- function(sumexp) {
     "Blank samples: concentrations of their normalized data WITHOUT blank subtraction (\"Blank subtracted\" row: Not subtracted).",
     paste("ULOQ: the top of the linear range of a linear curve (back-calculated levels within the tolerance), or",
           "with log calibration by SCALiR; empty for a quadratic curve (no ULOQ). With 'Enforce linear range',",
-          "the curves were cut at the ULOQ, or above it to keep the minimum number of calibration levels."),
+          "the curves were cut at the ULOQ (with 'Optimize' and a minimum number of points, a cut curve can take",
+          "calibration levels below the LLOQ instead)."),
     if (with_calibrants) {
       "All samples, including the calibration samples, by batch and injection order."
     } else {
@@ -1221,7 +1281,7 @@ measured_conc <- function(sumexp) {
     },
     paste0("Concentrations and peak areas have at most ", .max_decimals, " decimals, retention times ",
            .rt_decimals, " and m/z values ", .mz_decimals, "."),
-    paste("Injection names in orange (when outlier removal was off): injections found to be outliers by the",
+    paste("Injection names in red (when outlier removal was off): injections found to be outliers by the",
           "internal standards but not removed; the row \"IS outlier (not removed)\" gives the number of outlying IS.")
   )
   openxlsx::writeData(wb, "Legend", data.frame(Notes = notes), startRow = nrow(legend) + 3L)
@@ -1233,34 +1293,67 @@ measured_conc <- function(sumexp) {
 #' @param concn The quantified samples of one batch, with the `conc` matrix
 #' @param calcurve,blank `NULL`, or the calibration samples / blank samples of the batch, with the
 #'   `conc` matrix
+#' @param signal_rows `NULL`, or the chemicals (a logical vector by row of `concn`) shown with the
+#'   signals of their calibration points only (export option "Keep failed and with no quantified
+#'   study samples"): no concentrations in the other injections ("no curve" / "not quantified")
+#' @param signal_mat The matrix of the calibration signals in `calcurve` (e.g. "loess_norm_blk")
 #' @returns A [`SumExp::SumExp`] object with the `conc` matrix of all these samples and the chemical
-#'   information (`row_df`) and metadata of `concn`
-.combine_samples <- function(concn, calcurve = NULL, blank = NULL) {
+#'   information (`row_df`) and metadata of `concn`; with `signal_rows`, also `cal_signal` (1 where
+#'   `conc` holds a signal)
+.combine_samples <- function(concn, calcurve = NULL, blank = NULL, signal_rows = NULL, signal_mat = NULL) {
   # The same sample information in all batches (needed to merge them)
   cols <- intersect(c("sample_name", "Class", "sample_type", ".ctrl_cat", "injection_order",
                       "batch_id", "org_batch_id", "blank_source", "calibration", "is_outlier_flag"),
                     names(SumExp::col_df(concn)))
   lab <- labelled::get_label_attribute(concn[["conc"]])
-  part <- function(se) {
+  part <- function(se, is_cal = FALSE) {
     cd <- as.data.frame(SumExp::col_df(se))
     for (cc in setdiff(cols, names(cd))) cd[[cc]] <- NA
     cd <- cd[, cols, drop = FALSE]
     cd[] <- lapply(cd, \(x) if (is.factor(x)) as.character(x) else x)
     labelled::var_label(cd) <- NULL
+    # All chemicals, also those not exported in this batch (`conc_all`; their values, mostly n.d. /
+    # n.q., are shown in the "Full" sheet when they are exported in another batch; the batch sheets
+    # leave them out)
+    if (all(c("conc_all", "conc_flag_all") %in% names(se))) {
+      se[["conc"]] <- se[["conc_all"]]
+      se[["conc_flag"]] <- se[["conc_flag_all"]]
+    }
     conc <- se[["conc"]][rownames(concn), , drop = FALSE]
-    # "n.d." / "n.q." of the values below the LOD / LLOQ (none for older processed data)
+    # "n.d." / "n.q." of the values below the LOD / LLOQ (none for older processed data); a cell
+    # without a value otherwise: "no curve" (no valid calibration curve in the batch, nor the global
+    # one) or "no value" (no concentration could be calculated, e.g. a signal above the top of a
+    # quadratic curve)
     flag <- .llox_flag_text(se)[rownames(concn), , drop = FALSE]
+    valid <- SumExp::row_df(concn)$has_proper_range %in% TRUE
+    empty <- is.na(conc) & is.na(flag)
+    flag[empty] <- matrix(ifelse(valid, "no value", "no curve"), nrow(conc), ncol(conc))[empty]
+    # The chemicals shown with their calibration points only: the signals of the calibration
+    # samples, no concentrations elsewhere
+    cal_signal <- matrix(0, nrow(conc), ncol(conc), dimnames = dimnames(conc))
+    if (any(signal_rows)) {
+      r <- which(signal_rows)
+      if (is_cal && !is.null(signal_mat) && signal_mat %in% names(se)) {
+        conc[r, ] <- se[[signal_mat]][rownames(concn)[r], , drop = FALSE]
+        flag[r, ] <- NA
+        cal_signal[r, ] <- 1
+      } else {
+        conc[r, ] <- NA
+        flag[r, ] <- ifelse(valid[r], "not quantified", "no curve")
+      }
+    }
     SumExp::SumExp(
-      conc = labelled::set_label_attribute(conc, lab), conc_flag = flag,
+      conc = labelled::set_label_attribute(conc, lab), conc_flag = flag, cal_signal = cal_signal,
       col_df = cd, row_df = SumExp::row_df(concn), metadata = SumExp::metadata(concn)
     )
   }
+  if (is.null(signal_rows)) signal_rows <- rep(FALSE, nrow(concn))
   parts <- list(part(concn))
   if (!is.null(calcurve) && "conc" %in% names(calcurve)) {
     # Only the calibration samples of the batch (a batch without its own holds all of them)
     batch_of <- function(se) as.character(SumExp::col_df(se)[["batch_id"]])
     calcurve <- calcurve[, batch_of(calcurve) %in% batch_of(concn)]
-    if (ncol(calcurve) > 0) parts <- c(list(part(calcurve)), parts)
+    if (ncol(calcurve) > 0) parts <- c(list(part(calcurve, is_cal = TRUE)), parts)
   }
   if (!is.null(blank) && "conc" %in% names(blank) && ncol(blank) > 0) {
     parts <- c(parts, list(part(blank)))
@@ -1275,17 +1368,31 @@ measured_conc <- function(sumexp) {
 #' @param sumexp The quantified samples, for the summary of the chemicals
 #' @param data_se The data to write (the same chemicals), with the `imputed` matrix
 #' @param n_batches The number of batches of the data (one: the batch's curve is the global one)
-.write_one_sumexp_to_new_worksheet <- function(wb, sheetName, sumexp, is_closest_norm, data_se, n_batches = 2L) {
-  # Drop all features that are not to be exported per batch
-  to_export <- SumExp::row_df(sumexp)$to_export
-  se <- sumexp[to_export, ]
-  data_se <- data_se[to_export, ]
+.write_one_sumexp_to_new_worksheet <- function(wb, sheetName, sumexp, is_closest_norm, data_se, n_batches = 2L,
+                                               include_failed = FALSE) {
+  # Drop all features that are not to be exported per batch (with `include_failed`, all are kept:
+  # those not exported with the signals of their calibration points, or n.d. / n.q.)
+  to_export <- SumExp::row_df(sumexp)$to_export %in% TRUE
+  keep <- if (include_failed) rep(TRUE, length(to_export)) else to_export
+  se <- sumexp[keep, ]
+  data_se <- data_se[keep, ]
 
   # Prepare the chemical summary table per batch
   chem_col <- .per_batch_summary_chemical_table(se, is_closest_norm) |>
     .append_slope()
   if ("Calibration" %in% names(chem_col)) {
     chem_col[["Calibration"]] <- util$calibration_label(chem_col[["Calibration"]], n_batches)
+  }
+  # The chemicals not exported in this batch (`include_failed`): why, in front of the notes
+  if (include_failed && "Notes" %in% names(chem_col)) {
+    rd <- SumExp::row_df(se)
+    why <- ifelse(!(rd$has_proper_range %in% TRUE),
+                  "Not quantified: no valid calibration curve (calibration points as signals)",
+                  ifelse(rd$to_export %in% TRUE, "",
+                         "Not quantified: no study sample at or above the LLOQ"))
+    chem_col[["Notes"]] <- ifelse(nzchar(why), ifelse(nzchar(chem_col[["Notes"]] %||% ""),
+                                                      paste0(why, "; ", chem_col[["Notes"]]), why),
+                                  chem_col[["Notes"]])
   }
 
   .write_data_to_new_worksheet(
@@ -1310,9 +1417,14 @@ measured_conc <- function(sumexp) {
 #' @param blank_lst `NULL`, or a list of the quantified blank samples of each batch (as
 #'   `sumexp_lst`; `NULL` for a batch without blanks)
 #' @param layout Which injections are kept and their order, from [export_layout()]
+#' @param include_failed Also the chemicals not exported in any batch (failed curve, or no study
+#'   sample at or above the LLOQ): the signals of their calibration points (matrix `signal_mat`), no
+#'   concentrations; and in each batch sheet the chemicals not exported in that batch
+#' @param signal_mat The matrix of the calibration signals in `calcurve_lst` (e.g. "loess_norm_blk")
 #' @export
 export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE, calcurve_lst = NULL,
-                                      blank_lst = NULL, layout = export_layout()) {
+                                      blank_lst = NULL, layout = export_layout(), include_failed = FALSE,
+                                      signal_mat = NULL) {
 
   stopifnot(is.list(sumexp_lst))
   for (ii in seq_along(sumexp_lst)) {
@@ -1329,10 +1441,16 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE,
   # Leave only the features to export in any batch
   in_any <- sapply(sumexp_lst, \(se) SumExp::row_df(se)$to_export)
   in_any <- rowSums(in_any) > 0L
-  sumexp_lst <- lapply(sumexp_lst, \(se) se[in_any, ])
+  # `include_failed`: all chemicals; those not exported in any batch, or failed in a batch, with
+  # the signals of their calibration points only (`.combine_samples()`)
+  shown <- if (include_failed) rep(TRUE, length(in_any)) else in_any
+  signal_rows <- lapply(sumexp_lst, \(se) if (!include_failed) NULL else
+    (!in_any | !(SumExp::row_df(se)$has_proper_range %in% TRUE))[shown])
+  sumexp_lst <- lapply(sumexp_lst, \(se) se[shown, ])
   # The data to write per batch, with the replaced values (`imputed`) for the colours
   data_lst <- lapply(stats::setNames(nm = names(sumexp_lst)), function(b) {
-    se <- .combine_samples(sumexp_lst[[b]], calcurve_lst[[b]], blank_lst[[b]])
+    se <- .combine_samples(sumexp_lst[[b]], calcurve_lst[[b]], blank_lst[[b]],
+                           signal_rows = signal_rows[[b]], signal_mat = signal_mat)
     se[["imputed"]] <- .imputed_codes(se)
     reorder(se)
   })
@@ -1347,7 +1465,8 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE,
       sumexp = sumexp_lst[[1L]],
       is_closest_norm = is_closest_norm,
       data_se = .label_single_batch(data_lst[[1L]], 1L),
-      n_batches = 1L
+      n_batches = 1L,
+      include_failed = include_failed
     )
   } else {  # Multiple batches
     # Summary table for all batches
@@ -1370,7 +1489,8 @@ export_concentration_xlsx <- function(sumexp_lst, file, is_closest_norm = FALSE,
         sheetName = paste("Batch", names(sumexp_lst)[ii]),
         sumexp = sumexp_lst[[ii]],
         is_closest_norm = is_closest_norm,
-        data_se = data_lst[[ii]]
+        data_se = data_lst[[ii]],
+        include_failed = include_failed
       )
     }
   }

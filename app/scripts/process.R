@@ -14,7 +14,11 @@ option_list <- rlang::list2(
   optparse::make_option(
     c("--min_cal_points"),
     type = "integer", default = 3,
-    help = "The mininum required number to keep a calibration curve [default: %default]"
+    help = paste(
+      "With `--optimize_cal_points`: the number of calibration levels a curve is extended to when",
+      "possible (a wish: a curve needs 3 levels from the LLOQ to be valid; never above the ULOQ with",
+      "`--enforce_linear_range`, where levels below the LLOQ are taken instead) [default: %default]"
+    )
   ),
   optparse::make_option(
     c("--rm_outlier"),
@@ -27,15 +31,6 @@ option_list <- rlang::list2(
     help = paste(
       "Samples that can be removed as outliers: `all` injections, or `no_calib` (all but the",
       "calibration samples, which are always kept) [default: %default]"
-    )
-  ),
-  optparse::make_option(
-    c("--keep_all_calcurves"),
-    type = "logical", default = FALSE,
-    help = paste(
-      "Keep the calibration curves of chemicals without a valid calibration range (e.g. too few",
-      "levels above the LLOQ), with a range from the LLOQ (or lowest level) to the highest level;",
-      "and export the chemicals with a curve also when no study sample is above the LLOQ [default: %default]"
     )
   ),
   optparse::make_option(
@@ -57,8 +52,9 @@ option_list <- rlang::list2(
     c("--enforce_linear_range"),
     type = "logical", default = FALSE,
     help = paste(
-      "Cut the calibration curves at their ULOQ, the top of their linear range, and refit them (keeping at",
-      "least `--min_cal_points` levels, so a curve can end above its ULOQ). The ULOQ is located also",
+      "Cut the calibration curves at their ULOQ, the top of their linear range, and refit them (with",
+      "`--optimize_cal_points` and `--min_cal_points`, a cut curve with fewer levels takes levels below",
+      "the LLOQ, above the LOD, as far as there are). The ULOQ is located also",
       "without this option: for linear curves, the top levels whose back-calculated mean deviates more",
       "than `--linear_range_tol` % from the nominal concentration are left out (down to 3 levels); with",
       "`--log_calibration`, by SCALiR [default: %default]"
@@ -200,13 +196,21 @@ if (isTRUE(params$average_cal_reps)) {
   params$use_rsd20 <- FALSE
   params$llox_method <- "pt_signal_mean"
 }
+# Calibration levels of a curve: at least 3 from the LLOQ upwards (a curve with fewer is not
+# valid); `--min_cal_points` is a wish, used only with `--optimize_cal_points`: the number of
+# levels an optimized curve is extended to when possible. It never makes a curve invalid and
+# never moves the ULOQ.
+CAL_MIN_LEVELS <- 3L
+CAL_WISH_LEVELS <- if (isTRUE(params$optimize_cal_points)) {
+  max(CAL_MIN_LEVELS, suppressWarnings(as.integer(params$min_cal_points)), na.rm = TRUE)
+} else CAL_MIN_LEVELS
 cat(
   "\nProcessing parameters:\n",
   "  - vIS pre-normalization: ", isTRUE(params$vis_prenorm), "\n",
   "  - Average calibration replicates per batch: ", isTRUE(params$average_cal_reps), "\n",
   "  - Optimize cal points: ", params$optimize_cal_points, "\n",
-  "  - Minimum number of cal points: ", params$min_cal_points, "\n",
-  "  - Keep all calibration curves: ", params$keep_all_calcurves, "\n",
+  "  - Minimum number of cal points (wish, with Optimize): ",
+  if (isTRUE(params$optimize_cal_points)) CAL_WISH_LEVELS else "not used (Optimize off)", "\n",
   "  - Linear models only: ", params$linear_only, "\n",
   "  - Linear range: max. ", params$linear_range_tol, "% deviation of the top level; curves cut at the ULOQ: ",
   isTRUE(params$enforce_linear_range), "\n",
@@ -1128,6 +1132,7 @@ censor_llox <- function(se) {
   SumExp::metadata(se)$llox_imputed <- !isFALSE(params$impute_llox)
   if (!isFALSE(params$impute_llox) || !all(c("conc", "conc_flag") %in% names(se))) return(se)
   se[["conc"]][!is.na(se[["conc_flag"]])] <- NA
+  if (all(c("conc_all", "conc_flag_all") %in% names(se))) se[["conc_all"]][!is.na(se[["conc_flag_all"]])] <- NA
   se
 }
 
@@ -1145,6 +1150,8 @@ quantify_blanks <- function(blank_se, concn_se, mat_id_to_calib) {
   SumExp::row_df(se) <- SumExp::row_df(concn_se)
   se[[mat_id]] <- se[[src_mat_id]]
   se <- quantify_conc(se, mat_id)
+  se[["conc_all"]] <- se[["conc"]]             # All chemicals, as for the samples
+  se[["conc_flag_all"]] <- se[["conc_flag"]]
   # Chemicals not exported have no concentrations, as for the samples
   se[["conc"]] <- util$extract_with_na(se[["conc"]], i = SumExp::row_df(se)$to_export, j = TRUE) |>
     labelled::set_label_attribute(labelled::get_label_attribute(concn_se[["conc"]]))
@@ -1177,25 +1184,26 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
                 "pt_signal_mean" = proc$compute_llox_signal_using_mean_times,
                 "pt_signal_mean_plus_sd" = proc$compute_llox_signal_using_mean_plus_sd_times
   )
+  # A curve needs 3 calibration levels from the LLOQ upwards (`CAL_MIN_LEVELS`); with "Optimize",
+  # the curve cut at the highest sample is extended upwards to the wished number of levels
+  # (`CAL_WISH_LEVELS`), as far as there are levels
   qt_se <- proc$find_calib_lim_pts_and_llox_from_llox_signal(
     qt_se, mat_id_to_calib, fun, params$use_rsd20,
-    min_n = params$min_cal_points,
-    enough_n = if (params$optimize_cal_points) 3 else Inf
+    min_n = CAL_MIN_LEVELS,
+    enough_n = if (params$optimize_cal_points) CAL_WISH_LEVELS else Inf
   )
 
   # Exclude chemicals without a valid calibration range; return early if none qualify.
-  # `range_issue` tells why a range is not valid. With `--keep_all_calcurves`, those chemicals keep
-  # a curve (`kept_calcurve`) over a forced range, and count as having a proper range below.
+  # `range_issue` tells why a range is not valid. A failed curve is never fitted: no concentrations
+  # (their calibration points can be exported, see export option `--export_failed`).
+  # `kept_calcurve` (curves kept although not valid, an earlier processing option) is always FALSE;
+  # the app and the reports still read it from data processed by older versions
   has_proper_range <- proc$has_proper_calibration_range(qt_se)
   rd <- SumExp::row_df(qt_se)
   rd$range_issue[has_proper_range] <- NA_character_
   rd$range_issue[!has_proper_range & is.na(rd$range_issue)] <- "No valid calibration range"
   SumExp::row_df(qt_se) <- rd
-  kept_calcurve <- !has_proper_range & isTRUE(params$keep_all_calcurves)
-  if (any(kept_calcurve)) {
-    qt_se <- proc$force_calibration_range(qt_se, kept_calcurve, params$min_cal_points)
-  }
-  has_proper_range <- has_proper_range | kept_calcurve
+  kept_calcurve <- rep(FALSE, length(has_proper_range))
   SumExp::row_df(qt_se) <- cbind(SumExp::row_df(qt_se), has_proper_range, kept_calcurve)
   if (sum(has_proper_range) == 0) { # No chemicals with a valid range
     return(list(done = FALSE, data = qt_se))
@@ -1243,31 +1251,37 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   # Upper limit of quantification (ULOQ): the top of the linear range of each curve, located by
   # back-calculating the levels of linear curves, or by SCALiR with log calibration; quadratic
   # curves (without log calibration) have none. The ULOQ is always the actual top of the linear
-  # range, whatever the options. With --enforce_linear_range the curve is cut and refitted: at the
-  # ULOQ, or higher to keep the minimum number of levels (`lr$top`, then `max_c_conc`); the levels
-  # above it are out of range. Otherwise the curve keeps its range. Either way, the concentrations
-  # between the ULOQ and the top of the curve are above the linear range; higher ones are
-  # extrapolated.
+  # range, whatever the options; the minimum number of levels plays no part in it. With
+  # --enforce_linear_range the curve is cut at the ULOQ and refitted (`lr$top`, then
+  # `max_c_conc`); the levels above it are out of range. Otherwise the curve keeps its range.
+  # Either way, the concentrations between the ULOQ and the top of the curve are above the linear
+  # range; higher ones are extrapolated.
+  # With "Optimize", a cut curve with fewer levels than wished (`CAL_WISH_LEVELS`) takes levels
+  # below its start instead (above the LOD signal, the nearest first), as far as there are: the
+  # wish is never met above the ULOQ.
   enforce <- isTRUE(params$enforce_linear_range)
   c_concs <- util$spiked_conc_pts(calcurve_se)
   cc_mat <- calcurve_se[[mat_id]]
   max_c <- SumExp::row_df(concn_se)$max_c_conc
+  min_c <- SumExp::row_df(concn_se)$min_c_conc
+  lod_sig <- SumExp::row_df(concn_se)$lod_signal
   top0 <- max_c
   uloq <- rep(NA_real_, length(calcurve_models))
   linear_range_note <- rep(NA_character_, length(calcurve_models))
+  n_down <- 0L
   for (ii in seq_along(calcurve_models)) {
     m <- calcurve_models[[ii]]
     if (!is.list(m) || !is.finite(max_c[ii])) next
     lr <- if (in_log) {
       proc$linear_range_of_log_curve(
-        c_concs, calcurve_se[[mat_id_to_calib]][ii, ], cc_mat[ii, ], m, min_n = params$min_cal_points,
+        c_concs, calcurve_se[[mat_id_to_calib]][ii, ], cc_mat[ii, ], m, min_n = CAL_MIN_LEVELS,
         refit = \(s) proc$fit_and_test_calcurve_model(c_concs, s, log_log = TRUE),
         cut = enforce
       )
     } else if (startsWith(m$best_model_name, "linear")) {
       proc$trim_to_linear_range(
         c_concs, cc_mat[ii, ], m, max_dev = params$linear_range_tol / 100,
-        min_n = params$min_cal_points, weight_method = params$weight, cut = enforce
+        min_n = CAL_MIN_LEVELS, weight_method = params$weight, cut = enforce
       )
     }
     if (is.null(lr)) next
@@ -1277,15 +1291,45 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
       calcurve_models[[ii]] <- lr$model
       cc_mat[ii, ] <- lr$signal
       max_c[ii] <- lr$top
+      # The wished number of levels: downwards, below the start of the curve
+      levels_in <- sort(unique(c_concs[!is.na(cc_mat[ii, ])]))
+      need <- CAL_WISH_LEVELS - length(levels_in)
+      if (need > 0 && length(levels_in) > 0) {
+        sig0 <- calcurve_se[[mat_id_to_calib]][ii, ]
+        below <- sort(unique(c_concs[!is.na(c_concs) & c_concs > 0 & c_concs < min(levels_in)]), decreasing = TRUE)
+        detected <- vapply(below, \(l) isTRUE(mean(sig0[c_concs == l], na.rm = TRUE) > lod_sig[ii]), logical(1))
+        # The nearest levels first, without a gap (a level below the LOD signal stops it)
+        below <- below[seq_len(if (all(detected)) length(below) else which(!detected)[1] - 1L)]
+        add <- utils::head(below, need)
+        if (length(add) > 0) {
+          cc_mat[ii, c_concs %in% add] <- sig0[c_concs %in% add]
+          calcurve_models[[ii]] <- if (in_log) {
+            proc$fit_and_test_calcurve_model(c_concs, cc_mat[ii, ], log_log = TRUE)
+          } else {
+            proc$fit_and_test_calcurve_model(c_concs, cc_mat[ii, ], weight_method = params$weight, linear_only = TRUE)
+          }
+          min_c[ii] <- min(add)
+          n_down <- n_down + 1L
+          linear_range_note[ii] <- paste0(
+            dplyr::coalesce(linear_range_note[ii], "Linear range"), "; curve extended down to ", signif(min(add), 4),
+            " (below the LLOQ) for ", length(levels_in) + length(add), " of the wished ", CAL_WISH_LEVELS, " levels"
+          )
+        }
+      }
     }
   }
   if (enforce) {
     calcurve_se[[mat_id]] <- cc_mat
     SumExp::row_df(concn_se)$max_c_conc <- max_c
     SumExp::row_df(calcurve_se)$max_c_conc <- max_c
+    SumExp::row_df(concn_se)$min_c_conc <- min_c
+    SumExp::row_df(calcurve_se)$min_c_conc <- min_c
   }
   cat("  ", sum(!is.na(uloq) & uloq < top0), "calibration curve(s) with a linear range below their highest level",
-      if (enforce) "(cut at the ULOQ, or above it to keep the minimum number of levels).\n" else "(not cut).\n")
+      if (enforce) "(cut at the ULOQ).\n" else "(not cut).\n")
+  if (n_down > 0) {
+    cat("  ", n_down, "curve(s) cut at the ULOQ extended below the LLOQ towards the wished", CAL_WISH_LEVELS, "levels.\n")
+  }
   SumExp::row_df(concn_se)$uloq <- uloq
   SumExp::row_df(calcurve_se)$uloq <- uloq
   SumExp::row_df(concn_se)$linear_range_note <- linear_range_note
@@ -1294,28 +1338,26 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
     dplyr::mutate(calcurve_model = calcurve_models)
 
   # Minimum R2 (--r2_filter, --min_r2): a curve fitted with a lower R2 is not valid, i.e. no
-  # concentrations and not exported; with --keep_all_calcurves it is kept (and marked) instead
+  # concentrations and not exported
   r2_failed <- rep(FALSE, length(calcurve_models))
   if (isTRUE(params$r2_filter)) {
     r2 <- vapply(calcurve_models, \(m) {
       if (is.list(m)) unname(m$R2s[[m$best_model_name]]) else NA_real_
     }, numeric(1))
-    low_r2 <- !is.na(r2) & r2 < params$min_r2 & has_proper_range & !kept_calcurve
+    low_r2 <- !is.na(r2) & r2 < params$min_r2 & has_proper_range
     if (any(low_r2)) {
       issue <- sprintf("R² %.3f below the minimum %.3f", r2[low_r2], params$min_r2)
-      keep <- isTRUE(params$keep_all_calcurves)
       set_r2_issue <- function(se) {
         rd <- SumExp::row_df(se)
         rd$range_issue[low_r2] <- issue
-        if (keep) rd$kept_calcurve[low_r2] <- TRUE else rd$has_proper_range[low_r2] <- FALSE
+        rd$has_proper_range[low_r2] <- FALSE
         SumExp::row_df(se) <- rd
         se
       }
       concn_se <- set_r2_issue(concn_se)
       calcurve_se <- set_r2_issue(calcurve_se)
-      if (!keep) r2_failed <- low_r2
-      cat(sum(low_r2), "calibration curve(s) with R² below", params$min_r2,
-          if (keep) "(kept)." else "(not valid).", "\n")
+      r2_failed <- low_r2
+      cat(sum(low_r2), "calibration curve(s) with R² below", params$min_r2, "(not valid).\n")
     }
   }
 
@@ -1331,26 +1373,23 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   })
   calcurve_se[["conc0"]] <- cc_conc[["conc0"]]
 
-  # Flag chemicals where no study sample exceeded the LLOQ; these are excluded from exports.
-  # Curves kept by `--keep_all_calcurves` without an LLOQ are exported when they have a model.
-  # With `--keep_all_calcurves`, a chemical with a curve is also exported without a study sample
-  # above the LLOQ (`exported_kept`), e.g. for data with QCs only
+  # Flag chemicals where no study sample exceeded the LLOQ; their concentrations are not exported
+  # (the export option `--export_failed` adds their calibration points only)
   non_qc_conc <- util$exclude_ctrl_smpl_cat(concn_se, "QC")[["conc"]]
   any_above_lloq <- non_qc_conc > SumExp::row_df(concn_se)[, "lloq"]
   has_ex <- rowSums(any_above_lloq) > 0
   has_ex[is.na(has_ex)] <- FALSE
-  kept_no_lloq <- SumExp::row_df(concn_se)$kept_calcurve & is.na(SumExp::row_df(concn_se)$lloq)
-  has_ex[kept_no_lloq] <- !is.na(calcurve_models[kept_no_lloq])
   exported_kept <- rep(FALSE, length(has_ex))
-  if (isTRUE(params$keep_all_calcurves)) {
-    has_curve <- SumExp::row_df(concn_se)$has_proper_range %in% TRUE & vapply(calcurve_models, is.list, logical(1))
-    exported_kept <- has_curve & !has_ex
-    has_ex <- has_ex | has_curve
-  }
   has_ex[r2_failed] <- FALSE   # Below the minimum R2: no concentrations
-  exported_kept[r2_failed] <- FALSE
   SumExp::row_df(concn_se)[["to_export"]] <- has_ex
   SumExp::row_df(concn_se)[["exported_kept"]] <- exported_kept
+  # The concentrations and flags of all chemicals, also those not exported in this batch (`conc_all`,
+  # `conc_flag_all`): the "Full" sheet of the export shows them for a batch where a chemical
+  # exported in another batch is not (its values there are n.d. / n.q.)
+  concn_se[["conc_all"]] <- concn_se[["conc"]]
+  concn_se[["conc_flag_all"]] <- concn_se[["conc_flag"]]
+  calcurve_se[["conc_all"]] <- cc_conc[["conc"]]
+  calcurve_se[["conc_flag_all"]] <- cc_conc[["conc_flag"]]
   # Set concentrations of non-exported chemicals to NA
   unit <- SumExp::metadata(concn_se)$concentration_unit
   concn_se[["conc"]] <- util$extract_with_na(concn_se[["conc"]], i = has_ex, j = TRUE) |>
@@ -1390,7 +1429,11 @@ calcurve_replicate_issue <- function(qt_se, params) {
   c_conc <- util$spiked_conc_pts(qt_se)
   n_per_pt <- table(c_conc[!is.na(c_conc)])
   if (length(n_per_pt) == 0) return("no calibration curve samples")
-  if (params$llox_method == "pt_signal_mean_plus_sd" && !isTRUE(n_per_pt[["0"]] >= 2)) {
+  # A batch can have calibration standards but no zero calibrant (only the data as a whole must
+  # have one): no LOD / LLOQ in the batch, which then uses the global curve
+  n0 <- if ("0" %in% names(n_per_pt)) n_per_pt[["0"]] else 0L
+  if (n0 == 0) return("no zero calibrant (Cal0) in the batch")
+  if (params$llox_method == "pt_signal_mean_plus_sd" && n0 < 2) {
     return("< 2 zero-conc cal samples (needed for SD of the LOD/LLOQ)")
   }
   if (params$use_rsd20 && any(n_per_pt[names(n_per_pt) != "0"] < 2)) {
@@ -1688,6 +1731,37 @@ if (isFALSE(params$impute_llox)) {
 # Save the processed data
 saveRDS(lst_proc, file = FILE$proc)
 cat("The `SumExp` object after processing saved to:", FILE$proc, "\n")
+
+# Page 4 of the app prepared for every normalization method and batch (`show$page4_data()`: the
+# data of figures 4.5-4.7 and the rows of tables 4.1 and 4.2), one file each, so that switching the method
+# or the batch in the app only reads a file. Never stops the processing: without the files, the
+# app builds the data when it is shown.
+local(tryCatch({
+  t0 <- Sys.time()
+  unlink(Sys.glob(sub("\\.rds$", "*.rds", msdial$get_raw_data_file_name(user_inputs, suffix = "page4_"))))
+  info <- msdial$read_parsed_data_info(user_inputs)   # The features and samples of the data file
+  colors <- lapply(yaml::read_yaml(file.path(Sys.getenv("R_BOX_PATH", "app/"), "constants.yml"))$COLORS, unlist)
+  class_colors <- show$get_colors_of_classes(info, colors$.ctrl_cat)
+  names_tbl <- tibble::tibble(feature_id = rownames(SumExp::row_df(info)), feature_name = SumExp::row_df(info)$feature_name)
+  n_batches <- length(unique(as.character(SumExp::col_df(info)$batch_id)))
+  n_files <- 0L
+  for (m in c("raw", "closest_norm", "loess_norm", "mvis_norm")) {
+    lst <- lst_proc[[util$mat_id_of_blank_subtracted(m)]]
+    if (is.null(lst)) next
+    qc <- show$conc_figs_data(lst, NULL, class_colors, show$qc_chart_limit(to_report[["qc rsd filter"]]))
+    for (b in show$page4_batches(lst, to_report, m)) {   # "Global" first with several batches
+      d <- tryCatch(show$page4_data(lst, b, to_report, m, class_colors, names_tbl, n_batches, qc = qc),
+                    error = function(e) NULL)
+      if (is.null(d)) next
+      saveRDS(d, show$page4_file(user_inputs, m, b))
+      n_files <- n_files + 1L
+    }
+  }
+  cat("Page 4 of the app prepared for ", n_files, " normalization method / batch combination(s) in ",
+      round(as.numeric(difftime(Sys.time(), t0, units = "secs"))), " s.\n", sep = "")
+}, error = function(e) {
+  cat("Page 4 of the app could not be prepared (the app builds it when shown):", conditionMessage(e), "\n")
+}))
 
 # Mark the processing step as completed
 mark_completed_and_save_to_report(lst_proc)

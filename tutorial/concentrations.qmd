@@ -1,5 +1,5 @@
 ---
-title: "Concentrations (4.5 and 4.6)"
+title: "Concentrations (4.6 and 4.7)"
 ---
 
 ```{r}
@@ -22,7 +22,7 @@ The last two figures of page 4 show the **result**: the concentrations of the ch
 (here **`r rd[fid, "feature_name"]`**, batch `r names(lst)[1]`) in all samples, and its stability
 and precision in the QC samples over the whole run.
 
-## 4.5 Concentration per class
+## 4.6 Concentration per class
 
 ```{r}
 #| label: figure-4-5
@@ -56,9 +56,9 @@ buttons for the scale.
 - **Differences between the study groups** are what you are after; the QCs should be tight.
 - **Many replaced values** in a group mean the compound is mostly below the LLOQ there; its
   average is then driven by the replacement values, so look at the measured values only (the
-  exported statistics and report 4.5.1 use measured values only).
+  exported statistics and report 4.6.1 use measured values only).
 
-## 4.6 QC samples
+## 4.7 QC samples
 
 ```{r}
 #| label: figure-4-6
@@ -66,8 +66,15 @@ buttons for the scale.
 show$qc_conc_html("qc-figure", show$conc_figs_data(lst), compound = fid, script_src = "assets/quanta_figs.js")
 ```
 
-The compound in the QC samples of **all batches** (each batch quantified with its own calibration),
-in two views; switch with the buttons above the plot:
+The compound in the QC samples of **all batches**, as its **signal** (first) or its
+**concentration**; switch with the buttons above the plot (in the app also with the key S). The
+signal is what the concentrations are calculated from: normalized and blank-subtracted, but without
+the calibration of each batch, so it shows how well the measurement and the normalization hold
+over the run; QCs with a signal of 0 (at most the blank) are left out and counted under the title.
+The concentrations add the calibration of each batch (each batch quantified with its own curve).
+Comparing the two shows where a spread comes from: present in the signal, it comes from the
+measurement; present only in the concentrations, from the calibration of the batches. Both in two
+views:
 
 - **Control chart**: each QC as its % deviation from the median of its QC group, along the
   injection order. The area is green within the limit of the QC RSD% filter for targeted compounds
@@ -88,7 +95,7 @@ In the app, click in the figure to switch the view with ← / → (↑ / ↓ sti
   (normalization, blank subtraction, calibration) gives the same concentration throughout.
 - **A step between batches** (the trend jumps, or a high RSD% between batches) points to a batch
   effect in the calibration, e.g. a calibration curve of one batch that differs from the others;
-  compare the batches' curves in 4.4.
+  compare the batches' curves in 4.5.
 - **A drift within a batch** (the trend slopes) that normalization did not remove points to a
   compound that its internal standard does not follow well (see 3.8).
 - **A high RSD% within a batch** means the compound is not measured precisely there, even if its

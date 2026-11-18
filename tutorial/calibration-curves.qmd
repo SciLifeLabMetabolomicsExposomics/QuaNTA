@@ -1,5 +1,5 @@
 ---
-title: "Calibration curves per chemical (4.4)"
+title: "Calibration curves per chemical (4.5)"
 ---
 
 ```{r}
@@ -18,7 +18,7 @@ x <- lst[[b]]
 
 For every targeted compound (`Quant` in the MS-DIAL comment), QuaNTA fits a calibration curve to
 the calibration samples (`Cal…` classes) and uses it to turn the signal of every sample into a
-concentration. Figure **4.4** of the app shows the curve of the compound selected in table **4.1**.
+concentration. Figure **4.5** of the app shows the curve of the compound selected in table **4.1**.
 Below is the same figure as in the app, with the example data (batch `r b`,
 `r tut$method_labels[[best]]` normalization); here, choose the compound in the list or search it by
 name.
@@ -62,16 +62,18 @@ In both modes:
 - **Shading**: dark grey below the LOD, light grey below the LLOQ, and olive above the ULOQ (dashed
   line), the top of the linear range. **Labels** at the top name each limit in its colour: *LOD*
   (blue) and *LLOQ* (purple), with a dotted line, or *LOD = LLOQ* (orange) when they are the same
-  level, and *ULOQ* (olive). The ULOQ is always the actual top of the linear range: when the curve
-  keeps more levels (the minimum number of calibration levels), those levels are in the olive area.
+  level, and *ULOQ* (olive). The ULOQ is always the actual top of the linear range, whatever the
+  options: levels of the curve above it are in the olive area (unless *Enforce ULOQ* cut them off).
 - **Above the plot**, the parameters of the curve (model, R², LOD, LLOQ, ULOQ, highest calibration
   concentration, the curve used) and notes, e.g. why a curve is not valid.
 - **The title** names the compound, followed by the state of its curve in the colour of its row in
   table 4.1: *(not valid)* in red, *(kept although not valid)* in orange, *(global curve used)* in
   blue, *(removed before calibration)* in grey; nothing for a valid curve.
-- **Curve** (only for a compound that uses the global curve, with several batches): the calibration
-  points of all batches, which the global curve was fitted on, or only those of the batch. The key
-  **B** switches between them (in the report, after a click in the figure).
+- **Curve** (with several batches): the global curve, fitted on the calibration points of all
+  batches, then the curve of every batch; the chosen batch's curve is shown first. The global curve
+  is there for every compound, also when it is not used or not valid (its note says why). The key
+  **G** goes to the next curve (in the report, after a click in the figure). In the app, the key
+  **B** goes to the next batch (and *Global*), which shows that batch's curve first.
 
 **How to read it**
 

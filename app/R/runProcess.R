@@ -183,34 +183,44 @@ runProcessUI <- function(uiId) {
       inputId = ns("optimize_cal_points"),
       label = label_tip("Optimize calibration curves based on sample range",
                         paste("Calibration points above the highest sample signal are left out of the",
-                              "curve, keeping at least 3 points (or the minimum number of calibration points,",
-                              "if set higher). Without any sample or QC at or above",
+                              "curve, keeping at least 3 points (or the minimum number of calibration points",
+                              "below, when possible). Without any sample or QC at or above",
                               "the LLOQ, the full range is kept. Greyed out when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
-    )
     ),
-    option_group(
-    shiny::checkboxInput(
-      inputId = ns("set_minimum_number"),
-      label = label_tip("Minimum calibration points per curve",
-                        paste("A curve always needs at least 3 calibration levels (from the LLOQ",
-                              "upwards); this is the default. Tick to require more. Greyed out when the data has no targeted (Quant) features.")),
-      value = FALSE,
-      width = "100%"
-    ),
+    # A sub-option of "Optimize": how many levels an optimized curve keeps, when possible
     shiny::conditionalPanel(
-      condition = "input.set_minimum_number == true",
+      condition = "input.optimize_cal_points == true",
       ns = ns,
-      shiny::numericInput(
-        inputId = ns("min_cal_points"),
-        label = shiny::tags$span(
-          "Minimum n cal points per curve",
-          style = "white-space: nowrap;"
+      shiny::div(
+        class = "q-suboption",
+        shiny::checkboxInput(
+          inputId = ns("set_minimum_number"),
+          label = label_tip("Minimum calibration points per curve",
+                            paste("A wish, not a requirement: an optimized curve is extended upwards to this many",
+                                  "calibration levels (from the LLOQ), as far as there are levels. With \"Enforce ULOQ\",",
+                                  "the curve is not extended above the ULOQ: it takes levels below the LLOQ instead",
+                                  "(those above the LOD), as far as there are. It never makes a curve invalid and never",
+                                  "moves the ULOQ. Curves kept by \"Keep all calibration curves\" are extended the same way.",
+                                  "Without it: 3 levels.")),
+          value = FALSE,
+          width = "100%"
         ),
-        value = 3,
-        min = 3,
-        step = 1
+        shiny::conditionalPanel(
+          condition = "input.set_minimum_number == true",
+          ns = ns,
+          shiny::numericInput(
+            inputId = ns("min_cal_points"),
+            label = shiny::tags$span(
+              "Minimum n cal points per curve",
+              style = "white-space: nowrap;"
+            ),
+            value = 3,
+            min = 3,
+            step = 1
+          )
+        )
       )
     )
     ),
@@ -326,8 +336,9 @@ runProcessUI <- function(uiId) {
       inputId = ns("enforce_linear_range"),
       label = label_tip("Enforce ULOQ",
                         paste("Ticked: each curve is cut at its ULOQ and refitted; higher concentrations are",
-                              "extrapolated. A curve keeps at least the minimum number of levels, so it can end",
-                              "above its ULOQ: the levels between are marked as above the linear range. Unticked: the curves keep their range; concentrations between the",
+                              "extrapolated. With \"Optimize\" and a minimum number of points, a cut curve with fewer",
+                              "levels takes levels below the LLOQ (above the LOD) instead, as far as there are; it never",
+                              "goes above the ULOQ. Unticked: the curves keep their range; concentrations between the",
                               "ULOQ and the highest level are marked as above the linear range. The levels above",
                               "the ULOQ are named in the notes either way. Greyed out when the data has no",
                               "targeted (Quant) features.")),
@@ -355,24 +366,13 @@ runProcessUI <- function(uiId) {
         value = 0.99, min = 0, max = 1, step = 0.005
       )
     )
-    ),
-    option_group(
-    shiny::checkboxInput(
-      inputId = ns("keep_all_calcurves"),
-      label = label_tip("Keep all calibration curves",
-                        paste("Compounds whose calibration range is not valid (e.g. no level above the",
-                              "LLOQ signal, or too few levels) keep a curve from the LLOQ (or the lowest",
-                              "level) to the highest level. A batch still uses a valid global curve when",
-                              "there is one. The reports show why each curve was not valid. Compounds with a",
-                              "curve are also exported when no study sample is above the LLOQ (e.g. data with",
-                              "QCs only); otherwise they are not. Greyed out when the data has no targeted (Quant) features.")),
-      value = FALSE,
-      width = "100%"
-    )
     )
     ),
-    shiny::hr(class = "q-divider"),
-    shiny::actionButton(ns("run_button"), label = "Process data", icon = shiny::icon("play"))
+    # Frozen at the bottom of the card while the options scroll (www/quanta.css: .q-sticky-action)
+    shiny::div(
+      class = "q-sticky-action",
+      shiny::actionButton(ns("run_button"), label = "Process data", icon = shiny::icon("play"))
+    )
 
   )
 }
@@ -427,7 +427,7 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       vis_ok <- is.null(caps) || isTRUE(caps$has_vis)
 
       for (id in c("optimize_cal_points", "set_minimum_number", "min_cal_points", "average_cal_reps",
-                   "keep_all_calcurves", "r2_filter", "min_r2", "log_calibration",
+                   "r2_filter", "min_r2", "log_calibration",
                    "impute_llox")) {
         shinyjs::toggleState(id, condition = tgt)
       }
@@ -436,7 +436,7 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       # Not only greyed out but also switched off (e.g. ticked in a loaded parameters file): the
       # settings then show what is used, also in the reports
       if (!tgt) {
-        for (id in c("optimize_cal_points", "set_minimum_number", "average_cal_reps", "keep_all_calcurves",
+        for (id in c("optimize_cal_points", "set_minimum_number", "average_cal_reps",
                      "r2_filter", "linear_only", "log_calibration")) {
           if (isTRUE(input[[id]])) shiny::updateCheckboxInput(session, id, value = FALSE)
         }
@@ -696,6 +696,12 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
         shiny::updateNumericInput(session, "min_cal_points", value = 3)
       }
     })
+    # The minimum is a sub-option of "Optimize": unticked with it
+    shiny::observeEvent(input$optimize_cal_points, {
+      if (!isTRUE(input$optimize_cal_points) && isTRUE(input$set_minimum_number)) {
+        shiny::updateCheckboxInput(session, "set_minimum_number", value = FALSE)
+      }
+    }, ignoreInit = TRUE)
   })
   runScriptServer(
     serverId,
@@ -706,7 +712,6 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       "optimize_cal_points",
       "average_cal_reps",
       "min_cal_points",
-      "keep_all_calcurves",
       "r2_filter",
       "min_r2",
       "linear_only",

@@ -59,3 +59,8 @@ app/CLAUDE.md
 # Tutorial: the rendered site and its processed example data (`tutorial/_freeze/` is committed)
 /tutorial/_site/
 /tutorial/_data/
+
+# The large synthetic dataset (too large for git): published as a GitHub Release file instead,
+# see example_data/README.md
+/example_data/QuaNTA_synthetic_50250x915.txt
+/example_data/QuaNTA_synthetic_50250x915.zip

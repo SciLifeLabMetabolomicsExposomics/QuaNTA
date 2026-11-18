@@ -19,10 +19,10 @@ help_popup_content <- function(on_serve = FALSE) {
     shiny::p(
       "Version 0.1.0", br(),
       # Published from tutorial/ to GitHub Pages (.github/workflows/tutorial.yml)
-      help_link("QuaNTA tutorial", "https://exposomics-scilifelab.github.io/QuaNTA/"), br(),
-      help_link("QuaNTA github repo", "https://github.com/Exposomics-SciLifeLab/QuaNTA"), br(),
+      help_link("QuaNTA tutorial", "https://SciLifeLabMetabolomicsExposomics.github.io/QuaNTA/"), br(),
+      help_link("QuaNTA github repo", "https://github.com/SciLifeLabMetabolomicsExposomics/QuaNTA"), br(),
       help_link("QuaNTA example data download",
-                "https://github.com/Exposomics-SciLifeLab/QuaNTA/tree/main/example_data"), br(),
+                "https://github.com/SciLifeLabMetabolomicsExposomics/QuaNTA/tree/main/example_data"), br(),
       help_link("QuaNTA preprint", "https://www.preprint.com")
     ),
     if (on_serve) {

@@ -42,9 +42,9 @@ the report is. When it is ready, its download button next to it (**Download HTML
 **Download PDF report**) is no longer greyed out. The reports name the settings that were used, so
 they document the processing.
 
-In the QC/QA report, click a figure with a compound list (e.g. 4.4 or 4.5) to use the arrow keys
+In the QC/QA report, click a figure with a compound list (e.g. 4.5 or 4.6) to use the arrow keys
 there: it gets a thin blue outline, and up / down go to the previous / next compound. Left / right
-switch the modes where a figure has two (4.4, 4.6, and the view in 3.11), otherwise they also go
+switch the modes where a figure has two (4.5, 4.7, and the view in 3.11), otherwise they also go
 through the compounds. Only the outlined figure reacts to the keys.
 
 ## Exported tables
@@ -75,7 +75,7 @@ The options of the box choose the columns of the tables:
   or both (both ticked at first).
 
 With outlier removal off (processing settings), the outlier injections found by the internal
-standards (3.3) stay in the data: in the tables, their names are orange and the row *IS outlier
+standards (3.3) stay in the data: in the tables, their names are in red and the row *IS outlier
 (not removed)* gives the number of outlying internal standards. The history file has a sheet
 *Settings* with the processing settings of the results.
 

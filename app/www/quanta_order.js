@@ -31,6 +31,16 @@
     if (e.clientX < r.left + r.width / 2) box.insertBefore(drag, over);
     else box.insertBefore(drag, over.nextSibling);
   });
+  // The × of an item: sent to Shiny as the input named by the list's `data-remove` ({value, n})
+  document.addEventListener('click', function (e) {
+    var x = e.target && e.target.closest ? e.target.closest('.q-order-x') : null;
+    if (!x) return;
+    var it = x.closest('.q-order-item'), box = x.closest('.q-order');
+    if (!it || !box || !box.getAttribute('data-remove') || !window.Shiny) return;
+    e.preventDefault();
+    it.style.display = 'none';   // At once; the server draws the blocks again
+    Shiny.setInputValue(box.getAttribute('data-remove'), { value: it.getAttribute('data-value'), n: Date.now() });
+  });
   document.addEventListener('drop', function (e) {
     if (e.target && e.target.closest && e.target.closest('.q-order')) e.preventDefault();
   });

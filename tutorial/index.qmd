@@ -19,7 +19,7 @@ zoom (double-click to zoom out).
    [README](https://github.com/Exposomics-SciLifeLab/QuaNTA#readme)).
 2. Upload `QuaNTA_example_ESIpos.zip` and `example_params.yml` from `example_data/` and click **Read data file**, then
    **Process data**.
-3. Follow the chapters in the menu; each names the section of the app it explains (e.g. *4.5*).
+3. Follow the chapters in the menu; each names the section of the app it explains (e.g. *4.6*).
 
 ::: {.callout-note}
 This tutorial matches the QuaNTA version in the same commit of the

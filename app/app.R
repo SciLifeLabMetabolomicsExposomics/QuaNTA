@@ -114,14 +114,17 @@ SECTION_TIPS <- list(
   "3.9" = "The RSD% of 3.8 as a table: per targeted compound, QC group and method, in the batch chosen above the tables (Global: all batches pooled), after the blank filter and blank subtraction, without the zero values. n: the QC injections; Zeros: the values left out (per method when they differ). Filter by QC group or search a feature.",
   "3.10" = "Features removed by the blank filter or by the QC RSD% filter, for the chosen normalization method, with the reason. The QC RSD% of the filter is the median over the QC groups (with zeros); processed per batch, the median over the batches of the median per batch.",
   "3.11" = "One feature in the blanks next to the QCs, study samples (and calibrants), with the threshold of the blank filter (factor × blank mean), which the maximum or mean of the study samples must exceed. Groups: mean ± SD and the samples; per sample: one bar per injection.",
-  "3.13" = "TEMPORARY, to find where the QC RSD% of a targeted compound rises: its RSD% within each QC group after each step, from left to right: raw peak areas, normalized (the method of the row), after the blank filter (empty: removed), after blank subtraction, and the concentrations. In the batch chosen above the tables (Global: all batches pooled, as the RSD between batches in 4.6). All values count, also zeros; values without a number (removed, n.d., n.q.) do not. n: the QC injections. Filter by method, QC group or compound.",
+  "3.13" = "TEMPORARY, to find where the QC RSD% of a targeted compound rises: its RSD% within each QC group after each step, from left to right: raw peak areas, normalized (the method of the row), after the blank filter (empty: removed), after blank subtraction, and the concentrations. In the batch chosen above the tables (Global: all batches pooled, as the RSD between batches in 4.7). All values count, also zeros; values without a number (removed, n.d., n.q.) do not. n: the QC injections. Filter by method, QC group or compound.",
   "3.12" = "Per batch (and all batches pooled), the number of targeted and non-targeted features whose QC RSD% is above the limit, out of those with a QC RSD% (the number on each bar: above / all). The QC RSD% of a feature is the median over the QC groups, after the blank filter and blank subtraction (processed per batch: without the zero values). The limit is that of the QC RSD% filter; where the filter is not used, 30%, and the features are only counted, not removed. For the normalization method chosen in 3.10. A batch with many features above the limit points to a problem in that batch.",
-  "4.2" = "Number of calibration curve samples per concentration in the selected batch.",
-  "4.1" = "Per chemical: the calibration curve used (batch or global), the LOD, the LLOQ (start of the curve), the highest level and the ULOQ (linear curves, or the top of the linear range with log calibration; empty for a quadratic curve: no ULOQ), with a note when the curve is not valid. Red: no valid curve; blue: global curve; orange: kept although not valid; grey: removed before calibration. Select a row (or use the arrow keys) to show the chemical in the figures; the first chemical is shown at the start.",
-  "4.3" = "Number of chemicals per batch with a valid calibration curve and concentrations in the samples.",
-  "4.4" = "The calibration curve of the chemical selected in 4.1, in two modes (buttons, or the arrow keys left / right). For a chemical on the global curve, the key B switches between the global curve and the batch's own curve (not valid). Calibration inspection: all calibration points, coloured by their role (within the calibration range, above the ULOQ, at the LOD, Cal0, out of range), one shape per batch. Final calibration model: the fitted curve, the calibration points it was fitted on, and the QCs (blue; the QC group in the hover text) and study samples (by class) at their concentration; values replaced by the LOD/LLOQ rules are open circles. Grey areas below the LOD and the LLOQ, olive above the ULOQ (the actual top of the linear range), each limit labelled in its colour; the parameters of the curve above the plot. For a chemical quantified with the global curve, Curve chooses the calibration points of all batches or of the selected batch only. After the name, the state of the curve in the colour of its row in 4.1 (red: not valid, orange: kept although not valid, blue: global curve used, grey: removed); nothing for a valid curve.",
-  "4.5" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
-  "4.6" = paste("The selected chemical in the QC samples of all batches (each with its own calibration).",
+  "4.3" = "Number of calibration curve samples per concentration in the selected batch.",
+  "4.1" = "Per chemical in the batch chosen above: the LOD, the LLOQ (start of the curve), the highest level and the ULOQ (linear curves, or the top of the linear range with log calibration; empty for a quadratic curve: no ULOQ), with notes as icons (e.g. the globe: the global curve is used). Red: no valid curve; blue: global curve; orange: kept although not valid; grey: removed before calibration. With Global chosen: the global curve of every chemical, fitted on the calibration points of all batches, for comparison (the concentrations are those of each batch). Select a row (or use the arrow keys) to show the chemical in the figures; the first chemical is shown at the start.",
+  "4.2" = "Per chemical, the calibration of every batch, one dot each with the batch in it (hover a dot for the details). Green: the batch's own curve; blue globe: the batch curve was not valid and the global curve is used; red globe: neither the batch curve nor the global curve is valid (no concentrations); grey: removed before calibration (blank filter or QC RSD% filter).",
+  "4.4" = "Number of chemicals per batch with a valid calibration curve and concentrations in the samples.",
+  "4.5" = "The calibration curve of the chemical selected in 4.1, in two modes (buttons, or the arrow keys left / right). Curve (key G: the next one): the global curve, then the curve of every batch; the batch chosen above is shown first. The global curve is shown for every chemical, also when it is not used or not valid. The key B goes to the next batch. Calibration inspection: all calibration points, coloured by their role (within the calibration range, above the ULOQ, at the LOD, Cal0, out of range), one shape per batch. Final calibration model: the fitted curve, the calibration points it was fitted on, and the QCs (blue; the QC group in the hover text) and study samples (by class) at their concentration; values replaced by the LOD/LLOQ rules are open circles. Grey areas below the LOD and the LLOQ, olive above the ULOQ (the actual top of the linear range), each limit labelled in its colour; the parameters of the curve above the plot. A batch's curve of a chemical on the global curve shows that batch's calibration points only. After the name, the state of the curve in the colour of its row in 4.1 (red: not valid, orange: kept although not valid, blue: global curve used, grey: removed); nothing for a valid curve.",
+  "4.6" = "Concentrations of the selected chemical per class: a box per class and the samples as points; values imputed by the LOD/LLOQ rules are coloured.",
+  "4.7" = paste("The selected chemical in the QC samples of all batches.",
+                "Signal (first; key S): the signal the concentrations are calculated from (normalized with the method above and blank-subtracted, per the settings), without the calibration of each batch: it shows the measurement and the normalization; QCs with a signal of 0 are left out and counted.",
+                "Concentration: each batch with its own calibration; values replaced by the LOD/LLOQ rules are open points.",
                 "Control chart: the % deviation of each QC from the median of its QC group along the injection order,",
                 "green within the limit of the QC RSD% filter for targeted compounds (30% if that filter is not used)",
                 "and red outside it, with a trend line.",
@@ -138,10 +141,12 @@ tip_title <- function(title, num) tagList(paste0(title, " (", num, ")"), info_ti
 #' arrows: www/quanta_ui.js
 #' @param id The input ID
 #' @param choices,selected As [shiny::selectInput()]
-batch_stepper <- function(id, choices = NULL, selected = NULL, label = "Batch") {
+#' @param key `NULL`, or the key that goes to the next batch, shown next to the label (e.g. "B")
+batch_stepper <- function(id, choices = NULL, selected = NULL, label = "Batch", key = NULL) {
   div(
     class = "q-stepper",
-    tags$span(class = "q-stepper-label", label),
+    tags$span(class = "q-stepper-label", label,
+              if (!is.null(key)) tags$span(class = "q-key-hint", title = paste("Key", key, ": the next batch"), key)),
     tags$button(type = "button", class = "q-bstep q-bstep-prev", `data-target` = id, title = "Previous batch", HTML("&#9664;")),
     shiny::selectInput(id, label = NULL, choices = choices, selected = selected, selectize = FALSE, width = "auto"),
     tags$button(type = "button", class = "q-bstep q-bstep-next", `data-target` = id, title = "Next batch", HTML("&#9654;"))
@@ -351,7 +356,7 @@ ui <-
             if (!keyArea || !document.body.contains(keyArea) || $(keyArea).is(':hidden')) return;
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
             if (e.ctrlKey || e.altKey || e.metaKey) return;
-            // Figure 4.6 (clicked, outlined): left / right its mode; up / down stay with table 4.1
+            // Figure 4.7 (clicked, outlined): left / right its mode; up / down stay with table 4.1
             if (keyArea.id === 'qc_section') {
               if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
               if ($(e.target).is('input, textarea, select, [contenteditable]')) return;
@@ -677,7 +682,7 @@ ui <-
                           inline = TRUE
                         ),
                         # Batch shown in the tables and figures of this panel (choices set in the server)
-                        batch_stepper("calib_batch")
+                        batch_stepper("calib_batch", key = "B")
                       )
                     ),
                     div(
@@ -691,7 +696,15 @@ ui <-
                     div(
                       style = "padding: 0;",
                       h3(
-                        tip_title("Calibration curve samples", "4.2"),
+                        tip_title("Calibration per batch", "4.2"),
+                        style = "margin: 0;"
+                      ),
+                      spinner(DT::DTOutput("tb_4_batches"), once = TRUE),
+                    ),
+                    div(
+                      style = "padding: 0;",
+                      h3(
+                        tip_title("Calibration curve samples", "4.3"),
                         style = "margin: 0;"
                       ),
                       spinner(DT::DTOutput("tb_4_1"), once = TRUE),
@@ -699,7 +712,7 @@ ui <-
                     div(
                       style = "padding: 0;",
                       h3(
-                        tip_title("Removal of chemicals with no measurement samples", "4.3"),
+                        tip_title("Removal of chemicals with no measurement samples", "4.4"),
                         style = "margin: 0;"
                       ),
                       spinner(DT::DTOutput("tb_4_5"), once = TRUE),
@@ -711,7 +724,7 @@ ui <-
                     # as in the internal report and the tutorial
                     div(
                       h3(
-                        tip_title("Calibration curves per chemical", "4.4"),
+                        tip_title("Calibration curves per chemical", "4.5"),
                         style = "margin: 0 0 6px 0;"
                       ),
                       htmltools::attachDependencies(
@@ -722,7 +735,7 @@ ui <-
                     ),
                     div(
                       h3(
-                        tip_title("Concentration", "4.5"),
+                        tip_title("Concentration", "4.6"),
                         style = "margin: 0;"
                       ),
                       # Drawn in the browser (www/quanta_figs.js) from the data sent with the
@@ -730,16 +743,16 @@ ui <-
                       div(id = "conc_class_plot", style = "width: 100%; min-height: 470px;")
                     ),
                     # A click in it (outlined then) gives it the arrow keys ← / → (the two views);
-                    # ↑ / ↓ still step through table 4.1. A click elsewhere gives ← / → back to 4.4
+                    # ↑ / ↓ still step through table 4.1. A click elsewhere gives ← / → back to 4.5
                     div(
                       id = "qc_section", class = "q-key-area",
                       h3(
-                        tip_title("QC samples", "4.6"),
+                        tip_title("QC samples", "4.7"),
                         style = "margin: 0;"
                       ),
-                      p("The chemical selected in 4.1 in the QC samples of all batches: as a control chart",
-                        "along the injection order, or per batch with the RSD%. Click in the figure to switch",
-                        "the view with ← / → (↑ / ↓ still change the chemical)."),
+                      p("The chemical selected in 4.1 in the QC samples of all batches, as its signal (key S switches to",
+                        "the concentration): as a control chart along the injection order, or per batch with the RSD%.",
+                        "Click in the figure to switch the view with ← / → (↑ / ↓ still change the chemical)."),
                       div(id = "qc_conc_plot", style = "width: 100%; min-height: 500px;")
                     )
                   )
@@ -748,14 +761,14 @@ ui <-
         $(document).on('shiny:sessioninitialized', function() {
           if (typeof Split === 'undefined') return;
           Split(['#cal-left', '#cal-right'], {
-            sizes: [33, 67],   // Tables 1/3, figures 2/3
+            sizes: [50, 50],   // Tables and figures half each
             minSize: 250,
             gutterSize: 8,
             onDragEnd: function() { window.dispatchEvent(new Event('resize')); }
           });
         });
       ")),
-      # The calibration curve viewer (4.4): the data of all chemicals of the batch from the server,
+      # The calibration curve viewer (4.5): the data of all chemicals of the batch from the server,
       # the chemical of the row selected in table 4.1 (by click or arrow keys up / down) shown at
       # once; left / right switch between the two modes
       # "?v=" (the file's modification time): browsers load a changed file, not their cached copy
@@ -764,22 +777,31 @@ ui <-
       tags$script(HTML("
         (function () {
           var V = null, D = null, shown = null;
-          // The data index of the row selected in a table (`id` of the output). A scrolling table
-          // has a copy of its header in a table of its own (also of class 'dataTable', first in
-          // the page): the table with the rows is the one in the scrolling body
+          // The data index (0-based) of the row selected in a table (`id` of the output). A
+          // scrolling table has a copy of its header in a table of its own (also of class
+          // 'dataTable', first in the page): the table with the rows is the one in the scrolling
+          // body. The tables 3.1 and 4.1 are server-side: the browser has only the rows shown, so
+          // a row's index there is its place in the current search / sort, not in the data; their
+          // hidden first column holds the row number in the data (`.row`)
           window.quantaSelectedRow = function (id) {
             var t = $('#' + id + ' .dataTables_scrollBody table.dataTable')[0] || $('#' + id + ' table.dataTable')[0];
             if (!t || !$.fn.dataTable.isDataTable(t)) return null;
-            var r = $(t).DataTable().rows('.selected').indexes();
-            return r.length ? r[0] : null;
+            var d = $(t).DataTable().row('tr.selected').data();
+            if (!d) return null;
+            var n = parseInt(d[0], 10);
+            return isNaN(n) ? null : n - 1;
           };
           // The row selected in table 4.1 (the order of the viewer's chemicals)
           function selectedRow() { return quantaSelectedRow('tb_4_2'); }
-          // Figures 4.5 and 4.6 (www/quanta_figs.js) of the chemical shown in 4.4
+          // Figures 4.6 and 4.7 (www/quanta_figs.js) of the chemical shown in 4.5
+          // 'Global' chosen (a comparison view): no figures, a note instead
+          var COMPARE = 'Comparison view: choose a batch';
           function drawFigs(i) {
+            var e1 = document.getElementById('conc_class_plot'), e2 = document.getElementById('qc_conc_plot');
+            if (D && D.compare) { QuantaFigs.message(e1, COMPARE); QuantaFigs.qcMessage(e2, COMPARE); return; }
             var c = D && D.compounds[i] ? D.compounds[i].id : null;
-            QuantaFigs.concByClass(document.getElementById('conc_class_plot'), D && D.figs, c, D && D.log_scale);
-            QuantaFigs.qcConc(document.getElementById('qc_conc_plot'), D && D.figs, c);
+            QuantaFigs.concByClass(e1, D && D.figs, c, D && D.log_scale);
+            QuantaFigs.qcConc(e2, D && D.figs, c);
           }
           function show(i) { shown = i; V.show(i); drawFigs(i); }
           function sync() {
@@ -946,25 +968,25 @@ ui <-
                 ))
           )
         ),
-        div(
-          class = "q-p5-grid",
-          quanta_card("Export tables",
-                      icon_name = "table",
-                      subtitle = "The peak areas, the concentrations and the processing history.",
-                      class = "q-p5-settings",
-                      uiOutput("export_options_ui"),
-                      uiOutput("export_size_note")),
-          quanta_card("You'll get",
-                      icon_name = "list-check",
-                      class = "q-p5-summary",
-                      uiOutput("export_summary_ui"),
-                      runScriptUI("export_data", label = "Export tables", download = TRUE),
-                      # The same parameters file as on page 2, with these export options in it
-                      div(class = "q-export-params",
-                          msdialInfoDownloadUI("data_info", label = "Download parameters (.yml)", where = "export"),
-                          helpText("The user information, the processing settings and these export options;",
-                                   "\"Load parameters\" (page 1) sets them again.")))
-        )
+        # One card: the export settings (left) and what will be exported (right), split by a line
+        quanta_card("Export tables",
+                    icon_name = "table",
+                    subtitle = "The peak areas, the concentrations and the processing history.",
+                    div(
+                      class = "q-p5-grid",
+                      div(class = "q-p5-settings",
+                          uiOutput("export_options_ui"),
+                          uiOutput("export_size_note")),
+                      div(class = "q-p5-summary",
+                          div(class = "q-p5-sec-title", "What will be exported"),
+                          uiOutput("export_summary_ui"),
+                          runScriptUI("export_data", label = "Export tables", download = TRUE),
+                          # The same parameters file as on page 2, with these export options in it
+                          div(class = "q-export-params",
+                              msdialInfoDownloadUI("data_info", label = "Download parameters (.yml)", where = "export"),
+                              helpText("The user information, the processing settings and these export options;",
+                                       "\"Load parameters\" (page 1) sets them again.")))
+                    ))
       )
     ),
     # Help icon in the top-right corner; the popup content is in R/helpPopup.R
@@ -1151,6 +1173,8 @@ server <- function(input, output, session) {
       unlink(rds_file("info"))
       # The values of all features per data version
       unlink(Sys.glob(sub("\\.rds$", "*.rds", c(rds_file("norm_"), rds_file("blk_")))))
+      # Page 4 prepared per normalization method and batch (`show$page4_file()`)
+      unlink(Sys.glob(sub("\\.rds$", "*.rds", rds_file("page4_"))))
     }
     unlink(file.path(ws$intermediate, "input_errors.txt"))
     unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
@@ -1271,8 +1295,11 @@ server <- function(input, output, session) {
   # The export options: their defaults, changed by the user in the export box or by a loaded
   # parameters file (its `export:` section), and saved in the downloaded parameters file
   EXPORT_DEFAULTS <- list(norm_methods = "best", group_by_type = TRUE, group_by_batch = FALSE,
+                          split_samples = TRUE, group_by_class = FALSE,
                           group_order = c("QC", "Samples", "Blank", "CalCurve"),
-                          keep = c("QC", "Blank", "CalCurve"), formats = c("xlsx", "csv"))
+                          keep = c("Samples", "QC", "Blank", "CalCurve"), formats = c("xlsx", "csv"),
+                          export_norm = FALSE, export_failed = FALSE)
+  EXPORT_KEEP <- c("Samples", "QC", "Blank", "CalCurve")
   export_settings <- shiny::reactiveVal(EXPORT_DEFAULTS)
   set_export <- function(name, value) {
     s <- shiny::isolate(export_settings())
@@ -1283,8 +1310,9 @@ server <- function(input, output, session) {
     s <- export_settings()
     # Lists in the file also with one element
     list(norm_methods = as.list(s$norm_methods), group_by_type = s$group_by_type,
-         group_by_batch = s$group_by_batch, group_order = as.list(s$group_order), keep = as.list(s$keep),
-         formats = as.list(s$formats))
+         split_samples = s$split_samples, group_by_batch = s$group_by_batch, group_by_class = s$group_by_class,
+         group_order = as.list(s$group_order), keep = as.list(s$keep),
+         formats = as.list(s$formats), export_norm = s$export_norm, export_failed = s$export_failed)
   })
   # A loaded parameters file: its export options (missing or invalid ones keep their defaults)
   shiny::observeEvent(data_info$loaded_export, {
@@ -1294,10 +1322,16 @@ server <- function(input, output, session) {
     export_settings(list(
       norm_methods = chr(p$norm_methods) %||% EXPORT_DEFAULTS$norm_methods,
       group_by_type = lgl(p$group_by_type, EXPORT_DEFAULTS$group_by_type),
+      split_samples = lgl(p$split_samples, EXPORT_DEFAULTS$split_samples),
       group_by_batch = lgl(p$group_by_batch, EXPORT_DEFAULTS$group_by_batch),
+      group_by_class = lgl(p$group_by_class, EXPORT_DEFAULTS$group_by_class),
       group_order = chr(p$group_order) %||% EXPORT_DEFAULTS$group_order,
-      keep = intersect(chr(p$keep) %||% EXPORT_DEFAULTS$keep, c("QC", "Blank", "CalCurve")),
-      formats = (function(x) if (length(x) > 0) x else EXPORT_DEFAULTS$formats)(intersect(chr(p$formats), c("xlsx", "csv")))
+      # Files saved before "Samples" was a choice: the study samples were always kept
+      keep = intersect(c(if (is.null(p$keep) || !any(chr(p$keep) == "Samples") && is.null(p$split_samples)) "Samples",
+                         chr(p$keep) %||% EXPORT_DEFAULTS$keep), EXPORT_KEEP),
+      formats = (function(x) if (length(x) > 0) x else EXPORT_DEFAULTS$formats)(intersect(chr(p$formats), c("xlsx", "csv"))),
+      export_norm = lgl(p$export_norm, EXPORT_DEFAULTS$export_norm),
+      export_failed = lgl(p$export_failed, EXPORT_DEFAULTS$export_failed)
     ))
   }, ignoreNULL = TRUE)
   # The user's changes in the export box
@@ -1305,7 +1339,25 @@ server <- function(input, output, session) {
                       ignoreNULL = FALSE, ignoreInit = TRUE)
   shiny::observeEvent(input$export_group_type, set_export("group_by_type", isTRUE(input$export_group_type)), ignoreInit = TRUE)
   shiny::observeEvent(input$export_group_batch, set_export("group_by_batch", isTRUE(input$export_group_batch)), ignoreInit = TRUE)
-  shiny::observeEvent(input$export_order, set_export("group_order", as.character(unlist(input$export_order))), ignoreInit = TRUE)
+  shiny::observeEvent(input$export_split_samples, set_export("split_samples", isTRUE(input$export_split_samples)), ignoreInit = TRUE)
+  shiny::observeEvent(input$export_group_class, set_export("group_by_class", isTRUE(input$export_group_class)), ignoreInit = TRUE)
+  shiny::observeEvent(input$export_norm, set_export("export_norm", isTRUE(input$export_norm)), ignoreInit = TRUE)
+  shiny::observeEvent(input$export_failed, set_export("export_failed", isTRUE(input$export_failed)), ignoreInit = TRUE)
+  # The blocks dragged into a new order: the shown ones take the places of the shown ones before;
+  # the hidden ones (not included) keep theirs
+  shiny::observeEvent(input$export_order, {
+    shown <- as.character(unlist(input$export_order))
+    full <- export_order_units(shiny::isolate(export_order_r()), shiny::isolate(export_settings())$split_samples)
+    slots <- which(full %in% shown)
+    if (length(slots) == length(shown)) full[slots] <- shown else full <- unique(c(shown, full))
+    set_export("group_order", full)
+  }, ignoreInit = TRUE)
+  # The x of a block: not exported (its "Include" box unticked; any sample class: all study samples)
+  shiny::observeEvent(input$export_remove, {
+    v <- as.character(input$export_remove$value)
+    key <- if (v == "Samples" || startsWith(v, "grp:")) "Samples" else v
+    shiny::updateCheckboxGroupInput(session, "export_keep", selected = setdiff(as.character(input$export_keep), key))
+  })
   shiny::observeEvent(input$export_keep, set_export("keep", as.character(input$export_keep)),
                       ignoreNULL = FALSE, ignoreInit = TRUE)
   shiny::observeEvent(input$export_formats, set_export("formats", as.character(input$export_formats)),
@@ -1324,6 +1376,14 @@ server <- function(input, output, session) {
     }
     unique(c(out, def))
   })
+  # The blocks of an order: the sample classes each (`split`), or all as one "Samples" block (at
+  # the place of the first class)
+  export_order_units <- function(order, split) {
+    if (!isFALSE(split)) return(order)
+    unique(ifelse(startsWith(order, "grp:"), "Samples", order))
+  }
+  # The order given to the export: as the blocks (with "Samples" when not split)
+  export_order_arg_r <- shiny::reactive(export_order_units(export_order_r(), export_settings()$split_samples))
   # The methods of the settings that were computed ("best": the best method), or the best one
   export_selected_methods_r <- shiny::reactive({
     ids <- available_norm_r()
@@ -1338,10 +1398,10 @@ server <- function(input, output, session) {
     types <- export_types_r()
     s <- shiny::isolate(export_settings())
     sel <- shiny::isolate(export_selected_methods_r())
-    keep_choices <- c(QCs = "QC", Blanks = "Blank", "Calibration points" = "CalCurve")
-    keep_choices <- keep_choices[keep_choices %in% types]
-    order <- shiny::isolate(export_order_r())
+    keep_choices <- c(Samples = "Samples", QCs = "QC", Blanks = "Blank", "Cal points" = "CalCurve")
+    keep_choices <- keep_choices[keep_choices == "Samples" | keep_choices %in% types]
     blk <- !isFALSE(shiny::isolate(to_report_r())$params$blank_subtract)
+    two <- function(...) shiny::div(class = "q-p5-checks", ...)
     sec <- function(title, ...) shiny::div(class = "q-p5-sec", shiny::div(class = "q-p5-sec-title", title), ...)
     shiny::tagList(
       sec("Normalization methods (one set of tables each)",
@@ -1353,31 +1413,44 @@ server <- function(input, output, session) {
       sec("Column order",
           shiny::div(
             class = "q-export-layout",
-            shiny::checkboxInput("export_group_type", "Group per injection type", value = s$group_by_type),
+            two(shiny::checkboxInput("export_group_type", "Group per injection type", value = s$group_by_type),
+                shiny::checkboxInput("export_split_samples", "Split samples by group",
+                                     value = !isFALSE(s$split_samples))),
             # The groups dragged into their order: the first is the leftmost group of the tables
+            # (the blocks follow the included injections: `export_order_ui`)
             shiny::conditionalPanel(
               "input.export_group_type",
-              shiny::div(class = "q-order-hint", "Drag the groups into their order (first: the leftmost columns):"),
-              shiny::div(
-                class = "q-order", `data-input` = "export_order",
-                lapply(order, function(v) {
-                  shiny::div(class = "q-order-item", draggable = "true", `data-value` = v,
-                             title = names(types)[match(v, types)],
-                             shiny::span(names(types)[match(v, types)]))
-                })
-              )
+              shiny::div(class = "q-order-hint", "Drag the groups into their order (first: the leftmost columns); × leaves a group out:"),
+              shiny::uiOutput("export_order_ui")
             ),
-            shiny::checkboxInput("export_group_batch", "Group per batch first (then by injection order within each batch)",
-                                 value = s$group_by_batch)
+            two(shiny::checkboxInput("export_group_batch", "Group per batch first (then by injection order within each batch)",
+                                     value = s$group_by_batch),
+                shiny::checkboxInput("export_group_class", "Group by class (e.g. the QC groups together, not by injection order)",
+                                     value = isTRUE(s$group_by_class)))
           )),
       shiny::div(
         class = "q-p5-two",
-        if (length(keep_choices) > 0) {
-          sec("Include (study samples always)",
-              shiny::checkboxGroupInput("export_keep", NULL, choices = keep_choices,
-                                        selected = intersect(s$keep, keep_choices), width = "100%"),
-              if (blk) shiny::helpText("Blanks are not in the blank-subtracted table."))
-        },
+        sec("Include",
+            shiny::checkboxGroupInput("export_keep", NULL, choices = keep_choices,
+                                      selected = intersect(s$keep, keep_choices), width = "100%"),
+            if (blk && "Blank" %in% keep_choices)
+              shiny::helpText("The blanks in the blank-subtracted table are not blank-subtracted."),
+            # Only with blank subtraction: the peak areas without it as well (otherwise greyed out:
+            # those are the only ones)
+            local({
+              cb <- shiny::checkboxInput("export_norm", "Export non-blank subtracted", value = blk && isTRUE(s$export_norm))
+              if (blk) cb else shinyjs::disabled(cb)
+            }),
+            # Targeted data: the compounds without concentrations, with their calibration points
+            if (!isTRUE(shiny::isolate(to_report_r())[["is_non_target_mode"]])) {
+              shiny::checkboxInput(
+                "export_failed",
+                label_tip("Keep failed and with no quantified study samples",
+                          paste("The concentration tables also list the compounds with a failed calibration curve",
+                                "and those without a study sample at or above the LLOQ: the signals of their",
+                                "calibration points (coloured; needs \"Cal points\" included), no concentrations.")),
+                value = isTRUE(s$export_failed))
+            }),
         sec("File formats",
             shiny::checkboxGroupInput(
               "export_formats", NULL,
@@ -1388,9 +1461,37 @@ server <- function(input, output, session) {
       )
     )
   })
+  # The blocks of the column order: the included injection types (the study samples a block per
+  # class, or one "Samples" block), drawn as the table: the metadata columns always first (not
+  # draggable), features as rows, injections as columns
+  output$export_order_ui <- shiny::renderUI({
+    types <- export_types_r()
+    s <- export_settings()
+    split <- !isFALSE(s$split_samples)
+    units <- export_order_units(export_order_r(), split)
+    keep <- s$keep
+    shown <- units[ifelse(units == "Samples" | startsWith(units, "grp:"), "Samples", units) %in% keep]
+    label <- function(v) if (v == "Samples") "Samples" else if (v == "CalCurve") "Cal points" else names(types)[match(v, types)]
+    shiny::div(
+      class = "q-order-wrap",
+      shiny::div(class = "q-order-xlab", "Samples (columns)"),
+      shiny::div(class = "q-order-ylab", shiny::span("Features (rows)")),
+      shiny::div(
+        class = "q-order", `data-input` = "export_order", `data-remove` = "export_remove",
+        shiny::div(class = "q-order-meta", title = "The feature information, always the first columns",
+                   shiny::span("Metadata")),
+        lapply(shown, function(v) {
+          shiny::div(class = "q-order-item", draggable = "true", `data-value` = v, title = label(v),
+                     shiny::span(label(v)),
+                     shiny::tags$button(type = "button", class = "q-order-x", title = "Leave out of the export",
+                                        `aria-label` = paste("Leave", label(v), "out"), HTML("&times;")))
+        })
+      )
+    )
+  })
   # The methods to export (matrix IDs), the computed ones only
   export_methods_r <- shiny::reactive(intersect(input$export_norm_methods, available_norm_r()))
-  # "You'll get": what the export writes with the current settings
+  # "What will be exported": what the export writes with the current settings
   output$export_summary_ui <- shiny::renderUI({
     tr <- tryCatch(to_report_r(), error = function(e) NULL)
     if (is.null(tr)) return(shiny::div(class = "q-p5-sum-empty", "Process the data first."))
@@ -1400,23 +1501,31 @@ server <- function(input, output, session) {
     fmt <- s$formats %||% EXPORT_DEFAULTS$formats
     blk <- !isFALSE(tr$params$blank_subtract)
     targeted <- !isTRUE(tr[["is_non_target_mode"]])
-    files <- c(if (blk) "Blank-subtracted peak areas (….norm_blk)" else "Normalized peak areas, not blank-subtracted (….norm)",
-               if (targeted) "Concentrations (….conc)", "Processing history (….history)")
-    keep <- c(QC = "QCs", Blank = "blanks", CalCurve = "calibration points")[intersect(s$keep, c("QC", "Blank", "CalCurve"))]
-    if (blk) keep <- keep[keep != "blanks"]
+    files <- c(if (!blk || isTRUE(s$export_norm)) "Normalized peak areas, not blank-subtracted (….norm)",
+               if (blk) "Blank-subtracted peak areas (….norm_blk)",
+               if (targeted) paste0("Concentrations (….conc)", if (isTRUE(s$export_failed))
+                 ", also the compounds with a failed curve or no quantified study sample (calibration point signals only)"),
+               "Processing history (….history)")
+    keep <- c(Samples = "study samples", QC = "QCs", Blank = "blanks", CalCurve = "cal points")[intersect(EXPORT_KEEP, s$keep)]
+    if (blk) keep[keep == "blanks"] <- "blanks (not blank-subtracted)"
+    if (isTRUE(s$group_by_type) && !isFALSE(s$split_samples) && "study samples" %in% keep) {
+      keep[keep == "study samples"] <- "study samples (a group per class)"
+    }
     order_txt <- paste0(if (isTRUE(s$group_by_batch)) "by batch, then " else "",
-                        if (isTRUE(s$group_by_type)) "by injection type, then " else "", "by injection order")
-    row <- function(label, ...) shiny::div(class = "q-p5-sum-row", shiny::span(class = "q-p5-sum-label", label), shiny::span(...))
-    shiny::div(
+                        if (isTRUE(s$group_by_type)) "by injection type, then " else "",
+                        if (isTRUE(s$group_by_class)) "by class, then " else "", "by injection order")
+    item <- function(label, ...) shiny::tags$li(shiny::span(class = "q-p5-sum-label", paste0(label, ": ")), ...)
+    shiny::tags$ul(
       class = "q-p5-sum",
-      row("Methods", if (length(m) == 0) shiny::span(class = "q-p5-sum-warn", "none chosen") else
+      item("Normalization", if (length(m) == 0) shiny::span(class = "q-p5-sum-warn", "none chosen") else
         paste(vapply(m, function(id) sub(" \\(.*", "", labs[[id]] %||% id), ""), collapse = ", ")),
-      row("Files per method", shiny::tags$ul(lapply(files, shiny::tags$li))),
-      row("Injections", paste(c("study samples", keep), collapse = ", ")),
-      row("Columns", order_txt),
-      row("Formats", if (length(fmt) == 2) "Excel and CSV (in the folders xlsx/ and csv/ of the zip file)" else
+      item("Files per method", shiny::tags$ul(lapply(files, shiny::tags$li))),
+      item("Injections", if (length(keep) == 0) shiny::span(class = "q-p5-sum-warn", "none chosen") else
+        paste(keep, collapse = ", ")),
+      item("Columns", order_txt),
+      item("Formats", if (length(fmt) == 2) "Excel and CSV (in the folders xlsx/ and csv/ of the zip file)" else
         if (identical(fmt, "csv")) "CSV (one file per sheet)" else "Excel"),
-      row("In total", sprintf("%d table%s, in one zip file", length(m) * length(files), if (length(m) * length(files) == 1) "" else "s"))
+      item("In total", sprintf("%d table%s, in one zip file", length(m) * length(files), if (length(m) * length(files) == 1) "" else "s"))
     )
   })
   # The script arguments of the layout of the tables (scripts/export_data.R)
@@ -1425,10 +1534,15 @@ server <- function(input, output, session) {
     keep <- s$keep
     c(paste0("--group_by_type=", isTRUE(s$group_by_type)),
       paste0("--group_by_batch=", isTRUE(s$group_by_batch)),
-      paste0("--group_order=", jsonlite::toJSON(export_order_r())),
+      paste0("--split_samples=", !isFALSE(s$split_samples)),
+      paste0("--group_by_class=", isTRUE(s$group_by_class)),
+      paste0("--group_order=", jsonlite::toJSON(export_order_arg_r())),
       paste0("--keep_qc=", "QC" %in% keep),
       paste0("--keep_blank=", "Blank" %in% keep),
       paste0("--keep_cal=", "CalCurve" %in% keep),
+      paste0("--keep_samples=", "Samples" %in% keep),
+      paste0("--export_norm=", isTRUE(s$export_norm) && !isFALSE(to_report_r()$params$blank_subtract)),
+      paste0("--export_failed=", isTRUE(s$export_failed)),
       paste0("--formats=", paste(s$formats %||% EXPORT_DEFAULTS$formats, collapse = ",")))
   })
 
@@ -1532,7 +1646,7 @@ server <- function(input, output, session) {
     tb <- as.data.frame(tb,
       check.names = FALSE
     )
-    colnames(tb) <- c("Category", "Class", "Number of Samples", "Percent")
+    colnames(tb) <- c("Category", "Class", "Number of Injections", "Percent")
 
     DT::datatable(
       tb,
@@ -1752,7 +1866,9 @@ server <- function(input, output, session) {
       )
     df <- data.frame(df, check.names = FALSE)
     df$is_failed_istd <- to_report_r()[["is failed internal std."]]
-    df
+    # The row number in the data, hidden (first column): figure 3.5 finds the selected IS by it,
+    # also when the table is sorted (see `quantaSelectedRow()`)
+    cbind(.row = seq_len(nrow(df)), df)
   }
   # Another batch: the values are replaced in place (the selected row, and so 3.2 and 3.5, stay)
   shiny::observeEvent(qc_batch_r(), {
@@ -1795,7 +1911,7 @@ server <- function(input, output, session) {
   }
 "),
         columnDefs = list(
-          list(targets = ncol(df) - 1, visible = FALSE) # hide flag column
+          list(targets = c(0L, ncol(df) - 1), visible = FALSE) # hide `.row` and the flag column
         )
       )
     ) |>
@@ -1903,95 +2019,81 @@ server <- function(input, output, session) {
   ### something for 3.3 outlier removal
 
 
+  # Table 3.3: the outlier injections, with a sentence above it (as 3.4) saying how many there are
+  # and whether they were removed
   output$wrap_outlier <- renderUI({
-    is_outlier <- to_report_r()[["is outlier sample"]]
-    # The following is added only when the outlier removal step has been set to perform
-
-    if (!is.null(is_outlier)) {
-      # Number of outlying internal standard features per sample
-      n_out_istd <- to_report_r()[["number of outlier internal std. per sample"]]
-
-      tr <- to_report_r()
-      # Removed (outlier removal on), or only found (off; then marked in the exported tables).
-      # Older processed data: outliers were only listed when removed
-      removed <- !isFALSE(tr[["outliers removed"]])
-      n_is <- tr[["number of internal std. for outliers"]] %||% nrow(internal_std_se_r())
-      per_batch_txt <- if (isTRUE(tr[["outliers per batch"]])) " (the mean and SD of each IS within its batch)" else ""
-      if (all(!is_outlier)) {
-        text_3_1_2 <- paste0("No outliers were identified", per_batch_txt, ".\n")
-
-        output$text_3_1_2 <- renderUI({
-          shiny::div(class = "q-note-line", text_3_1_2)
-        })
-      } else {
-        text_3_1_2 <- if (removed) {
-          paste0("The following injections were identified as outliers", per_batch_txt, " and removed.\n\n")
-        } else {
-          paste0("The following injections were identified as outliers", per_batch_txt, ". They were NOT removed ",
-                 "(outlier removal is off): they are in the data and the results, and are marked in the exported ",
-                 "tables (row \"IS outlier (not removed)\", injection name in orange).\n\n")
-        }
-        stopifnot(identical(names(is_outlier), names(n_out_istd)))
-        # To retrieve the sample_name, Class, sample_type
-        tb <- tibble::as_tibble(SumExp::col_df(internal_std_se_r()), rownames = "sample_id")
-        show_tb <- tibble::tibble(sample_id = names(n_out_istd), n_out = unname(n_out_istd), is_outlier = unname(is_outlier)) |>
-          dplyr::left_join(tb, by = "sample_id") |>
-          dplyr::filter(is_outlier) |>
-          dplyr::transmute(
-            Injection = sample_name, `Group (Class)` = Class, `Injection type` = sample_type,
-            Batch = show$measured_batch(dplyr::pick(dplyr::everything())), `Injection order` = injection_order,
-            `n outlier IS` = paste(n_out, "of", n_is),
-            Removed = if (removed) "Yes" else "No"
-          )
-
-        show_tb <- as.data.frame(show_tb,
-          check.names = FALSE
-        )
-
-        # Remove the outlier samples
-
-
-        output$text_3_1_2 <- renderUI({
-          shiny::div(class = "q-note-line", text_3_1_2)
-        })
-
-        output$tb_3_1_2 <- DT::renderDataTable({
-          DT::datatable(
-            show_tb,
-            selection = "none",   # Clicking a row has no effect
-            rownames = FALSE,
-            options = list(
-              scrollX = TRUE,
-              lengthChange = FALSE,
-              searching = FALSE,
-              paging = FALSE, # remove Previous/Next
-              scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
-              info = FALSE, # remove "Showing X to Y of Z entries"
-              dom = "t",
-              headerCallback = JS(
-                "function(thead){",
-                "$(thead).find('th').css({'color': 'green',
-                                            'font-weight': 'bold'});", "}"
-              ),
-              columnDefs = list(
-                list(className = "dt-center", targets = "_all") # <--- centers all text
-              )
-            )
-          ) |>
-            DT::formatStyle(
-              columns = names(show_tb),
-              color = "#000000",
-              backgroundColor = "#FFFFFF",
-              target = "cell"
-            ) |>
-            DT::formatStyle(
-              names(show_tb),
-              backgroundColor = "#F8FAFF",
-              target = "row"
-            )
-        })
-      }
+    tr <- to_report_r()
+    is_outlier <- tr[["is outlier sample"]]
+    if (is.null(is_outlier)) return(NULL)
+    # Removed (outlier removal on), or only found (off; then marked in the exported tables).
+    # Older processed data: outliers were only listed when removed
+    removed <- !isFALSE(tr[["outliers removed"]])
+    n_is <- tr[["number of internal std. for outliers"]] %||% nrow(internal_std_se_r())
+    per_batch_txt <- if (isTRUE(tr[["outliers per batch"]])) " (the mean and SD of each IS within its batch)" else ""
+    n <- sum(is_outlier)
+    if (n == 0) {
+      return(shiny::div(class = "q-note-line", paste0("No outliers were identified", per_batch_txt, ".")))
     }
+    outliers <- if (n == 1) "1 outlier was" else paste(n, "outliers were")
+    note <- if (removed) {
+      shiny::div(class = "q-note-line", shiny::tags$b(paste(outliers, "removed")),
+                 paste0(per_batch_txt, ": they are not in the data and the results."))
+    } else {
+      shiny::div(class = "q-note-line", shiny::tags$b(paste(outliers, "not removed")),
+                 paste0(per_batch_txt, " (outlier removal is off): they are in the data and the results, and their ",
+                        "injection names are in red in the exported tables (row \"IS outlier (not removed)\")."))
+    }
+    # Number of outlying internal standard features per sample
+    n_out_istd <- tr[["number of outlier internal std. per sample"]]
+    stopifnot(identical(names(is_outlier), names(n_out_istd)))
+    # To retrieve the sample_name, Class, sample_type
+    tb <- tibble::as_tibble(SumExp::col_df(internal_std_se_r()), rownames = "sample_id")
+    show_tb <- tibble::tibble(sample_id = names(n_out_istd), n_out = unname(n_out_istd), is_outlier = unname(is_outlier)) |>
+      dplyr::left_join(tb, by = "sample_id") |>
+      dplyr::filter(is_outlier) |>
+      dplyr::transmute(
+        Injection = sample_name, `Group (Class)` = Class, `Injection type` = sample_type,
+        Batch = show$measured_batch(dplyr::pick(dplyr::everything())), `Injection order` = injection_order,
+        `n outlier IS` = paste(n_out, "of", n_is),
+        Removed = if (removed) "Yes" else "No"
+      ) |>
+      as.data.frame(check.names = FALSE)
+    shiny::tagList(
+      note,
+      DT::datatable(
+        show_tb,
+        selection = "none",   # Clicking a row has no effect
+        rownames = FALSE,
+        options = list(
+          scrollX = TRUE,
+          lengthChange = FALSE,
+          searching = FALSE,
+          paging = FALSE, # remove Previous/Next
+          scrollY = "400px", scrollCollapse = TRUE,   # Scrolls (shorter when it fits)
+          info = FALSE, # remove "Showing X to Y of Z entries"
+          dom = "t",
+          headerCallback = JS(
+            "function(thead){",
+            "$(thead).find('th').css({'color': 'green',
+                                        'font-weight': 'bold'});", "}"
+          ),
+          columnDefs = list(
+            list(className = "dt-center", targets = "_all") # <--- centers all text
+          )
+        )
+      ) |>
+        DT::formatStyle(
+          columns = names(show_tb),
+          color = "#000000",
+          backgroundColor = "#FFFFFF",
+          target = "cell"
+        ) |>
+        DT::formatStyle(
+          names(show_tb),
+          backgroundColor = "#F8FAFF",
+          target = "row"
+        )
+    )
   })
 
 
@@ -2572,37 +2674,49 @@ server <- function(input, output, session) {
     shiny::req(proc_r()[[MAT_ID_BLANK_SUBT]])
   })
 
-  # Batch choices follow the processed data; keep the current batch if it still exists
+  # The batches of page 4: with several batches, "Global" first (the global curves, for comparison)
+  calib_batches_r <- shiny::reactive(show$page4_batches(calib_lst_proc_r(), to_report_r(), input$norm_method))
+
+  # Batch choices follow the processed data; keep the current batch if it still exists (the first
+  # batch at the start, not Global)
   shiny::observe({
-    batch_ids <- names(calib_lst_proc_r())
+    batch_ids <- calib_batches_r()
     current <- shiny::isolate(input$calib_batch)
-    selected <- if (!is.null(current) && current %in% batch_ids) current else batch_ids[1]
+    selected <- if (!is.null(current) && current %in% batch_ids) current else setdiff(batch_ids, "Global")[1]
     shiny::updateSelectInput(session, "calib_batch", choices = batch_ids, selected = selected)
   })
 
-  # Calibrated data of the selected batch: list(calcurve, concn)
+  # Calibrated data of the selected batch: list(calcurve, concn); with Global, of the first batch
+  # (the calibration points of all batches are taken from `calib_lst_proc_r()` where needed)
   calib_batch_proc_r <- shiny::reactive({
     lst_proc <- calib_lst_proc_r()
-    shiny::req(input$calib_batch %in% names(lst_proc))
-    lst_proc[[input$calib_batch]]
+    shiny::req(input$calib_batch %in% calib_batches_r())
+    lst_proc[[if (input$calib_batch == "Global") 1 else input$calib_batch]]
+  })
+
+  # The compounds of the rows of table 4.1 (and of the viewer), in their order
+  calib_ids_r <- shiny::reactive({
+    shiny::req(input$calib_batch %in% calib_batches_r())
+    p <- page4_r(input$norm_method, input$calib_batch)
+    p$ids %||% rownames(calib_batch_proc_r()$calcurve)   # Files prepared by an older version
   })
 
   # Feature ID of the chemical selected in table 4.1. Kept when the batch or the normalization
   # method changes, so that the same chemical is selected again in the re-rendered table.
   calib_feature_id <- shiny::reactiveVal(NULL)
   shiny::observeEvent(input$tb_4_2_rows_selected, {
-    ids <- rownames(shiny::isolate(calib_batch_proc_r())$calcurve)
+    ids <- shiny::isolate(calib_ids_r())
     calib_feature_id(ids[input$tb_4_2_rows_selected[1]])
   })
   # Selected feature ID that exists in the selected batch (stops the figures until one is selected)
   calib_selected_feature_r <- shiny::reactive({
     shiny::validate(shiny::need(input$tb_4_2_rows_selected, MSG_SELECT_CHEMICAL))
-    id <- rownames(calib_batch_proc_r()$calcurve)[input$tb_4_2_rows_selected[1]]
+    id <- calib_ids_r()[input$tb_4_2_rows_selected[1]]
     shiny::validate(shiny::need(!is.na(id), MSG_SELECT_CHEMICAL))
     id
   })
 
-  # ---- Calibration curve viewer (4.4) ----
+  # ---- Calibration curve viewer (4.5) ----
   # The data of all chemicals of the selected batch for the viewer in the browser
   # (www/calcurve_viewer.js; the same as in the internal report and the tutorial), in the order of
   # the rows of table 4.1: the calibrated chemicals (`rownames(calcurve)`), then those removed before
@@ -2610,26 +2724,45 @@ server <- function(input, output, session) {
   # choosing a chemical (table 4.1), a curve or a mode is then done in the browser, at once.
   # Curves of a chemical that uses the global curve in a multi-batch run: "All batches (global
   # curve)", the calibration points it was fitted on, or only those of the selected batch.
+  # Page 4 data kept per normalization method and batch, so that switching back to a method or
+  # batch already shown does not build it again (only within this session; built anew when the
+  # data is processed again: the key holds the time of the processed data file)
+  page4_cache <- new.env(parent = emptyenv())
+  page4_memo <- function(key, expr) {
+    stamp <- tryCatch(as.numeric(file.mtime(rds_file("proc"))), error = function(e) NA_real_)
+    key <- paste(stamp, key, sep = "|")
+    if (!exists(key, envir = page4_cache, inherits = FALSE)) {
+      # At most about 60 entries (e.g. 4 methods x 9 batches x 2 kinds): then start again
+      if (length(ls(page4_cache)) > 60) rm(list = ls(page4_cache), envir = page4_cache)
+      assign(key, force(expr), envir = page4_cache)
+    }
+    get(key, envir = page4_cache, inherits = FALSE)
+  }
+
+  # Page 4 of a method and batch (`show$page4_data()`: the figures as JSON and the rows of table
+  # 4.1): prepared by process.R for every method and batch, so that only its file is read here (a
+  # file older than the processed data is not used); built here when there is none (data processed
+  # by older versions). Kept per method and batch (`page4_memo()`)
+  page4_r <- function(m, b) page4_memo(paste("page4", m, b), {
+    f <- show$page4_file(current_inputs(), m, b)
+    if (file.exists(f) && isTRUE(file.mtime(f) >= file.mtime(rds_file("proc")))) {
+      readRDS(f)
+    } else {
+      lst <- proc_r()[[util$mat_id_of_blank_subtracted(m)]]
+      tr <- to_report_r()
+      qc <- page4_memo(paste("qc", m), show$conc_figs_data(lst, NULL, colors_of_classes(),
+                                                           show$qc_chart_limit(tr[["qc rsd filter"]])))
+      show$page4_data(lst, b, tr, m, colors_of_classes(), feature_id_name_tbl(),
+                      length(unique(as.character(SumExp::col_df(raw_se_r())$batch_id))), qc = qc)
+    }
+  })
+
   shiny::observe({
     shiny::req(tryCatch({ to_report_r(); is_target_mode() }, error = function(e) FALSE))
-    lst <- calib_lst_proc_r()
     b <- input$calib_batch
-    shiny::req(b %in% names(lst))
-    tr <- to_report_r()
-    x <- lst[[b]]
-    cv <- show$calib_views_of_batch(lst, b, tr, input$norm_method)
-    data <- show$calib_viewer_data(
-      compounds = cv$compounds,
-      views = cv$views,
-      log_scale = isTRUE(tr[["params"]][["log_calibration"]]),
-      unit = show$conc_unit(x$concn),
-      y_title = show$label_if_has(x$concn[[util$mat_id_in_calibration(util$mat_id_of_blank_subtracted(input$norm_method))]], "Signal"),
-      class_colors = colors_of_classes()
-    )
-    # Figures 4.5 and 4.6 of the same chemical (www/quanta_figs.js): its concentrations in the
-    # batch, and in the QCs of all batches
-    data$figs <- show$conc_figs_data(lst, b, colors_of_classes(), show$qc_chart_limit(to_report_r()[["qc rsd filter"]]))
-    session$sendCustomMessage("calcurve_data", show$calib_viewer_json(data))
+    shiny::req(b %in% calib_batches_r())
+    # Figures 4.5–4.7 of the batch (www/calcurve_viewer.js, www/quanta_figs.js)
+    session$sendCustomMessage("calcurve_data", page4_r(input$norm_method, b)$json)
   })
 
   output$tb_4_1 <- DT::renderDataTable({
@@ -2640,9 +2773,13 @@ server <- function(input, output, session) {
 
     to_report_r(); need_calibration()   # Why it is empty: not processed / no calibration
     if (is_target_mode()) {
-      # Number of calibration curve samples per concentration in the selected batch
-      se <- calib_batch_proc_r()$calcurve
-      v <- util$spiked_conc_pts(se)
+      # Number of calibration curve samples per concentration in the selected batch (Global: of all
+      # batches, each sample once)
+      v <- if (identical(input$calib_batch, "Global")) {
+        lst <- calib_lst_proc_r()
+        pts <- unlist(lapply(lst, \(x) stats::setNames(util$spiked_conc_pts(x$calcurve), colnames(x$calcurve))))
+        pts[!duplicated(names(pts))]
+      } else util$spiked_conc_pts(calib_batch_proc_r()$calcurve)
       v <- as.data.frame(table(v[!is.na(v)]), check.names = FALSE)
       colnames(v) <- c("Calibration curve samples", "Number of Samples")
       DT::datatable(
@@ -2690,120 +2827,18 @@ server <- function(input, output, session) {
       # --------------------------------------------------------
       # Prepare data of the selected batch. Rows are in the order of `rownames(calcurve)`, which
       # the figures use to find the selected chemical.
-      se <- calib_batch_proc_r()$calcurve
+      ids <- calib_ids_r()
       batch <- shiny::isolate(input$calib_batch)
-      rd <- SumExp::row_df(se)
-      limit_df <- rd |>
-        dplyr::select(
-          min_c_conc,
-          max_c_conc,
-          lod,
-          lloq,
-          dplyr::any_of("uloq"),   # Not in data processed by older versions
-          has_proper_range,
-          src_calcurve
-        ) |>
-        tibble::as_tibble(rownames = "feature_id") |>
-        dplyr::mutate(
-          batch = batch,
-          is_kept = rd$kept_calcurve %in% TRUE
-        )
-      # Detected (signal at or above the LOD signal) / quantified (exported: a value at or above
-      # the LLOQ) in any study sample of the batch
-      concn <- calib_batch_proc_r()$concn
-      rd_q <- SumExp::row_df(concn)[limit_df$feature_id, , drop = FALSE]
-      study <- util$extract_ctrl_smpl_cat(concn, "")[limit_df$feature_id, ]
-      sig <- study[[util$src_mat_id_for_conc(concn)]]   # Original scale, as the signals of the limits
-      detected <- rowSums(util$is_detected(sig, rd_q$lod_signal), na.rm = TRUE) > 0
-      # Exported only because of "Keep all calibration curves" (none in older processed data)
-      kept_exp <- if (is.null(rd_q$exported_kept)) rep(FALSE, nrow(rd_q)) else rd_q$exported_kept %in% TRUE
-      limit_df$detection <- dplyr::case_when(
-        !(rd_q$has_proper_range %in% TRUE) ~ "",   # No curve: the reason says why
-        !detected & kept_exp ~ "Not detected in any study sample; exported (Keep all calibration curves)",
-        !detected ~ "Not detected in any study sample",
-        kept_exp ~ "No study sample ≥ LLOQ; exported (Keep all calibration curves)",
-        !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
-        TRUE ~ ""
-      )
-      # The notes as icons by category (why the curve is not valid, kept or replaced by the global
-      # one, its linear range, the detection in the samples); the full note on hover
-      limit_df$Notes <- show$calib_notes_html(util$calib_notes(rd, batch_view = TRUE, detection = limit_df$detection))
       # Select the same chemical as before the batch / normalization method changed
       prev_id <- shiny::isolate(calib_feature_id())   # NULL until a chemical has been selected
       # The first chemical when none was selected before (the figures show it at once)
-      preselect <- if (is.null(prev_id)) 1L else match(prev_id, limit_df$feature_id)
+      preselect <- if (is.null(prev_id)) 1L else match(prev_id, ids)
       preselect <- if (is.na(preselect)) 1L else preselect
-
-      # --------------------------------------------------------
-      show_df <- limit_df |>
-        dplyr::rename(min_c = min_c_conc, max_c = max_c_conc) |>
-        dplyr::mutate(
-          lod = ifelse(is.na(lod), "N.A.", as.character(lod)),
-          min_c = dplyr::case_when(
-            is.na(min_c) ~ "No valid pts.",
-            # A curve kept although not valid can start below its LLOQ, or have none
-            is_kept & is.na(lloq) ~ paste0("None (curve from ", min_c, ")"),
-            is_kept & lloq != min_c ~ paste0(lloq, " (curve from ", min_c, ")"),
-            TRUE ~ as.character(min_c)
-          ),
-
-          # ✅ flags for coloring
-          is_bad = !has_proper_range,
-          is_global = src_calcurve == "Global",
-          # Calibration curve used for quantification: "Batch", "Global" or "None" (one batch
-          # only: its curve is the global curve)
-          calibration = util$calibration_label(
-            dplyr::coalesce(src_calcurve, "None"),
-            length(unique(as.character(SumExp::col_df(raw_se_r())$batch_id)))
-          ),
-          max_c = dplyr::case_when(
-            max_c == -9 ~ "No valid max",
-            max_c == 0 | is.na(max_c) ~ "",
-            TRUE ~ as.character(max_c)
-          ),
-          # Empty for a quadratic curve without log calibration (no ULOQ)
-          uloq = if ("uloq" %in% names(limit_df)) ifelse(is.na(uloq) | !has_proper_range, "", as.character(signif(uloq, 4))) else ""
-        ) |>
-        dplyr::left_join(feature_id_name_tbl(), by = "feature_id") |>
-        dplyr::mutate(is_removed = FALSE) |>
-        dplyr::select(
-          "Batch" = batch,
-          "Chemical Name" = feature_name,
-          "Calibration" = calibration,
-          "LOD" = lod,
-          "LLOQ" = min_c,
-          "Highest cal. conc." = max_c,
-          "ULOQ" = uloq,
-          Notes,
-          is_global,
-          is_bad,
-          is_removed,
-          is_kept
-        )
-
-      # Targeted compounds removed before calibration (blank filter / QC RSD% filter) are listed
-      # at the end (after the rows of the calibrated chemicals, which the figures index by row)
-      rem <- to_report_r()[["removed features"]]
-      if (!is.null(rem)) {
-        rf <- to_report_r()[["qc rsd filter"]]
-        rem <- rem[rem$mat_id == input$norm_method & rem$targeted, ]
-        if (nrow(rem) > 0) {
-          show_df <- dplyr::bind_rows(show_df, tibble::tibble(
-            "Batch" = shiny::isolate(input$calib_batch),
-            "Chemical Name" = rem$feature_name,
-            "Calibration" = "None",
-            "LOD" = "", "LLOQ" = "", "Highest cal. conc." = "", "ULOQ" = "",
-            Notes = show$calib_notes_html(tibble::tibble(removed = ifelse(
-              rem$reason == "QC RSD%",
-              paste0("Removed: QC RSD% ", round(rem$qc_rsd, 1), "% > ", rf$max_targeted, "%"),
-              "Removed: blank filter"
-            ))),
-            is_global = FALSE, is_bad = FALSE, is_removed = TRUE, is_kept = FALSE
-          ))
-        }
-      }
-
-      show_df <- as.data.frame(show_df, check.names = FALSE)
+      # The rows (with the note icons) kept per method and batch (`page4_memo()`)
+      show_df <- page4_r(input$norm_method, batch)$tb41
+      # The row number in the data, hidden: the figures find the selected chemical by it, also
+      # when the table is searched or sorted (see `quantaSelectedRow()`)
+      show_df <- cbind(.row = seq_len(nrow(show_df)), show_df)
       # Positions of the helper columns in the DataTable (0-based, no row name column)
       i_flag <- match(c("is_global", "is_bad", "is_removed", "is_kept"), names(show_df)) - 1L
       i_name <- match("Chemical Name", names(show_df)) - 1L
@@ -2830,7 +2865,7 @@ server <- function(input, output, session) {
 
           # Hide the helper columns; search in the chemical name only
           columnDefs = list(
-            list(targets = i_flag, visible = FALSE),
+            list(targets = c(0L, i_flag), visible = FALSE),   # 0: `.row`
             list(targets = setdiff(seq_along(show_df) - 1L, i_name), searchable = FALSE)
           ),
 
@@ -2852,11 +2887,43 @@ server <- function(input, output, session) {
 
 
 
-  # Figures 4.5 and 4.6 are drawn in the browser (www/quanta_figs.js) from the data sent with the
-  # calibration curves (see "Calibration curve viewer (4.4)" above)
+  # Table 4.2: per chemical, the calibration of every batch as dots (`show$page4_batch_status()`,
+  # the same for every batch of a method: taken from the page-4 data of the chosen batch)
+  output$tb_4_batches <- DT::renderDataTable({
+    to_report_r(); need_calibration()
+    shiny::req(is_target_mode(), input$calib_batch %in% calib_batches_r())
+    df <- page4_r(input$norm_method, input$calib_batch)$tb42
+    df <- df %||% show$page4_batch_status(calib_lst_proc_r(), to_report_r(), input$norm_method)   # Older files
+    i_rem <- match("is_removed", names(df)) - 1L
+    legend <- paste0(
+      '<div class="q-note-legend" style="font-size:12.5px;color:#555;margin:4px 0 6px">',
+      '<span class="q-bdot q-bdot-ok">1</span> own curve &nbsp; ',
+      '<span class="q-bdot q-bdot-global">', show$batch_globe_svg("#0072B2"), '1</span> global curve used &nbsp; ',
+      '<span class="q-bdot q-bdot-failed">', show$batch_globe_svg("#B42318"), '1</span> batch and global curve not valid &nbsp; ',
+      '<span class="q-bdot q-bdot-removed">1</span> removed before calibration (hover a dot for details)</div>')
+    DT::datatable(
+      df,
+      rownames = FALSE,
+      escape = setdiff(names(df), "Calibration per batch"),   # The dots are HTML
+      caption = htmltools::HTML(legend),
+      selection = "none",
+      options = list(
+        paging = FALSE, scrollY = "300px", scrollCollapse = TRUE, scrollX = TRUE,
+        searching = TRUE, info = FALSE, dom = "ft", ordering = FALSE,
+        language = list(search = "Search chemical:"),
+        columnDefs = list(list(targets = i_rem, visible = FALSE, searchable = FALSE),
+                          list(targets = 1L, searchable = FALSE)),
+        rowCallback = JS(sprintf(
+          "function(row, data) { $(row).toggleClass('q-state-removed', !!data[%d]); }", i_rem))
+      )
+    )
+  })
+
+  # Figures 4.6 and 4.7 are drawn in the browser (www/quanta_figs.js) from the data sent with the
+  # calibration curves (see "Calibration curve viewer (4.5)" above)
 
   ################################################################################################################
-  ### This is for table 4.3
+  ### This is for table 4.4
 
 
   output$tb_4_5 <- DT::renderDataTable({

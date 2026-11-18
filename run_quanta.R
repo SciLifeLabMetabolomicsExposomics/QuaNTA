@@ -51,10 +51,10 @@ processing <- list(
   rsd_max_nontargeted = 30,      # Maximum QC RSD% of non-targeted features (1-80)
   # Calibration
   optimize_cal_points = FALSE,   # Leave out calibration points above the highest sample
-  set_minimum_number  = FALSE,   # Require more calibration levels than 3 ...
-  min_cal_points      = 3,       # ... namely this many (>= 3; used only with set_minimum_number)
+  set_minimum_number  = FALSE,   # With optimize_cal_points: extend the curves to more levels than 3 ...
+  min_cal_points      = 3,       # ... namely this many (>= 3; a wish, used only with optimize_cal_points
+                                 #     and set_minimum_number; see the app's help of the option)
   average_cal_reps    = FALSE,   # Average calibration replicates per batch (one point per level and batch)
-  keep_all_calcurves  = FALSE,   # Keep the curves of compounds without a valid range (marked)
   r2_filter           = FALSE,   # Minimum R2 of the calibration curves ...
   min_r2              = 0.99,    # ... namely this (0-1)
   linear_only         = FALSE,   # Linear models only (no quadratic)

@@ -187,6 +187,6 @@ follows the normalization method chosen in 3.10.
 **How to read it**
 
 - **A batch with many more features above the limit** than the others had a problem (e.g. an
-  unstable instrument, a bad QC preparation); look at its QCs in 3.5–3.7 and 4.6.
+  unstable instrument, a bad QC preparation); look at its QCs in 3.5–3.7 and 4.7.
 - **Many targeted compounds above the limit** in all batches suggest that the normalization does
   not suit them; compare the methods in 3.8.

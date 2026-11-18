@@ -1013,33 +1013,6 @@ has_proper_calibration_range <- function(sumexp) {
   !(no_valid_conc | all_zero | no_max_conc | not_enough)
 }
 
-#' Calibration range of curves kept despite an invalid range (`--keep_all_calcurves`)
-#'
-#' The range runs from the LLOQ (without an LLOQ: the lowest calibration level above zero) up to
-#' the highest calibration level, and is extended downwards to have at least `min_n` levels.
-#'
-#' @param sumexp A [`SumExp::SumExp`] object with the calibration curve limits added by
-#'   [find_calib_lim_pts_and_llox_from_llox_signal()]
-#' @param rows A logical vector: the chemicals (rows) whose range is set
-#' @param min_n Required minimum number of concentrations for the calibration curve
-#'
-#' @returns `sumexp` with `min_c_conc` and `max_c_conc` set for `rows`
-#' @md
-#' @export
-force_calibration_range <- function(sumexp, rows, min_n) {
-  conc_pts <- util$spiked_conc_pts(sumexp)
-  conc_pts <- sort(unique(conc_pts[!is.na(conc_pts) & conc_pts > 0]))
-  n <- length(conc_pts)
-  rd <- SumExp::row_df(sumexp)
-  i_min <- match(rd$lloq, conc_pts)
-  i_min[is.na(i_min)] <- 1L
-  i_min <- pmin(i_min, max(1L, n - min_n + 1L))
-  rd$min_c_conc[rows] <- conc_pts[i_min[rows]]
-  rd$max_c_conc[rows] <- conc_pts[n]
-  SumExp::row_df(sumexp) <- rd
-  sumexp
-}
-
 #' Average the calibration curve replicates within each batch
 #'
 #' The calibration curve samples of each batch and concentration level are replaced by one sample

@@ -1,5 +1,5 @@
 ---
-title: "Calibration limits (4.2–4.3)"
+title: "Calibration limits (4.1–4.4)"
 ---
 
 ```{r}
@@ -17,7 +17,10 @@ batch <- lst[[b1]]
 Page 4 of the app, **Calibration and quantification**, turns the signals of the targeted compounds
 into concentrations. At the top you choose the **normalization method** (the best one,
 `r tut$method_labels[[best]]`, is preselected) and the **batch**; the tables and figures follow. The
-examples below show batch `r b1`.
+examples below show batch `r b1`. With several batches, the batch choice also has **Global**: the
+global curve of every compound (fitted on the calibration points of all batches) in table 4.1 and
+figure 4.5, for comparison only; the concentrations are calculated per batch, so figures 4.6 and 4.7
+are empty then.
 
 How a calibration curve is made, in short:
 
@@ -48,7 +51,6 @@ detection <- dplyr::case_when(
 notes <- show$calib_notes_html(util$calib_notes(rd, batch_view = TRUE, detection = detection))
 t42 <- tibble::tibble(
   Chemical = rd$feature_name,
-  Calibration = dplyr::coalesce(rd$src_calcurve, "None"),
   LOD = rd$lod, LLOQ = rd$lloq,
   `Highest cal. conc.` = ifelse(rd$has_proper_range %in% TRUE, rd$max_c_conc, NA),
   ULOQ = ifelse(rd$has_proper_range %in% TRUE, signif(rd$uloq, 4), NA),
@@ -61,7 +63,7 @@ rem <- tr[["removed features"]]
 rem <- rem[rem$mat_id == best & rem$targeted, ]
 if (nrow(rem) > 0) {
   t42 <- dplyr::bind_rows(t42, tibble::tibble(
-    Chemical = rem$feature_name, Calibration = "None",
+    Chemical = rem$feature_name,
     Notes = show$calib_notes_html(tibble::tibble(removed = paste0(
       "Removed: ", ifelse(rem$reason == "QC RSD%", "QC RSD% above the limit", "blank filter")))),
     state = "removed"))
@@ -76,14 +78,15 @@ DT::datatable(t42, rownames = FALSE, selection = "none", escape = setdiff(names(
 ```
 
 One row per targeted compound with its limits in the chosen batch. In the app, **select a row**
-(or step with the arrow keys ↑ / ↓) to show that compound in figures 4.4–4.6.
+(or step with the arrow keys ↑ / ↓) to show that compound in figures 4.5–4.7.
 
 **How to read it**
 
-- **Calibration**: the curve used for the compound in this batch: the batch's own (*Batch*), the
-  curve of all batches together (*Global*, blue rows), or none (red rows).
+- **The row colour** tells the curve used for the compound in this batch: the batch's own (white),
+  the curve of all batches together (*global curve*, blue rows, also the globe icon in *Notes*), or
+  none (red rows).
 - **LOD and LLOQ** are calibration levels; values below them are replaced or reported as
-  *n.d.* / *n.q.* (see 4.5).
+  *n.d.* / *n.q.* (see 4.6).
 - **Highest cal. conc.** is the highest level the curve is fitted on; the **ULOQ** is the top of its
   linear range. They differ when the top levels bend away from the line and the curve was not cut
   there (option *Enforce linear range*), or was cut but keeps the minimum number of calibration
@@ -111,7 +114,34 @@ cat(paste0("  - ", icon, " **", cats, "**: ", meaning[names(cats)], collapse = "
 
 The exported tables have the same notes in full, as text.
 
-## 4.2 Calibration curve samples
+## 4.2 Calibration per batch
+
+```{r}
+#| label: table-4-2-batches
+bs_tbl <- show$page4_batch_status(lst, tr, best)
+htmltools::tagList(
+  htmltools::tags$style(htmltools::HTML(paste(
+    ".q-bdot{display:inline-flex;align-items:center;justify-content:center;gap:1px;min-width:18px;height:18px;padding:0 4px;margin:1px 2px 1px 0;border-radius:9px;font-size:11px;font-weight:600;line-height:1;box-sizing:border-box;cursor:help;vertical-align:middle}",
+    ".q-bdot-ok{background:#12B76A;color:#fff}",
+    ".q-bdot-global{background:#E0F0FA;color:#0072B2;border:1px solid #0072B2}",
+    ".q-bdot-failed{background:#FDECEA;color:#B42318;border:1px solid #B42318}",
+    ".q-bdot-kept{background:#E69F00;color:#1A1A1A}",
+    ".q-bdot-removed,.q-bdot-none{background:#D9D9D9;color:#555}"))),
+  DT::datatable(bs_tbl[, c("Chemical Name", "Calibration per batch")], rownames = FALSE, selection = "none",
+                escape = "Chemical Name",
+                options = list(dom = "ft", paging = FALSE, ordering = FALSE, scrollY = "300px", scrollCollapse = TRUE))
+)
+```
+
+One row per targeted compound with the calibration of every batch, one dot each with the batch in it
+(hover a dot for the details). This is the same for every batch you choose.
+
+- **Green**: the batch's own curve is used.
+- **Blue globe**: the batch's curve is not valid; the global curve is used.
+- **Red globe**: neither the batch's curve nor the global curve is valid: no concentrations.
+- **Grey**: removed before calibration (blank filter or QC RSD% filter), at the end.
+
+## 4.3 Calibration curve samples
 
 ```{r}
 #| label: table-4-1
@@ -123,7 +153,7 @@ tut_table(as.data.frame(table(v[!is.na(v)]), check.names = FALSE) |>
 The number of calibration samples per concentration level in the chosen batch: the replicates the
 curve of this batch is fitted on.
 
-## 4.3 Chemicals with concentrations
+## 4.4 Chemicals with concentrations
 
 ```{r}
 #| label: table-4-3
