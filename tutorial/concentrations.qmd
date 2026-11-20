@@ -16,24 +16,26 @@ ok <- which(rd$has_proper_range %in% TRUE & rd$to_export %in% TRUE)
 below <- vapply(ok, function(i) sum(batch$concn[["conc"]][i, ] < rd$lloq[i], na.rm = TRUE), 0)
 fid <- rownames(rd)[ok[which.max(below > 0 & below < ncol(batch$concn) / 2)]]
 in_log <- isTRUE(tr$params$log_calibration)
+cap <- if ("conc_cap" %in% names(rd)) rd[fid, "conc_cap"] else NA_real_   # Peak of a quadratic curve
 ```
 
 The last two figures of page 4 show the **result**: the concentrations of the chosen compound
 (here **`r rd[fid, "feature_name"]`**, batch `r names(lst)[1]`) in all samples, and its stability
 and precision in the QC samples over the whole run.
 
-## 4.6 Concentration per class
+## 4.6 Concentration
 
 ```{r}
 #| label: figure-4-5
 df1 <- SumExp::as_tibble(batch$concn[fid, ])
 flag <- if ("conc_flag" %in% names(df1)) df1$conc_flag else NULL
 hover <- paste0("<b>", df1$sample_name, "</b><br>", df1$Class, " · batch ", df1$batch_id, " · inj. ",
-                df1$injection_order, "<br>conc. ", show$num_txt(df1$conc), " (", show$imputed_kind(df1$conc, df1$lloq), ")")
+                df1$injection_order, "<br>conc. ", show$num_txt(df1$conc), " (",
+                show$imputed_kind(df1$conc, df1$lloq, cap), ")")
 show$plotly_conc_by_class(conc = df1$conc, lloq = df1$lloq, cats = as.character(df1$Class),
                           cat_colors = tut$class_colors, hover = hover, name = df1$feature_name[1],
                           y_title = paste0("Concentration [", SumExp::metadata(batch$concn)$concentration_unit, "]"),
-                          log = in_log, flag = flag)
+                          log = in_log, flag = flag, cap = cap)
 ```
 
 A box per class (QCs, study groups, blanks) with the samples as points. The colour of a point tells
@@ -45,6 +47,7 @@ whether its value was **measured** or **replaced** by the LOD/LLOQ rules:
 | red: *Not detected* | below the LOD signal | LLOQ / 4 |
 | orange: *Detected* | from the LOD signal to below the LLOQ level | LLOQ / 2 |
 | blue: *Set to LLOQ* | at or above the LLOQ level, but calculated below the LLOQ | the LLOQ |
+| beige-grey: *Capped* | at or above the peak of a quadratic curve that bends down | the concentration of the peak (the real one is higher) |
 
 With the processing option *Replace values below the LOD/LLOQ* unticked, the red and orange values
 have no number: they are reported as *n.d.* (not detected) and *n.q.* (not quantified), left out

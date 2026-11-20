@@ -37,7 +37,7 @@ if (nrow(ev) > 0) {
     transmute(Step = step, Kind = factor(kind), `Applies to` = factor(scope), Name = name,
               Batch = batch_id, Event = factor(event), Detail = detail) |>
     dt() |>
-    DT::formatStyle("Kind", backgroundColor = DT::styleEqual(c("removed", "fallback"), c(FAILED_BG, KEPT_BG)))
+    DT::formatStyle("Kind", backgroundColor = DT::styleEqual(c("removed", "fallback"), c(FAILED_BG, FALLBACK_BG)))
 }
 ```
 

@@ -59,7 +59,7 @@ render_in_private_copy <- function(job) {
   # One self-contained HTML file (not by Pandoc's `embed-resources`, see the script)
   if (identical(tolower(tools::file_ext(out)), "html")) {
     source(file.path(job$reports_dir, "..", "scripts", "embed_html_resources.R"), local = TRUE)
-    embed_html_resources(out)
+    embed_html_resources(out, inline_dir = file.path(job$work_dir, "inline_scripts"))
   }
   # What Quarto copies next to a report is inside the report now
   unlink(file.path(job$out_dir, c(paste0(tools::file_path_sans_ext(job$qmd), "_files"), "logos", "styles.css", "chempages")),

@@ -72,7 +72,6 @@ chapters_dir <- file.path(app_root, "reports", "chapters")
   .viewer .controls select:first-of-type { min-width: 260px; }
   .viewer .info { margin: 8px 0 0; font-size: .95em; }
   .viewer .warn { color: #c23636; font-weight: 600; }
-  .viewer .kept { color: #B26A00; font-weight: 600; }
   /* Tables with column filters keep room for a whole filter dropdown (at most 200px before it
      scrolls), also when filtered down to a row or two: the scroll area would clip it */
   .dataTables_scrollHead:has(.form-group) + .dataTables_scrollBody { min-height: 215px; }
@@ -335,8 +334,10 @@ note <- function(txt) knitr::asis_output(paste0('<p class="note-line">', txt, '<
 conc_long <- purrr::map_dfr(lst, function(x) {
   d <- SumExp::as_tibble(x$concn) |>
     select(.row_id, feature_name, sample_name, Class, .ctrl_cat, injection_order, batch_id,
-           conc, conc0, lod, lloq, max_c_conc, any_of("uloq"), has_proper_range, src_calcurve, any_of("conc_flag"))
+           conc, conc0, lod, lloq, max_c_conc, any_of("uloq"), has_proper_range, src_calcurve, any_of("conc_flag"),
+           any_of("conc_cap"))
   if (!"conc_flag" %in% names(d)) d$conc_flag <- NA_character_   # Processed by older versions
+  if (!"conc_cap" %in% names(d)) d$conc_cap <- NA_real_
   if (!"uloq" %in% names(d)) d$uloq <- d$max_c_conc   # Older versions: the top level of every curve
   mutate(d, conc_flag = as.character(conc_flag))
 })
@@ -348,7 +349,7 @@ if (!HAS_CALIB) {   # Same columns, no rows
                       Class = character(), .ctrl_cat = character(), injection_order = integer(),
                       batch_id = character(), conc = numeric(), conc0 = numeric(), lod = numeric(),
                       lloq = numeric(), max_c_conc = numeric(), uloq = numeric(), has_proper_range = logical(),
-                      src_calcurve = character(), conc_flag = character())
+                      src_calcurve = character(), conc_flag = character(), conc_cap = numeric())
 }
 status_levels <- c("Valid", "> ULOQ, within curve", "> ULOQ, extrapolated", "< LLOQ", "< LOD", "Not detected", "No valid calibration",
                    "Removed (blank filter)", "Removed (QC RSD%)")
@@ -411,7 +412,7 @@ dt <- function(df, ..., search = TRUE, scroll = TRUE) {
 }
 sig <- function(v) signif(v, 4)
 FAILED_BG <- "#F8D0D0"   # Background of table rows with a failed IS or calibration
-KEPT_BG <- "#FFE3B3"     # Background of calibration curves kept although not valid
+FALLBACK_BG <- "#FFE3B3" # Background of fallbacks (history table)
 # Shared sample table for the viewers; points refer to it by index (keeps the embedded data small)
 s_tab <- smp |> transmute(n = sample_name, c = Class, g = group, k = category,
                           b = ms_batch, i = injection_order)
@@ -429,8 +430,9 @@ if (!is.null(cal_avg) && nrow(cal_avg) > 0) {
 s_idx <- setNames(seq_len(nrow(s_tab)) - 1L, s_tab$n)
 id2name <- setNames(smp$sample_name, smp$sample_id)
 if (!is.null(cal_avg) && nrow(cal_avg) > 0) id2name <- c(id2name, setNames(cal_avg$sample_name, cal_avg$sample_id))
-to_json <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na = "null", digits = NA,
-                                        dataframe = "columns")
+# `<\/` (same JSON): a name with `</script>` in it cannot end the <script> the JSON is put in
+to_json <- function(x) gsub("</", "<\\/", jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", na = "null",
+                                                          digits = NA, dataframe = "columns"), fixed = TRUE)
 # The rows of a matrix in blocks (large matrices are worked on a block at a time, so that no copy
 # of the whole matrix is needed)
 row_blocks <- function(n, size = 2000) split(seq_len(n), ceiling(seq_len(n) / size))
@@ -780,7 +782,7 @@ normalization.
 
 ```{r}
 #| results: asis
-if (!any(is_failed)) note("No failed internal standards.") else is_tbl |> filter(failed) |> is_cols() |> knitr::kable()
+if (!any(is_failed)) note("No failed internal standards.") else is_tbl |> filter(failed) |> is_cols() |> knitr::kable(format = "html", escape = TRUE, table.attr = 'class="table"')   # Names escaped
 ```
 
 ```{r}
@@ -842,8 +844,8 @@ if (length(vis_rows) == 0) {
       "double-click to reset; click legend entries to hide or show groups.\n\n")
   # The samples the vIS pre-normalization left uncorrected (no vIS value: 0 or missing)
   for (nm in names(tr[["samples without vIS value"]])) {
-    cat('<p class="note-line">Not corrected by ', nm, " (no vIS value): ",
-        paste(tr[["samples without vIS value"]][[nm]], collapse = ", "), ".</p>\n\n", sep = "")
+    cat('<p class="note-line">Not corrected by ', htmltools::htmlEscape(nm), " (no vIS value): ",
+        htmltools::htmlEscape(paste(tr[["samples without vIS value"]][[nm]], collapse = ", ")), ".</p>\n\n", sep = "")
   }
   if (length(vis_rows) > 1) cat("::: {.panel-tabset}\n\n")
   for (VIS_I in vis_rows) cat(knitr::knit_child(file.path(chapters_dir, "internal-vis.qmd"), quiet = TRUE))
@@ -1158,22 +1160,26 @@ if (!has_qc_rep) note(NO_QC) else if (is.null(rsd_df)) note(NO_TCOMP) else if (!
 }
 ```
 
-## 3.10 Removed features
+## 3.10 Removed targeted compounds
 
-Features removed by the blank filter and, when selected, by the QC RSD% filter (thresholds as
-discussed by @broadhurst2018).
+Targeted compounds removed by the blank filter and, when selected, by the QC RSD% filter
+(thresholds as discussed by @broadhurst2018). The non-targeted features removed are only counted.
 
 ```{r}
-if (is.null(removed) || nrow(filter(removed, mat_id == MAT)) == 0) {
-  note("No features were removed for this normalization method.")
+rem_m <- if (is.null(removed)) NULL else filter(removed, mat_id == MAT)
+n_other <- if (is.null(rem_m)) 0 else sum(!rem_m$targeted)
+other_txt <- if (n_other > 0) paste0(" ", n_other, " non-targeted features were removed (not listed).") else ""
+if (is.null(rem_m) || !any(rem_m$targeted)) {
+  note(paste0("No targeted compounds were removed for this normalization method.", other_txt))
 } else {
-  removed |> filter(mat_id == MAT) |>
-    left_join(select(feat, feature_id, label, ftype = type), by = "feature_id") |>
-    # The volumetric IS has its own type
-    transmute(Feature = coalesce(label, feature_name),
-              Type = case_when(targeted ~ "Targeted", ftype %in% "Volumetric IS" ~ "Volumetric IS", TRUE ~ "Non-targeted"),
-              `Removed by` = reason, `QC RSD%` = round(qc_rsd, 1)) |>
-    mutate(Type = factor(Type), `Removed by` = factor(`Removed by`)) |> dt()   # Searchable, a filter per column
+  # The count line of the app (3.10)
+  note(paste0(sum(rem_m$targeted), " targeted compound(s) removed",
+              if (n_other > 0) paste0("; also ", n_other, " non-targeted features (not listed)"), "."))
+  rem_m |> filter(targeted) |>
+    left_join(select(feat, feature_id, label), by = "feature_id") |>
+    transmute(Compound = coalesce(label, feature_name), `Removed by` = reason, `QC RSD%` = round(qc_rsd, 1)) |>
+    arrange(Compound) |>
+    mutate(`Removed by` = factor(`Removed by`)) |> dt()   # Searchable, a filter per column
 }
 ```
 
@@ -1228,32 +1234,6 @@ if (!any(util$ctrl_smpl_cat(norm_b) == "Blank")) {
       '<div class="info"></div><div class="plot" style="height:480px;"></div></div>',
       '<script>window.BLANKVIEW = ', to_json(blank_view), ';</script>', sep = "")
 }
-```
-
-## 3.12 Features above the QC RSD% limit per batch
-
-```{r}
-qc_cnt <- tr[["qc rsd counts"]]
-qc_cnt <- if (!is.null(qc_cnt)) qc_cnt[qc_cnt$mat_id == MAT, ]
-cnt_txt <- if (!is.null(qc_cnt) && nrow(qc_cnt) > 0) {
-  paste(vapply(c("Targeted", "Non-targeted"), function(tp) {
-    d <- qc_cnt[qc_cnt$type == tp, ]
-    if (nrow(d) == 0 || all(d$n_total == 0)) return(NA_character_)
-    paste0(tolower(tp), " ", d$limit[1], "%", if (isTRUE(d$used[1])) " (used by the QC RSD% filter: removed)" else
-      " (the QC RSD% filter was not used for them: only counted, not removed)")
-  }, "") |> stats::na.omit(), collapse = "; ")
-}
-```
-
-Per batch`r if (BY_BATCH) " and for all batches pooled"`, the number of targeted and non-targeted features whose QC
-RSD% is above the limit, out of those with a QC RSD% (on each bar: above / all), for
-`r method_label[MAT]` values. The QC RSD% of a feature is the median over the QC groups, after the
-blank filter and blank subtraction`r if (BY_BATCH) " (without the zero values)"`. Limits: `r cnt_txt %||% "–"`. A
-batch with many features above the limit points to a problem in that batch.
-
-```{r}
-if (is.null(qc_cnt)) note("Not available for data processed by an older version.") else
-  if (nrow(qc_cnt) == 0) note(NO_QC) else show$plotly_qc_rsd_counts(qc_cnt)
 ```
 
 ```{r}

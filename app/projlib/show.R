@@ -285,8 +285,7 @@ label_e <- function(x) {
 #' Calibration curve line
 #'
 #' @param lim_df A data frame with columns `lloq`, `max_c_conc`, and `calcurve_model`, and
-#'   optionally `min_c_conc` (the start of the line for curves without an LLOQ, which were kept
-#'   although not valid)
+#'   optionally `min_c_conc` (the start of the line when it is not the LLOQ)
 #' @param log_scale A logical value indicating whether the calibration curve is fitted in log scale
 #' @param color,alpha,... Arguments passed to `ggplot2::geom_line`
 #' @returns A [`ggplot2::geom_line`] object.
@@ -378,18 +377,18 @@ calib_model_label <- function(name) {
   models <- col("calcurve_model", list(NULL))
   has_m <- vapply(models, function(m) is.list(m) && !is.null(m$best_model_name), logical(1))
   valid <- col("has_proper_range", FALSE) %in% TRUE
-  kept <- col("kept_calcurve", FALSE) %in% TRUE
   src <- as.character(col("src_calcurve", NA))
   data.frame(
     feature_id = rownames(rd), lod = col("lod"), lloq = col("lloq"),
     uloq = ifelse(valid, col("uloq"), NA), min_c_conc = col("min_c_conc"), max_c_conc = col("max_c_conc"),
-    valid = valid, kept = kept, src = src,
+    cap = col("conc_cap", NA_real_),   # Peak of a quadratic curve that bends down (capped values)
+    valid = valid, src = src,
     model = ifelse(has_m, calib_model_label(vapply(models, \(m) if (is.list(m)) m$best_model_name %||% NA_character_ else NA_character_, "")), NA),
     r2 = vapply(models, \(m) if (is.list(m) && !is.null(m$best_model_name)) unname(m$R2s[[m$best_model_name]]) else NA_real_, 0),
     coef = I(lapply(models, \(m) if (is.list(m) && !is.null(m$inv_model)) unname(stats::coef(m$inv_model)) else NULL)),
     why = sub("^Not valid: ", "", calib_issue_text(rd, batch_view = batch_view)),
     nq = calib_range_note(rd),
-    fill = dplyr::case_when(!valid ~ "lightcoral", kept ~ "#FFD9A0", batch_view & src %in% "Global" ~ "lightblue",
+    fill = dplyr::case_when(!valid ~ "lightcoral", batch_view & src %in% "Global" ~ "lightblue",
                             TRUE ~ "lightgray"),
     stringsAsFactors = FALSE
   )
@@ -648,9 +647,17 @@ calib_views_of_batch <- function(lst, batch, to_report, norm_method) {
   }
   ids <- if (is_global) gcal$limits$feature_id else rownames(lst[[batch]]$calcurve)
   nms <- if (is_global) gcal$limits$feature_name else SumExp::row_df(lst[[batch]]$calcurve)$feature_name
-  list(compounds = data.frame(id = c(ids, rem$feature_id), name = c(nms, rem$feature_name)),
+  default_view <- if (!multi) "All samples" else if (is_global) "Global curve" else paste("Batch", batch)
+  # The curve each compound was quantified with in this batch, shown first (the global one, or the
+  # batch's own); the compounds removed before calibration: the batch's view
+  used_view <- rep(default_view, length(ids))
+  if (multi && !is_global) {
+    used_view[SumExp::row_df(lst[[batch]]$calcurve)$src_calcurve %in% "Global"] <- "Global curve"
+  }
+  list(compounds = data.frame(id = c(ids, rem$feature_id), name = c(nms, rem$feature_name),
+                              view = c(used_view, rep(default_view, nrow(rem)))),
        views = views,
-       default_view = if (!multi) "All samples" else if (is_global) "Global curve" else paste("Batch", batch))
+       default_view = default_view)
 }
 
 #' The targeted compounds removed before calibration (blank filter / QC RSD% filter) of a method,
@@ -712,7 +719,7 @@ calib_viewer_data <- function(compounds, views, log_scale, unit, y_title, class_
         conc == 0 ~ "Cal0",
         TRUE ~ "Out-of-range"
       )
-      e <- list(fill = r$fill, valid = r$valid, kept = r$kept, src = r$src, why = r$why, nq = r$nq,
+      e <- list(fill = r$fill, valid = r$valid, src = r$src, why = r$why, nq = r$nq,
                 lod = r6(r$lod), lloq = r6(r$lloq), uloq = r6(r$uloq), min = r6(r$min_c_conc), top = r6(r$max_c_conc),
                 model = r$model, r2 = r6(r$r2), coef = I(r6(r$coef[[1]])),
                 cal = list(y = I(r6(v$cal$sig[i, ])), type = I(match(type, .calib_point_types) - 1L),
@@ -723,7 +730,7 @@ calib_viewer_data <- function(compounds, views, log_scale, unit, y_title, class_
         x <- v$smp$conc[i, ]
         x0 <- v$smp$conc0[i, ]
         flag <- if (is.null(v$smp$flag)) rep(NA_character_, length(x)) else v$smp$flag[i, ]
-        kind <- match(as.character(imputed_kind(x, r$lloq)), .calib_conc_kinds()) - 1L
+        kind <- match(as.character(imputed_kind(x, r$lloq, r$cap)), .calib_conc_kinds()) - 1L
         cens <- is.na(x) & !is.na(flag)
         kind[cens] <- match(paste0(flag[cens], " (no value)"), .calib_conc_kinds()) - 1L
         x[cens] <- x0[cens]
@@ -743,7 +750,9 @@ calib_viewer_data <- function(compounds, views, log_scale, unit, y_title, class_
     default_view = default_view,   # The curve shown first (`NULL`: the first of the compound)
     group_colors = as.list(c(class_colors, QC = okabe_ito[["blue"]])),
     types = I(.calib_point_types), kinds = I(.calib_conc_kinds()),
-    compounds = lapply(seq_len(nrow(compounds)), \(k) list(id = compounds$id[k], name = compounds$name[k])),
+    # `view`: the curve the compound was quantified with, shown first (optional)
+    compounds = lapply(seq_len(nrow(compounds)), \(k) list(id = compounds$id[k], name = compounds$name[k],
+                                                           view = compounds$view[k])),
     views = unname(lapply(names(views), function(nm) {
       v <- views[[nm]]
       list(label = nm, info = v$info %||% "", info_warn = isTRUE(v$info_warn),
@@ -771,7 +780,9 @@ conc_unit <- function(concn) {
 #' @returns A JSON string
 #' @export
 calib_viewer_json <- function(data) {
-  as.character(jsonlite::toJSON(data, auto_unbox = TRUE, na = "null", null = "null", digits = NA))
+  # `<\/` (same JSON): a name with `</script>` in it cannot end the <script> the JSON is put in
+  gsub("</", "<\\/", as.character(jsonlite::toJSON(data, auto_unbox = TRUE, na = "null", null = "null", digits = NA)),
+       fixed = TRUE)
 }
 
 #  -----  FIGURES DRAWN IN THE BROWSER (app 3.5, 4.5, 4.6)  -------------------------
@@ -886,7 +897,7 @@ page4_data <- function(lst, b, tr, m, class_colors, names_tbl, n_batches, qc = N
   tibble::tibble(
     "Chemical Name" = rem$feature_name, "LOD" = "", "LLOQ" = "", "Highest cal. conc." = "", "ULOQ" = "",
     Notes = calib_notes_html(tibble::tibble(removed = rem$note)),
-    is_global = FALSE, is_bad = FALSE, is_removed = TRUE, is_kept = FALSE
+    is_global = FALSE, is_bad = FALSE, is_removed = TRUE
   )
 }
 
@@ -902,7 +913,6 @@ page4_table_global <- function(gcal, tr, m) {
   L <- as.data.frame(gcal$limits)
   rownames(L) <- L$feature_id
   valid <- L$has_proper_range %in% TRUE
-  kept <- L$kept_calcurve %in% TRUE
   num <- function(v) ifelse(is.na(v), "", as.character(signif(v, 6)))
   show_df <- tibble::tibble(
     "Chemical Name" = L$feature_name,
@@ -911,7 +921,7 @@ page4_table_global <- function(gcal, tr, m) {
     "Highest cal. conc." = ifelse(valid, num(L$max_c_conc), ""),
     "ULOQ" = ifelse(valid, num(L$uloq), ""),
     Notes = calib_notes_html(util$calib_notes(L, batch_view = FALSE)),
-    is_global = FALSE, is_bad = !valid, is_removed = FALSE, is_kept = kept
+    is_global = FALSE, is_bad = !valid, is_removed = FALSE
   )
   as.data.frame(dplyr::bind_rows(show_df, .page4_removed_rows(tr, m)), check.names = FALSE)
 }
@@ -924,7 +934,7 @@ batch_globe_svg <- function(col) sprintf(
 
 #' The rows of table 4.2 of the app: per compound, the calibration of each batch as a small dot
 #' with the batch number (green: its own curve; globe: the global curve used; red globe: neither
-#' the batch's curve nor the global one valid; orange: kept although not valid); the compounds
+#' the batch's curve nor the global one valid); the compounds
 #' removed before calibration at the end, with grey dots
 #'
 #' @inheritParams page4_data
@@ -956,7 +966,6 @@ page4_batch_status <- function(lst, tr, m) {
       issue <- if (is.null(r$range_issue) || is.na(r$range_issue)) "" else paste0(" (", r$range_issue, ")")
       if (!valid) return(dot("failed", k, paste0(if (length(bs) > 1) "the batch curve and the global curve are" else
         "the curve is", " not valid", issue)))
-      if (r$kept_calcurve %in% TRUE) return(dot("kept", k, paste0("curve kept although not valid", issue)))
       if (r$src_calcurve %in% "Global") return(dot("global", k, paste0("the global curve is used; the batch curve is not valid", issue)))
       dot("ok", k, "its own curve")
     }, ""), collapse = "")
@@ -974,8 +983,8 @@ page4_batch_status <- function(lst, tr, m) {
 
 #' The rows of table 4.1 of the app (the calibration limits of a batch): the calibrated chemicals
 #' in the order of `rownames(calcurve)` (the figures find the selected chemical by it), then those
-#' removed before calibration; helper columns `is_global`, `is_bad`, `is_removed`, `is_kept` for
-#' the row colours
+#' removed before calibration; helper columns `is_global`, `is_bad` and `is_removed` for the row
+#' colours
 #'
 #' @param x The calibration of the batch (`proc[[mat_blk]][[b]]`)
 #' @inheritParams page4_data
@@ -987,7 +996,7 @@ page4_table41 <- function(x, b, tr, m, names_tbl, n_batches) {
   limit_df <- rd |>
     dplyr::select(min_c_conc, max_c_conc, lod, lloq, dplyr::any_of("uloq"), has_proper_range, src_calcurve) |>
     tibble::as_tibble(rownames = "feature_id") |>
-    dplyr::mutate(batch = b, is_kept = rd$kept_calcurve %in% TRUE)
+    dplyr::mutate(batch = b)
   # Detected (signal at or above the LOD signal) / quantified (exported: a value at or above the
   # LLOQ) in any study sample of the batch
   concn <- x$concn
@@ -995,13 +1004,9 @@ page4_table41 <- function(x, b, tr, m, names_tbl, n_batches) {
   study <- util$extract_ctrl_smpl_cat(concn, "")[limit_df$feature_id, ]
   sig <- study[[util$src_mat_id_for_conc(concn)]]   # Original scale, as the signals of the limits
   detected <- rowSums(util$is_detected(sig, rd_q$lod_signal), na.rm = TRUE) > 0
-  # Exported only because of "Keep all calibration curves" (none in older processed data)
-  kept_exp <- if (is.null(rd_q$exported_kept)) rep(FALSE, nrow(rd_q)) else rd_q$exported_kept %in% TRUE
   limit_df$detection <- dplyr::case_when(
     !(rd_q$has_proper_range %in% TRUE) ~ "",   # No curve: the reason says why
-    !detected & kept_exp ~ "Not detected in any study sample; exported (Keep all calibration curves)",
     !detected ~ "Not detected in any study sample",
-    kept_exp ~ "No study sample ≥ LLOQ; exported (Keep all calibration curves)",
     !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
     TRUE ~ ""
   )
@@ -1013,19 +1018,13 @@ page4_table41 <- function(x, b, tr, m, names_tbl, n_batches) {
       lod = ifelse(is.na(lod), "N.A.", as.character(lod)),
       min_c = dplyr::case_when(
         is.na(min_c) ~ "No valid pts.",
-        # A curve kept although not valid can start below its LLOQ, or have none; a curve cut at
-        # the ULOQ can start below it (the wished number of levels, with "Optimize")
-        is_kept & is.na(lloq) ~ paste0("None (curve from ", min_c, ")"),
+        # A curve cut at the ULOQ can start below the LLOQ (the wished number of levels, with "Optimize")
         !is.na(lloq) & lloq != min_c ~ paste0(lloq, " (curve from ", min_c, ")"),
         TRUE ~ as.character(min_c)
       ),
       is_bad = !has_proper_range,
       is_global = src_calcurve == "Global",
-      max_c = dplyr::case_when(
-        max_c == -9 ~ "No valid max",
-        max_c == 0 | is.na(max_c) ~ "",
-        TRUE ~ as.character(max_c)
-      ),
+      max_c = ifelse(is.na(max_c), "", as.character(max_c)),
       # Empty for a quadratic curve without log calibration (no ULOQ)
       uloq = if ("uloq" %in% names(limit_df)) ifelse(is.na(uloq) | !has_proper_range, "", as.character(signif(uloq, 4))) else ""
     ) |>
@@ -1034,7 +1033,7 @@ page4_table41 <- function(x, b, tr, m, names_tbl, n_batches) {
     # No batch and calibration columns: the batch is chosen above, the note icons tell the curve
     dplyr::select("Chemical Name" = feature_name,
                   "LOD" = lod, "LLOQ" = min_c, "Highest cal. conc." = max_c, "ULOQ" = uloq,
-                  Notes, is_global, is_bad, is_removed, is_kept)
+                  Notes, is_global, is_bad, is_removed)
   # Targeted compounds removed before calibration (blank filter / QC RSD% filter): at the end
   as.data.frame(dplyr::bind_rows(show_df, .page4_removed_rows(tr, m)), check.names = FALSE)
 }
@@ -1103,12 +1102,13 @@ conc_figs_data <- function(lst, batch = NULL, class_colors = character(), qc_lim
     conc <- se[["conc"]]
     flag <- if ("conc_flag" %in% names(se)) se[["conc_flag"]] else NULL
     lloq <- SumExp::row_df(se)$lloq
+    cap <- SumExp::row_df(se)$conc_cap %||% rep(NA_real_, nrow(se))   # None in older processed data
     sig_id <- if (signal) tryCatch(util$src_mat_id_for_conc(se), error = function(e) NULL)
     sig <- if (length(sig_id) == 1 && isTRUE(sig_id %in% names(se))) se[[sig_id]]
     entries <- lapply(seq_len(nrow(se)), function(i) {
       x <- conc[i, ]
       f <- if (is.null(flag)) rep(NA_character_, length(x)) else as.character(flag[i, ])
-      k <- match(as.character(imputed_kind(x, lloq[i])), kinds) - 1L
+      k <- match(as.character(imputed_kind(x, lloq[i], cap[i])), kinds) - 1L
       cens <- is.na(x) & !is.na(f)
       k[cens] <- match(paste0(f[cens], " (no value)"), kinds) - 1L
       out <- list(y = I(.r6(x)), kind = I(k))
@@ -1192,7 +1192,7 @@ qc_conc_html <- function(id, data, compound, script_src) {
     htmltools::tags$script(htmltools::HTML(sprintf(
       "(function () { var d = %s; function go() { QuantaFigs.qcConc(document.getElementById('%s'), d, %s); }
        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go(); })();",
-      calib_viewer_json(data), id, jsonlite::toJSON(compound, auto_unbox = TRUE))))
+      calib_viewer_json(data), id, calib_viewer_json(compound))))
   ), plotly_js_dependency())
 }
 
@@ -1576,20 +1576,27 @@ plotly_vis_bars <- function(y, smp, name, colour_by = c("group", "batch"), switc
 #' tables: red, yellow and blue), and of the measured ones
 #' @export
 imputed_colors <- c("Measured" = "grey25", "Not detected: LLOQ/4" = okabe_ito[["vermillion"]],
-                    "Detected: LLOQ/2" = okabe_ito[["orange"]], "Set to LLOQ" = okabe_ito[["skyblue"]])
+                    "Detected: LLOQ/2" = okabe_ito[["orange"]], "Set to LLOQ" = okabe_ito[["skyblue"]],
+                    # At or above the peak of a quadratic curve (the colour of the exported tables)
+                    "Capped (peak of the curve)" = "#D9CFBF")
 
-#' Whether each concentration is measured or replaced by an LOD/LLOQ rule
+#' Whether each concentration is measured, replaced by an LOD/LLOQ rule, or capped at the peak of
+#' a quadratic curve
 #'
 #' @param conc Concentrations
 #' @param lloq The LLOQ of the chemical of each concentration
+#' @param cap The capped concentration of the chemical of each concentration (`conc_cap`, see
+#'   `proc$quadratic_cap()`; `NA` or `Inf`: none)
 #' @returns A factor with the levels `names(imputed_colors)`, `NA` for missing concentrations
 #' @export
-imputed_kind <- function(conc, lloq) {
+imputed_kind <- function(conc, lloq, cap = NA_real_) {
+  if (is.null(cap)) cap <- NA_real_
   kind <- dplyr::case_when(
     is.na(conc) ~ NA_character_,
     !is.na(lloq) & conc == lloq / 4 ~ "Not detected: LLOQ/4",
     !is.na(lloq) & conc == lloq / 2 ~ "Detected: LLOQ/2",
     !is.na(lloq) & conc == lloq ~ "Set to LLOQ",
+    is.finite(cap) & conc >= cap - abs(cap) * 1e-6 ~ "Capped (peak of the curve)",
     TRUE ~ "Measured"
   )
   factor(kind, levels = names(imputed_colors))
@@ -1692,10 +1699,11 @@ plotly_blank_comparison <- function(y, smp, name, factor, view = c("groups", "sa
 #' @param height Height of the plot in pixels
 #' @param flag `NULL`, or "n.d." / "n.q." per sample for the values below the LOD / LLOQ without
 #'   a value (not shown; their number is given under the title)
+#' @param cap The capped concentration of the chemical (`conc_cap`, as in [imputed_kind()])
 #' @returns A plotly object
 #' @export
 plotly_conc_by_class <- function(conc, lloq, cats, cat_colors, hover, name, y_title, log = FALSE,
-                                 height = 460, flag = NULL) {
+                                 height = 460, flag = NULL, cap = NA_real_) {
   n_flag <- if (is.null(flag)) integer() else table(flag[is.na(conc) & !is.na(flag)])
   flag_note <- if (length(n_flag) == 0) "" else {
     paste0("Not shown (no value): ", paste(names(n_flag), n_flag, collapse = ", "))
@@ -1704,7 +1712,7 @@ plotly_conc_by_class <- function(conc, lloq, cats, cat_colors, hover, name, y_ti
   levs <- intersect(names(cat_colors), unique(cats[ok]))
   levs <- c(levs, sort(setdiff(unique(cats[ok]), levs)))
   pos <- match(cats, levs)
-  kind <- imputed_kind(conc, lloq)
+  kind <- imputed_kind(conc, lloq, cap)
   p <- plotly::plot_ly(height = height)
   for (i in seq_along(levs)) {
     k <- ok & pos == i
@@ -1744,10 +1752,10 @@ plotly_conc_by_class <- function(conc, lloq, cats, cat_colors, hover, name, y_ti
   )
 }
 
-#' Why a calibration curve is not valid, or was kept or replaced, as one sentence per chemical
+#' Why a calibration curve is not valid or was replaced, as one sentence per chemical
 #'
 #' @param row_df The `row_df` of calibrated data (`has_proper_range`, `src_calcurve`, and from
-#'   processing with this version also `range_issue` and `kept_calcurve`)
+#'   processing with this version also `range_issue`)
 #' @param batch_view Whether the rows are those of a batch (`src_calcurve` "Global" then means
 #'   that the batch's own curve was replaced by the global one)
 #' @returns A character vector, `""` for a valid curve used as is
@@ -1755,12 +1763,10 @@ plotly_conc_by_class <- function(conc, lloq, cats, cat_colors, hover, name, y_ti
 calib_issue_text <- function(row_df, batch_view = TRUE) {
   n <- nrow(row_df)
   issue <- if (is.null(row_df$range_issue)) rep(NA_character_, n) else as.character(row_df$range_issue)
-  kept <- if (is.null(row_df$kept_calcurve)) rep(FALSE, n) else row_df$kept_calcurve %in% TRUE
   src <- if (is.null(row_df$src_calcurve)) rep(NA_character_, n) else row_df$src_calcurve
   valid <- row_df$has_proper_range %in% TRUE
   dplyr::case_when(
     !valid ~ paste0("Not valid: ", dplyr::coalesce(issue, "no valid calibration range")),
-    kept ~ paste0("Kept although not valid: ", dplyr::coalesce(issue, "no valid calibration range")),
     batch_view & src %in% "Global" & !is.na(issue) ~
       paste0("Batch curve not valid (", issue, "): the global curve is used"),
     batch_view & src %in% "Global" ~ "The global curve is used",
@@ -1772,7 +1778,6 @@ calib_issue_text <- function(row_df, batch_view = TRUE) {
 #' markup of a 24 x 24 SVG
 .note_icon_svg <- c(
   notvalid = '<polygon points="7,1.5 17,1.5 22.5,7 22.5,17 17,22.5 7,22.5 1.5,17 1.5,7" fill="#D55E00"/><path d="M8 8l8 8M16 8l-8 8" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>',
-  kept = '<path d="M12 2L23 21.5H1Z" fill="#E69F00" stroke="#E69F00" stroke-width="1" stroke-linejoin="round"/><path d="M12 8.5v6" stroke="#1a1a1a" stroke-width="2.6" stroke-linecap="round"/><circle cx="12" cy="18" r="1.5" fill="#1a1a1a"/>',
   global = '<circle cx="12" cy="12" r="11" fill="#0072B2"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="12" cy="12" r="6.5"/><ellipse cx="12" cy="12" rx="2.8" ry="6.5"/><path d="M5.5 12h13"/></g>',
   uloq = '<rect x="3.5" y="3.5" width="17" height="17" rx="2" transform="rotate(45 12 12)" fill="#999933"/><g stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 7.5h8"/><path d="M12 17v-6.5M9 13.3l3-3 3 3"/></g>',
   detection = '<circle cx="12" cy="12" r="11" fill="#7A7A7A"/><g stroke="#fff" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M5 12c2-3.5 4.4-5 7-5s5 1.5 7 5c-2 3.5-4.4 5-7 5s-5-1.5-7-5z"/><circle cx="12" cy="12" r="2"/><path d="M6 18L18 6"/></g>',
@@ -1879,40 +1884,6 @@ qc_rsd_of_batch <- function(long, batch, labs) {
     dplyr::mutate(zeros = zero_txt[match(paste(QC, feature_id), paste(zr$QC, zr$feature_id))])
   df <- df[c("QC", "feature_id", unname(labs), "n", "zeros")] |> mark_lowest_rsd_norm(labs)
   list(df = df, labs = labs)
-}
-
-#' Figure 3.12: the number of features above the QC RSD% limit per batch, targeted and
-#' non-targeted, with the numbers on the bars
-#'
-#' @param counts `to_report[["qc rsd counts"]]` of one data version (`batch`, `type`, `n_above`,
-#'   `n_total`, `limit`, `used`)
-#' @param height The height of the plot (px)
-#' @returns A plotly object
-#' @export
-plotly_qc_rsd_counts <- function(counts, height = 420) {
-  b <- unique(counts$batch)
-  b_lab <- stats::setNames(ifelse(b == "Global", if (length(b) > 1) "Global (pooled)" else "All injections",
-                                  paste("Batch", b)), b)
-  cols <- c(Targeted = okabe_ito[["vermillion"]], `Non-targeted` = okabe_ito[["skyblue"]])
-  p <- plotly::plot_ly(height = height)
-  for (tp in c("Targeted", "Non-targeted")) {
-    d <- counts[counts$type == tp, ]
-    if (nrow(d) == 0 || all(d$n_total == 0)) next
-    pct <- ifelse(d$n_total > 0, 100 * d$n_above / d$n_total, NA)
-    p <- plotly::add_bars(
-      p, x = unname(b_lab[d$batch]), y = d$n_above, name = paste0(tp, " (limit ", d$limit[1], "%",
-                                                                   if (!isTRUE(d$used[1])) ", not used to filter" else "", ")"),
-      marker = list(color = cols[[tp]]), text = paste0(d$n_above, " / ", d$n_total), textposition = "outside",
-      hovertext = paste0("<b>", b_lab[d$batch], "</b><br>", tp, ": ", d$n_above, " of ", d$n_total,
-                         " features above ", d$limit, "% (", round(pct, 1), "%)"),
-      hoverinfo = "text", cliponaxis = FALSE
-    )
-  }
-  plotly::layout(p, barmode = "group",
-                 xaxis = list(title = "", categoryorder = "array", categoryarray = unname(b_lab)),
-                 yaxis = list(title = "Features above the QC RSD% limit", rangemode = "tozero"),
-                 legend = list(orientation = "h", y = -0.15), margin = list(t = 30)) |>
-    plotly::config(displaylogo = FALSE)
 }
 
 #' The data of figure 3.8 of the app for all batches at once, for `QuantaFigs.rsdCompare()` (the

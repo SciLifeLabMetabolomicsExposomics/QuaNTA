@@ -530,11 +530,13 @@ fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
 }
 
 #' Append exporting table with feature table
-.append_matrix_with_feature_table <- function(sumexp, mat_id, feat_tbl) {
+#'
+#' @param round_values Round the values (`.find_rounding_decimal_places()`); `FALSE` when they are
+#'   rounded already (the "Full" sheet: each batch as in its own sheet)
+.append_matrix_with_feature_table <- function(sumexp, mat_id, feat_tbl, round_values = TRUE) {
   mat_x <- sumexp[[mat_id]]
-  df_x <- mat_x |>  
-    round(.find_rounding_decimal_places(mat_x)) |>     # Reduce the number of decimals
-    tibble::as_tibble()
+  if (round_values) mat_x <- round(mat_x, .find_rounding_decimal_places(mat_x))   # Fewer decimals
+  df_x <- tibble::as_tibble(mat_x)
   # Original sample ID
   colnames(df_x) <- SumExp::col_df(sumexp)$sample_name
   df_x |> 
@@ -555,8 +557,10 @@ fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
 #' @param feat_tbl A data frame of the feature table to be exported. It should have a column
 #'   `Alignment ID` that matches the one in `sumexp`.
 #'
+#' @param round_values As in `.append_matrix_with_feature_table()`
+#'
 #' @returns The workbook object with the data written to the specified sheet
-.write_data_to_new_worksheet <- function(wb, sheetName, sumexp, mat_id, feat_tbl) {
+.write_data_to_new_worksheet <- function(wb, sheetName, sumexp, mat_id, feat_tbl, round_values = TRUE) {
   openxlsx::addWorksheet(wb = wb, sheetName = sheetName)
   .write_data_wb_sheet <- function(..., rowNames = FALSE) {
     openxlsx::writeData(wb = wb, sheet = sheetName, ..., rowNames = rowNames)
@@ -583,7 +587,7 @@ fetch_numeric_matrix <- function(msdial_file, indices, skip = 4L) {
   }
 
   # Write feature data table; feature information with numbers as numbers
-  df_x <- .append_matrix_with_feature_table(sumexp, mat_id, feat_tbl) |>
+  df_x <- .append_matrix_with_feature_table(sumexp, mat_id, feat_tbl, round_values) |>
     .numbers_as_numeric() |>
     .round_rt_mz()
   .write_data_wb_sheet(
@@ -642,11 +646,14 @@ export_table_values <- function(tr) {
 #' Write a table as CSV, with the same layout as the worksheet of [.write_data_to_new_worksheet()],
 #' a part of the rows at a time
 #'
-#' @param sumexp A [`SumExp::SumExp`] object
+#' @param sumexp A [`SumExp::SumExp`] object (its samples and features; the values only without
+#'   `values`)
 #' @param mat_id The name of the matrix to write
 #' @param feat_tbl The feature table (the same order of features as `sumexp`)
 #' @param file The CSV file
-.write_large_csv <- function(sumexp, mat_id, feat_tbl, file) {
+#' @param values `NULL`, or a function of row numbers that gives the rounded values of those rows,
+#'   in the columns of `sumexp` (the "Full" table: put together from the batches, a part at a time)
+.write_large_csv <- function(sumexp, mat_id, feat_tbl, file, values = NULL) {
   feat_tbl <- feat_tbl |> .numbers_as_numeric() |> .round_rt_mz()
   sinfo <- .get_sample_info_rows(sumexp)
   n_feat <- ncol(feat_tbl)
@@ -658,15 +665,20 @@ export_table_values <- function(tr) {
     x[needs] <- paste0("\"", gsub("\"", "\"\"", x[needs], fixed = TRUE), "\"")
     writeLines(enc2utf8(paste(x, collapse = ",")), con, useBytes = TRUE)
   }
-  for (r in seq_len(nrow(sinfo))) csv_line(c(rep("", n_feat - 1L), rownames(sinfo)[r], sinfo[r, ]))
+  # trimws: numbers of a matrix made from a data frame are padded to one width (" 17")
+  for (r in seq_len(nrow(sinfo))) csv_line(c(rep("", n_feat - 1L), rownames(sinfo)[r], trimws(sinfo[r, ])))
   sample_names <- as.character(SumExp::col_df(sumexp)$sample_name)
   csv_line(c(names(feat_tbl), sample_names))
   close(con)
   on.exit()
-  mat <- sumexp[[mat_id]]
-  digits <- .find_rounding_decimal_places(mat)
-  for (rows in split(seq_len(nrow(mat)), ceiling(seq_len(nrow(mat)) / 2000))) {
-    part <- as.data.frame(round(mat[rows, , drop = FALSE], digits), optional = TRUE)
+  if (is.null(values)) {
+    mat <- sumexp[[mat_id]]
+    digits <- .find_rounding_decimal_places(mat)
+    values <- function(rows) round(mat[rows, , drop = FALSE], digits)
+  }
+  n <- nrow(sumexp)
+  for (rows in split(seq_len(n), ceiling(seq_len(n) / 2000))) {
+    part <- as.data.frame(values(rows), optional = TRUE)
     data.table::fwrite(c(as.list(feat_tbl[rows, , drop = FALSE]), unname(as.list(part))), file, append = TRUE,
                        col.names = FALSE, na = "", scipen = 50L, showProgress = FALSE)
   }
@@ -831,15 +843,34 @@ export_data_with_feature_table_xlsx <- function(sumexp_lst,
   # Several batches: also a "Full" sheet of all of them (first), as in the concentration tables
   with_full <- !inherits(sumexp_lst, "SumExp") && length(sumexp_lst) > 1
   n_cells <- sum(vapply(lst, \(se) prod(dim(se)), numeric(1))) * (if (with_full) 2 else 1)
+  # The decimals of each batch, as in its own sheet (of the injections kept): the "Full" table has
+  # each batch's values as in its sheet
+  batch_digits <- function(se) .find_rounding_decimal_places(.keep_samples(se, layout)[[mat_id]])
   if (n_cells > max_xlsx_cells) {
     cat(sprintf("The table has %.1f million values, above the limit for Excel files here: written as CSV (%s).\n",
                 n_cells / 1e6, basename(tools::file_path_sans_ext(out_file))))
+    csv_of <- function(s) paste0(tools::file_path_sans_ext(out_file), ".", gsub("[^A-Za-z0-9_-]+", "_", s), ".csv")
     for (s in names(lst)) {
       se <- filter_and_reorder_samples(lst[[s]])
       lst[[s]] <- NA      # The copy above is the one to keep
-      csv <- paste0(tools::file_path_sans_ext(out_file), ".", gsub("[^A-Za-z0-9_-]+", "_", s), ".csv")
-      .write_large_csv(se, mat_id, prepare_feature_table(se), csv)
+      .write_large_csv(se, mat_id, prepare_feature_table(se), csv_of(s))
       rm(se)
+      invisible(gc(FALSE))
+    }
+    # "Full": all batches, in the order of the layout, written a part of the rows at a time (the
+    # batches side by side, never all values twice in memory)
+    if (with_full) {
+      info <- do.call(cbind, lapply(unname(sumexp_lst), util$without_values))
+      info <- filter_and_reorder_samples(info)
+      digits <- vapply(sumexp_lst, batch_digits, numeric(1))
+      ids <- colnames(info)
+      values <- function(rows) {
+        part <- do.call(cbind, lapply(names(sumexp_lst), function(b) {
+          round(sumexp_lst[[b]][[mat_id]][rows, , drop = FALSE], digits[[b]])
+        }))
+        part[, ids, drop = FALSE]
+      }
+      .write_large_csv(info, mat_id, prepare_feature_table(info), csv_of("Full"), values = values)
       invisible(gc(FALSE))
     }
     return(invisible(NULL))
@@ -860,9 +891,15 @@ export_data_with_feature_table_xlsx <- function(sumexp_lst,
   } else {  # list of SumExp
     wb <- openxlsx::createWorkbook()
     if (with_full) {
-      se <- filter_and_reorder_samples(do.call(cbind, unname(sumexp_lst)))
+      # Each batch's values rounded as in its own sheet (as the "Full" CSV of large tables)
+      rounded <- lapply(unname(sumexp_lst), function(se) {
+        se[[mat_id]] <- round(se[[mat_id]], batch_digits(se))
+        se
+      })
+      se <- filter_and_reorder_samples(do.call(cbind, rounded))
+      rm(rounded)
       wb <- .write_data_to_new_worksheet(wb = wb, sheetName = "Full", sumexp = se, mat_id = mat_id,
-                                         feat_tbl = prepare_feature_table(se))
+                                         feat_tbl = prepare_feature_table(se), round_values = FALSE)
       rm(se)
       invisible(gc(FALSE))
     }
@@ -910,7 +947,6 @@ tbl_chemical_summary <- function(sumexp) {
   # The flag is a text (e.g. "3 of 12") for an outlier kept (outlier removal off), else empty / NA
   out_flag <- SumExp::col_df(sumexp)[["is_outlier_flag"]]
   counted <- if (is.null(out_flag)) rep(TRUE, ncol(mat)) else is.na(out_flag) | !nzchar(as.character(out_flag))
-  mat_c <- mat[, counted, drop = FALSE]
   sig_c <- mat_signal[, counted, drop = FALSE]
   # No need but to be safe
   stopifnot(exprs = {
@@ -929,7 +965,8 @@ tbl_chemical_summary <- function(sumexp) {
   conc_summary <- chemicals |>
     dplyr::mutate(
       n_det = rowSums(util$is_detected(sig_c, lod_signal), na.rm = TRUE),
-      n_quant = rowSums(mat_c >= lloq, na.rm = TRUE),
+      # Measured values at or above the LLOQ only (not values replaced by the LOD/LLOQ rules)
+      n_quant = rowSums(!is.na(mat_ge_lloq[, counted, drop = FALSE])),
       n_samples = sum(counted),
     ) |>
     dplyr::mutate(
@@ -960,6 +997,7 @@ tbl_chemical_summary <- function(sumexp) {
         model_r2 = NA_real_,
         n_conc = NA_integer_,
         eqn = NA_character_,
+        slope = NA_real_,
       )
     } else {
       tibble::tibble(
@@ -967,6 +1005,8 @@ tbl_chemical_summary <- function(sumexp) {
         model_r2 = m$R2s[[m$best_model_name]],
         n_conc = m$n_conc,
         eqn = get_equation(m),
+        # A linear curve: its slope, unrounded (a quadratic one has none)
+        slope = if (grepl("^linear", m$best_model_name)) environment(m$best_model)$b1 else NA_real_,
       )
     }
     stopifnot(nrow(out) == 1)
@@ -1003,10 +1043,13 @@ measured_conc <- function(sumexp) {
   stopifnot(inherits(sumexp_lst, "SumExp") || is.list(sumexp_lst))
   # Summary table for each batch
   chem_col_lst <- lapply(sumexp_lst, \(se) {
-    tbl_chemical_summary(se) |> 
-      dplyr::mutate(
-        unit = SumExp::metadata(se)$concentration_unit,  # Add the unit
-      )
+    tbl <- tbl_chemical_summary(se)
+    dplyr::mutate(
+      tbl,
+      unit = SumExp::metadata(se)$concentration_unit,  # Add the unit
+      # The notes of the batch, as in its sheet
+      notes = util$calib_notes_text(util$calib_notes(tbl, batch_view = TRUE))
+    )
   })
   # Summary table for all batches
   tbl <- dplyr::bind_rows(chem_col_lst, .id = "Batch")
@@ -1025,6 +1068,7 @@ measured_conc <- function(sumexp) {
       model_r2 = mean(model_r2, na.rm = TRUE),
       # Calibration curve used per batch, e.g. "1: Batch; 2: Global"
       calib_per_batch = paste0(Batch, ": ", dplyr::coalesce(src_calcurve, "None"), collapse = "; "),
+      notes = .notes_by_batch(Batch, notes),
       .by = alignment_id
     ) |>
     dplyr::mutate(
@@ -1041,6 +1085,8 @@ measured_conc <- function(sumexp) {
     m[as.character(tbl$alignment_id), , drop = FALSE]
   }))
   stat <- function(fun) apply(measured_all, 1, \(x) if (all(is.na(x))) NA_real_ else fun(x, na.rm = TRUE))
+  tbl$min_all <- round(stat(min), .max_decimals)
+  tbl$max_all <- round(stat(max), .max_decimals)
   tbl$mean_all <- round(stat(mean), .max_decimals)
   tbl$median_all <- round(stat(stats::median), .max_decimals)
   # Tidy up the table
@@ -1054,10 +1100,13 @@ measured_conc <- function(sumexp) {
       "Samples (d/n)" = n_d_s,
       "Quantified (q/n)" = n_q_s,
       "Concentration" = unit,
+      "Min Conc." = min_all,
+      "Max Conc." = max_all,
       "Avg. Conc." = mean_all,
       "Median Conc." = median_all,
       "Average R2" = model_r2,
       "Calibration per batch" = calib_per_batch,
+      "Notes" = notes,
     )
   if (is_closest_norm) {
     out <- dplyr::bind_cols(
@@ -1066,6 +1115,18 @@ measured_conc <- function(sumexp) {
     )
   }
   out
+}
+
+#' The notes of the batches of a chemical as one text: batches with the same note together, e.g.
+#' "1, 2: <note> | 3: <other note>"; batches without a note left out
+#'
+#' @param batch,notes The batch and its notes (one per batch)
+.notes_by_batch <- function(batch, notes) {
+  ok <- !is.na(notes) & nzchar(notes)
+  if (!any(ok)) return("")
+  u <- unique(notes[ok])
+  paste(vapply(u, \(n) paste0(paste(batch[ok][notes[ok] == n], collapse = ", "), ": ", n), ""),
+        collapse = " | ")
 }
 
 #' Per-batch summary chemical table
@@ -1102,6 +1163,7 @@ measured_conc <- function(sumexp) {
       "Model" = best_model,
       "Equation" = eqn,
       "N of points" = n_conc,
+      "Slope" = slope,   # A number here; made a text (and moved to the end) by `.append_slope()`
     )
   # ULOQ (empty for a quadratic curve without log calibration; none for older processed data)
   if ("uloq" %in% names(tbl)) out <- dplyr::mutate(out, ULOQ = round(tbl$uloq, .max_decimals), .after = "LLOQ")
@@ -1138,27 +1200,23 @@ measured_conc <- function(sumexp) {
   Reduce(cbind, sumexp_lst)
 }
 
-#' Append a column of slope calculated from the equation of the calibration curve model
-.append_slope <- function(chem_col) {
-  get_slope <- function(eqn, model) {
-    split_eqn <- strsplit(eqn, " ")[[1]]
-    
-    if (grepl("quadratic", model)) { #"y = -1.72e+05 * x^2 + 1.87e+07 * x + 3.35e+06"
-      b <- -(as.numeric(split_eqn[7]))
-      a <- 2 * (as.numeric(split_eqn[3]))
-      slope <- b / a
-    } else { #"y = 4.93e+06 * x + -4.07e+05"
-      slope <- as.numeric(split_eqn[3])
-    }
-  }
-
-  chem_col <- chem_col |> 
-    dplyr::mutate(
-      Slope = purrr::map2(Equation, Model, ~ get_slope(eqn = .x, model = .y)) |>
-        unlist() |>
-        round(.max_decimals)
-    )
-  return(chem_col)
+#' Make the column "Slope" a text for reading, as the last column: the slope of a linear curve; a
+#' quadratic curve has no single slope, so instead "Capped upper conc: <the concentration of its
+#' peak>" (see `proc$quadratic_cap()`), or "No cap" when it bends up
+#'
+#' @param chem_col The chemical table (`Slope`, numeric, and `Model`), one row per chemical
+#' @param cap The `conc_cap` of the chemicals (`NULL`: not known, data processed by older versions)
+.append_slope <- function(chem_col, cap = NULL) {
+  if (is.null(cap)) cap <- rep(NA_real_, nrow(chem_col))
+  slope <- chem_col$Slope
+  chem_col$Slope <- NULL
+  quad <- grepl("quadratic", chem_col$Model)
+  chem_col$Slope <- dplyr::case_when(
+    quad & is.finite(cap) ~ paste0("Capped upper conc: ", round(cap, .max_decimals)),
+    quad ~ "No cap",
+    TRUE ~ as.character(round(slope, .max_decimals))
+  )
+  chem_col
 }
 
 #' Values replaced after calibration by the LOD/LLOQ rules: colour (as in the reports) and meaning
@@ -1174,8 +1232,11 @@ measured_conc <- function(sumexp) {
   # `.above_linear`) or extrapolated beyond the curve (code `.extrapolated`)
   -1,    "#E0E0E0", NA,     "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
                             "Above the ULOQ (the top of the linear range), within the curve (not replaced)",
-  Inf,   "#9E9E9E", NA,     "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
-                            "Above the ULOQ and the highest calibration level of the curve: extrapolated (not replaced)",
+  Inf,   "#9E9E9E", NA,     "Above the highest calibration level of the curve (and its ULOQ, if any): extrapolated (not replaced)",
+                            "Above the highest calibration level of the curve (and its ULOQ, if any): extrapolated (not replaced)",
+  # A quadratic curve that bends down: at or above its peak (code `.capped`)
+  -3,    "#D9CFBF", NA,     "Capped: the signal is at or above the peak of the quadratic curve, so the concentration is that of the peak (\"Capped upper conc\" in the Slope column); the real concentration is higher",
+                            "Capped: the signal is at or above the peak of the quadratic curve, so the concentration is that of the peak (\"Capped upper conc\" in the Slope column); the real concentration is higher",
   # Export option "Keep failed and with no quantified study samples" (code `.cal_signal`)
   -2,    "#E4DAF2", NA,     "Calibration point of a compound with a failed curve or no quantified study sample: its SIGNAL, not a concentration",
                             "Calibration point of a compound with a failed curve or no quantified study sample: its SIGNAL, not a concentration",
@@ -1183,6 +1244,7 @@ measured_conc <- function(sumexp) {
 .extrapolated <- Inf
 .above_linear <- -1
 .cal_signal <- -2
+.capped <- -3
 
 #' Whether the values below the LOD / LLOQ were replaced (`TRUE`, also for data processed by older
 #' versions) or reported as "n.d." / "n.q."
@@ -1196,19 +1258,23 @@ measured_conc <- function(sumexp) {
   conc <- sumexp[["conc"]]
   lloq <- SumExp::row_df(sumexp)$lloq
   code <- matrix(0, nrow(conc), ncol(conc), dimnames = dimnames(conc))
-  for (f in setdiff(.imputed_styles$code, c(.extrapolated, .above_linear, .cal_signal))) {
+  for (f in setdiff(.imputed_styles$code, c(.extrapolated, .above_linear, .cal_signal, .capped))) {
     code[!is.na(conc) & !is.na(lloq) & conc == lloq * f] <- f
   }
-  # Values above the ULOQ (none without a ULOQ, e.g. a quadratic curve, or for older processed
-  # data): within the curve up to its highest level (when it was not cut at the ULOQ), above it
-  # extrapolated
-  uloq <- SumExp::row_df(sumexp)$uloq
-  if (!is.null(uloq)) {
-    uloq <- matrix(uloq, nrow(conc), ncol(conc))
-    top <- pmax(uloq, matrix(SumExp::row_df(sumexp)$max_c_conc, nrow(conc), ncol(conc)), na.rm = TRUE)
-    above <- !is.na(conc) & !is.na(uloq) & conc > uloq
-    code[above] <- .above_linear
-    code[above & conc > top] <- .extrapolated
+  as_mat <- function(v) matrix(v, nrow(conc), ncol(conc))
+  has <- !is.na(conc)
+  # Values above the ULOQ, within the curve up to its highest level (when it was not cut at the
+  # ULOQ); values above the highest level of the curve and the ULOQ are extrapolated, also for
+  # curves without a ULOQ (quadratic curves)
+  rd <- SumExp::row_df(sumexp)
+  uloq <- as_mat(if (is.null(rd$uloq)) NA_real_ else rd$uloq)
+  top <- pmax(uloq, as_mat(if (is.null(rd$max_c_conc)) NA_real_ else rd$max_c_conc), na.rm = TRUE)
+  code[has & !is.na(uloq) & conc > uloq] <- .above_linear
+  code[has & !is.na(top) & conc > top] <- .extrapolated
+  # At or above the peak of a quadratic curve that bends down: capped (`proc$quadratic_cap()`)
+  if (!is.null(rd$conc_cap)) {
+    cap <- as_mat(rd$conc_cap)
+    code[has & is.finite(cap) & conc >= cap - abs(cap) * 1e-6] <- .capped
   }
   flag <- .llox_flag_text(sumexp)
   for (ii in which(!is.na(.imputed_styles$flag))) {
@@ -1264,10 +1330,10 @@ measured_conc <- function(sumexp) {
   }
   notes <- c(
     if (imputed) {
-      "Concentrations of the blank-subtracted, normalized data; values replaced by the LOD/LLOQ rules and values above the ULOQ (within the curve or extrapolated) are coloured."
+      "Concentrations of the blank-subtracted, normalized data; values replaced by the LOD/LLOQ rules, values above the ULOQ (within the curve or extrapolated) and values capped at the peak of a quadratic curve are coloured."
     } else {
       paste("Concentrations of the blank-subtracted, normalized data. Values below the LOD / LLOQ are not replaced:",
-            "they are reported as n.d. / n.q. (text, no value) and left out of the averages and medians. Values above the ULOQ (within the curve or extrapolated) are coloured.")
+            "they are reported as n.d. / n.q. (text, no value) and left out of the averages and medians. Values above the ULOQ (within the curve or extrapolated) and values capped at the peak of a quadratic curve are coloured.")
     },
     "Blank samples: concentrations of their normalized data WITHOUT blank subtraction (\"Blank subtracted\" row: Not subtracted).",
     paste("ULOQ: the top of the linear range of a linear curve (back-calculated levels within the tolerance), or",
@@ -1379,7 +1445,7 @@ measured_conc <- function(sumexp) {
 
   # Prepare the chemical summary table per batch
   chem_col <- .per_batch_summary_chemical_table(se, is_closest_norm) |>
-    .append_slope()
+    .append_slope(SumExp::row_df(se)$conc_cap)
   if ("Calibration" %in% names(chem_col)) {
     chem_col[["Calibration"]] <- util$calibration_label(chem_col[["Calibration"]], n_batches)
   }

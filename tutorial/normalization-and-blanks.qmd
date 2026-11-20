@@ -1,5 +1,5 @@
 ---
-title: "Normalization, filters and blanks (3.8–3.12)"
+title: "Normalization, filters and blanks (3.8–3.11)"
 ---
 
 ```{r}
@@ -91,26 +91,27 @@ The RSD% of 3.8 as a table: per compound, QC group and method. *n* is the number
 and *Zeros* the values left out (per method when they differ). Filter by QC group or search a
 compound in the boxes above the columns.
 
-## 3.10 Removed features
+## 3.10 Removed targeted compounds
 
 ```{r}
 #| label: table-3-10
 rem <- tr[["removed features"]]
 rem <- rem[rem$mat_id == best, ]
-std <- SumExp::row_df(raw)$.std_type[match(rem$feature_id, rownames(raw))]
+n_other <- sum(!rem$targeted)
+rem <- rem[rem$targeted, ]
 t310 <- tibble::tibble(
-  Feature = rem$feature_name,
-  Type = dplyr::case_when(rem$targeted ~ "Targeted", std %in% "vIS" ~ "Volumetric IS", TRUE ~ "Non-targeted"),
+  Compound = rem$feature_name,
   `Removed by` = ifelse(rem$reason == "QC RSD%", "QC RSD%", paste0("Blank filter (≤ ", tr[["blank_filter_factor"]], "× blank)")),
   `QC RSD%` = round(rem$qc_rsd, 1)
-) |> dplyr::arrange(Type != "Targeted", Feature)
+) |> dplyr::arrange(Compound)
 tut_table(t310, height = "300px",
-          caption = paste0(nrow(t310), " removed features (", sum(t310$Type == "Targeted"), " targeted, ",
-                           sum(t310$Type == "Non-targeted"), " non-targeted)"))
+          caption = paste0(nrow(t310), " targeted compound(s) removed",
+                           if (n_other > 0) paste0("; also ", n_other, " non-targeted features (not listed)")))
 ```
 
-The features removed for the chosen normalization method (here `r tut$method_labels[[best]]`) and
-why:
+The targeted compounds removed for the chosen normalization method (here
+`r tut$method_labels[[best]]`) and why; the non-targeted features removed (mostly unnamed) are only
+counted under the table:
 
 - **Blank filter**: a feature is removed unless its maximum (or, with that option, mean) signal in
   the study samples (not the QCs or calibration standards) is more than `r tr[["blank_filter_factor"]]` × its average signal in the blanks; it is mostly
@@ -167,26 +168,3 @@ to the internal standards (3.1, 3.5).
   procedure, and the feature is removed.
 - **High blanks in one batch only** point to a contamination in that batch; blank subtraction is
   done per batch.
-
-## 3.12 Features above the QC RSD% limit per batch
-
-```{r}
-#| label: figure-3-12
-cnt <- tr[["qc rsd counts"]]
-cnt <- cnt[cnt$mat_id == best, ]
-show$plotly_qc_rsd_counts(cnt)
-```
-
-Per batch (and for all batches pooled), the number of targeted and non-targeted features whose QC
-RSD% is above the limit, out of those with a QC RSD% (on each bar: above / all). The QC RSD% of a
-feature is the median over the QC groups, after the blank filter and blank subtraction (processed
-per batch: without the zero values). The limit is that of the QC RSD% filter; where the filter is
-not used (as here), 30%, and the features are only counted, not removed. In the app, the figure
-follows the normalization method chosen in 3.10.
-
-**How to read it**
-
-- **A batch with many more features above the limit** than the others had a problem (e.g. an
-  unstable instrument, a bad QC preparation); look at its QCs in 3.5–3.7 and 4.7.
-- **Many targeted compounds above the limit** in all batches suggest that the normalization does
-  not suit them; compare the methods in 3.8.

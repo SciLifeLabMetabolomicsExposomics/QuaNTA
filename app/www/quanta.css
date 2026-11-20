@@ -241,7 +241,6 @@ a:hover { color: var(--q-blue-hover); }
 .q-bdot-ok { background: #12B76A; color: #FFFFFF; }
 .q-bdot-global { background: #E0F0FA; color: #0072B2; border: 1px solid #0072B2; }
 .q-bdot-failed { background: #FDECEA; color: #B42318; border: 1px solid #B42318; }
-.q-bdot-kept { background: #E69F00; color: #1A1A1A; }
 .q-bdot-removed, .q-bdot-none { background: #D9D9D9; color: #555555; }
 
 /* Outputs with a spinner only the first time (`spinner(once = TRUE)` in app.R): later updates
@@ -361,7 +360,6 @@ table.dataTable.no-footer { border-bottom: 1px solid var(--q-border) !important;
 table.dataTable tbody tr.failed-row td { background-color: #F8D0D0 !important; color: var(--q-text) !important; }
 /* The state of a calibration curve (table 4.1): before the selection rule, which overrides them */
 table.dataTable tbody tr.q-state-bad > td { background-color: lightcoral !important; color: #000 !important; }
-table.dataTable tbody tr.q-state-kept > td { background-color: #FFD9A0 !important; color: #000 !important; }
 table.dataTable tbody tr.q-state-global > td { background-color: lightblue !important; color: #000 !important; }
 table.dataTable tbody tr.q-state-removed > td { background-color: #D9D9D9 !important; color: #000 !important; }
 /* Selected rows: the violet-blue in the middle of the logo's blue-orange fade, with white text
@@ -457,7 +455,15 @@ table.dataTable tbody tr.selected a { color: #FFFFFF !important; }
 .q-eye:hover { color: var(--q-navy); background: var(--q-blue-light); }
 .q-eye .q-eye-closed { display: none; }
 .q-collapsed .q-eye .q-eye-open { display: none; }
-.q-collapsed .q-eye .q-eye-closed { display: inline; }
+.q-collapsed .q-eye .q-eye-closed { display: inline-flex; }
+/* Two narrow tables side by side (page 4: 4.3 and 4.4); one under the other when there is no room */
+.q-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 16px; align-items: start; }
+.q-pair > div { min-width: 0; }
+
+/* The info icon and the eye of a title in one row, their icons centred on each other (each icon
+   centred in its own box, not on the text baseline) */
+.q-title-icons { display: inline-flex; align-items: center; vertical-align: middle; }
+.q-title-icons > *, .q-title-icons .q-info, .q-title-icons .q-eye-open { display: inline-flex; align-items: center; }
 .q-collapsed .q-eye { color: #B54708; background: #FEF0C7; }
 .q-eye-hidden { display: none !important; }
 

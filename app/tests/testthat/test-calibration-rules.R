@@ -54,6 +54,23 @@ test_that("the ULOQ of a linear curve is the top of its linear range, whatever t
   }
 })
 
+test_that("the ULOQ is looked for among all levels, also when 'Optimize' ends the curve lower", {
+  refit_lin <- function(s) proc$fit_and_test_calcurve_model(conc, s, weight_method = "1_div_x", linear_only = TRUE)
+  refit_log <- function(s) proc$fit_and_test_calcurve_model(conc, s, log_log = TRUE)
+  for (curve_top in c(0.1, 1)) {
+    sig_fit <- ifelse(conc <= curve_top, signal, NA)
+    lr <- proc$trim_to_linear_range(conc, signal, refit_lin(sig_fit), max_dev = 0.15, min_n = 3,
+                                    weight_method = "1_div_x", signal_fit = sig_fit)
+    lr_log <- proc$linear_range_of_log_curve(conc, signal, sig_fit, refit_log(sig_fit), min_n = 3, refit = refit_log)
+    for (x in list(lr, lr_log)) {
+      expect_equal(x$uloq, 0.2)
+      # A curve ending below the ULOQ is not cut; one ending above it is cut at the ULOQ
+      expect_equal(x$top, min(curve_top, 0.2))
+      expect_equal(length(x$dropped) > 0, curve_top > 0.2)
+    }
+  }
+})
+
 test_that("the ULOQ by SCALiR (log-scale fitting) does not depend on the minimum number of levels", {
   refit <- function(s) proc$fit_and_test_calcurve_model(conc, s, log_log = TRUE)
   for (min_n in c(3, 6)) {

@@ -94,10 +94,16 @@ Values replaced by the LOD/LLOQ rules are coloured (in all sheets): red for LLOQ
 LOD signal), yellow for LLOQ/2 (signal from the LOD signal to below the mean signal of the LLOQ level)
 and blue for the LLOQ (signal at or above it, concentration below the LLOQ); light grey for values above
 the ULOQ but within a curve that was not cut at it, dark grey for values above the highest calibration level
-of the curve (extrapolated). The last sheet, `Legend`, explains the colours.
+of the curve (extrapolated, also for quadratic curves), and beige-grey for values capped at the peak of a
+quadratic curve that bends down (the signal is at or above the peak, so the concentration is that of the
+peak; the real one is higher). The last sheet, `Legend`, explains the colours.
+
+`Slope` (text, for reading): the slope of a linear curve; for a quadratic curve, which has no single slope,
+"Capped upper conc: <concentration>" (the concentration of the peak, which all capped values get) or
+"No cap" (a curve that bends up).
 
 The chemical columns of each batch sheet include `Notes`: the notes on each calibration curve in full
-(e.g. a curve kept although not valid, a batch using the global curve, the levels above the ULOQ); the
+(e.g. why a curve is not valid, a batch using the global curve, the levels above the ULOQ); the
 app and the reports show them as icons.
 
 When the processing option **Replace values below the LOD/LLOQ** is unticked (`--impute_llox=FALSE`),
@@ -147,7 +153,9 @@ The feature information column section (1st section) includes additional columns
 `DF%`,
 `Samples (d/n)` (detected/total),
 `Concentration` (unit),
-`Avg. Conc.` and `Median Conc.` (over the measured values of all batches together)
+`Min Conc.`, `Max Conc.`, `Avg. Conc.` and `Median Conc.` (over the measured values of all batches together),
+`Calibration per batch`,
+`Notes` (the notes of the batches; batches with the same note together, e.g. "1, 2: ... | 3: ...")
 
 The minimum, maximum, average and median concentrations (here and per batch) are those of the
 study samples only (no QCs), from the measured values at or above the LLOQ: values replaced by the
@@ -239,7 +247,9 @@ As for the other tables, each sheet (but the legend) is also saved as a CSV file
   injections are orange in the `.xlsx` files.
 - `export_data.R --formats=xlsx,csv` (the default; page 5 of the app: *File formats*): the `.xlsx`
   files and / or their CSV copies (one `.csv` per sheet, not the *Legend* sheet). Tables too large
-  for Excel (`--max_xlsx_cells`) are always written as CSV.
+  for Excel (`--max_xlsx_cells`) are always written as CSV, with the same files as the sheets
+  (the `Full` table of all batches too, written a part of the rows at a time). In the `Full`
+  table, each batch's values are rounded as in its own sheet.
 - The history file (`….history.xlsx`) has a sheet **Settings**: the processing settings of the
   results.
 - With blank subtraction off (`--blank_subtract=FALSE`), the `….norm_blk` tables hold the normalized

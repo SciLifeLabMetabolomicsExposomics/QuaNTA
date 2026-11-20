@@ -679,8 +679,6 @@ nt_rsd_se <- if (!has_targets) proc_sumexp[!is_is_row, util$ctrl_smpl_cat(proc_s
 
 core_norm <- list()     # The internal standards and targeted compounds, per version
 qc_rsd_rows <- list()   # QC RSD% of the targeted compounds per QC group (and batch), per version
-qc_count_rows <- list() # Features above the QC RSD% limit per batch and type, per version (3.12)
-core_blk <- list()      # The same after blank subtraction (before the QC RSD% filter; for 3.13)
 core_filtered <- list() # The same after the blank filter (without the IS)
 i_core <- which(is_core[!is_is_row])   # The rows of `shell` kept in memory
 for (mat_id in to_blk_subt) {
@@ -771,8 +769,6 @@ for (mat_id in to_blk_subt) {
   )
   invisible(gc(FALSE))
 
-  core_blk[[mat_id]] <- sub_labelled(se[[blk_mat_id]], i_core)   # For 3.13
-
   ## QC RSD% of the targeted compounds within each QC group, without zeros (app 3.8 and 3.9, the
   ## internal report): after the blank filter and blank subtraction, all batches pooled and, when
   ## processed per batch, per batch
@@ -782,17 +778,6 @@ for (mat_id in to_blk_subt) {
     qc_rsd_rows[[mat_id]] <- proc$qc_rsd_by_group(
       se[[blk_mat_id]][targeted, qc_cols, drop = FALSE], as.character(qc_cd$Class), qc_cd$batch_id,
       by_batch = has_multiple_batches
-    ) |> dplyr::mutate(mat_id = mat_id, .before = 1)
-  }
-
-  ## Features above the QC RSD% limit, per batch and type (app and report 3.12): the limits of the
-  ## QC RSD% filter, or 30% where it is not used (then only counted)
-  if (proc$has_qc_replicates(se)) {
-    used_lim <- rsd_filter$enabled & !rsd_filter$skipped & !is.na(rsd_limit)
-    qc_count_rows[[mat_id]] <- proc$qc_rsd_counts(
-      proc$qc_rsd_feature_by_batch(se, blk_mat_id, by_batch = has_multiple_batches),
-      targeted = targeted, counted = !is_vis & !is_all_na_row(se[[blk_mat_id]]),
-      limit = ifelse(used_lim, rsd_limit, 30), used = used_lim
     ) |> dplyr::mutate(mat_id = mat_id, .before = 1)
   }
 
@@ -820,8 +805,6 @@ for (mat_id in to_blk_subt) {
 # `feature_id`, `rsd`, `n`, `n_zero` (see `proc$qc_rsd_by_group()`)
 to_report[["qc rsd per group"]] <- dplyr::bind_rows(qc_rsd_rows)
 to_report[["qc rsd by batch"]] <- has_multiple_batches
-# `mat_id`, `batch` ("Global" or the batch), `type`, `n_above`, `n_total`, `limit`, `used` (3.12)
-to_report[["qc rsd counts"]] <- dplyr::bind_rows(qc_count_rows)
 # What is needed to put the files of the versions back together with their features and samples
 to_report[["full data"]] <- list(
   norm_rows = SumExp::row_df(proc_sumexp), norm_cols = SumExp::col_df(proc_sumexp),
@@ -868,7 +851,7 @@ proc_sumexp <- normalized_se[!util$is_internal_std(normalized_se), ]
 SumExp::row_df(proc_sumexp) <- SumExp::row_df(core_shell[i_core, 1])
 SumExp::col_df(proc_sumexp) <- SumExp::col_df(shell)
 for (m in to_blk_subt) proc_sumexp[[m]] <- core_filtered[[m]]
-rm(core_shell, core_norm)   # (`core_filtered`, small, is kept for 3.13)
+rm(core_shell, core_norm, core_filtered)
 invisible(gc(FALSE))
 
 flush_later("blank")
@@ -893,26 +876,13 @@ log_event("Blank subtraction", "batch", batches_without_blank, "Blank of all bat
 if (!any(util$ctrl_smpl_cat(proc_sumexp) == "Blank")) {
   log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "No blank samples left (all removed as outliers)", "fallback")
 }
-# Split the data by batch IDs
-per_batch_proc_se_lst <- SumExp::split_columns(proc_sumexp, batch_ids)
-# Per batch, then per normalization method
-for (batch_id in unique(batch_ids)) {
-  se <- per_batch_proc_se_lst[[batch_id]]
-  per_batch_proc_se_lst[[batch_id]] <- proc$add_blank_subtracted_sumexp(
-    sumexp = se,
-    no_change = util$ctrl_smpl_cat(se) == "CalCurve",
-    mat_ids = to_blk_subt,
-    out_mat_ids = mat_ids_after_blk_subt,
-    subtract = isTRUE(params$blank_subtract)
-  )
-}
-
 # The blank samples themselves (normalized, not blank subtracted), quantified after calibration
 # for the exported concentration tables
 blank_samples_se <- proc_sumexp[, util$ctrl_smpl_cat(proc_sumexp) == "Blank"]
 SumExp::col_df(blank_samples_se)[["blank_source"]] <- rep("Not subtracted", ncol(blank_samples_se))
 
-# Global blank subtraction for failed batches.
+# All batches at once: `proc$add_blank_subtracted_sumexp()` subtracts the blank mean of each batch,
+# and in a batch without blanks the mean of all blank samples
 proc_sumexp <- proc$add_blank_subtracted_sumexp(
   sumexp = proc_sumexp,
   no_change = util$ctrl_smpl_cat(proc_sumexp) == "CalCurve",
@@ -920,28 +890,19 @@ proc_sumexp <- proc$add_blank_subtracted_sumexp(
   out_mat_ids = mat_ids_after_blk_subt,
   subtract = isTRUE(params$blank_subtract)
 )
-# A batch without blanks is not blank-subtracted on its own: take its globally subtracted data
-for (batch_id in batches_without_blank) {
-  in_batch <- as.character(SumExp::col_df(proc_sumexp)[["batch_id"]]) == batch_id
-  per_batch_proc_se_lst[[batch_id]] <- proc_sumexp[, in_batch]
-}
 cat("Blank subtraction is done.\n")
 
-# The QC RSD% filter of the versions above, on the compounds in memory: overall and in each batch
+# The QC RSD% filter of the versions above, on the compounds in memory
 flush_later("rsd")
 for (ii in seq_along(to_blk_subt)) {
   to_remove <- rsd_to_remove[[to_blk_subt[ii]]]
   if (is.null(to_remove)) next
-  to_remove <- to_remove[i_core]
   blk_mat_id <- mat_ids_after_blk_subt[ii]
-  proc_sumexp[[blk_mat_id]] <- util$extract_with_na(proc_sumexp[[blk_mat_id]], i = !to_remove)
-  for (batch_id in names(per_batch_proc_se_lst)) {
-    se <- per_batch_proc_se_lst[[batch_id]]
-    stopifnot(identical(rownames(se), rownames(proc_sumexp)))
-    se[[blk_mat_id]] <- util$extract_with_na(se[[blk_mat_id]], i = !to_remove)
-    per_batch_proc_se_lst[[batch_id]] <- se
-  }
+  proc_sumexp[[blk_mat_id]] <- util$extract_with_na(proc_sumexp[[blk_mat_id]], i = !to_remove[i_core])
 }
+# The same data per batch, for the calibration (the blanks are removed above: a batch of blanks only
+# has no samples left and is not calibrated)
+per_batch_proc_se_lst <- SumExp::split_columns(proc_sumexp, as.character(SumExp::col_df(proc_sumexp)[["batch_id"]]))
 to_report[["qc rsd filter"]] <- rsd_filter
 # With its columns also when nothing was removed (no blank or QC RSD% filter): an empty
 # `bind_rows()` has no columns at all, which the readers (e.g. figure 2.4) cannot subset
@@ -1006,70 +967,11 @@ prepare_app_data <- function(tr) {
   cat("The data of the app saved to:", FILE$app, "\n")
 }
 
-#' The QC RSD% of each targeted compound after each step (app 3.13, temporary): raw peak areas,
-#' normalized, after the blank filter, after blank subtraction, and concentrations. Per data
-#' version, QC group, all batches pooled ("Global") and, processed per batch, per batch. All values
-#' count (also zeros; values without a number, e.g. removed or "n.d.", do not).
-#'
-#' @param lst_proc The calibrated data (`NULL` without calibration: no concentrations)
-#' @returns A tibble of `method`, `batch`, `QC`, `feature_id`, `n` and one column per step; `NULL`
-#'   without targeted compounds or QC replicates
-qc_rsd_steps <- function(lst_proc) {
-  norm <- to_report[["normalized"]]
-  tg <- rownames(norm)[util$is_targeted_feature(norm)]
-  cd <- SumExp::col_df(norm)
-  qc <- rownames(cd)[util$ctrl_smpl_cat(norm) %in% "QC"]
-  if (length(tg) == 0 || length(qc) < 2) return(NULL)
-  qc_cl <- stats::setNames(as.character(cd[qc, "Class"]), qc)
-  qc_b <- stats::setNames(as.character(cd[qc, "batch_id"]), qc)
-  # A matrix of the targeted compounds x the QCs (NA where a step has no value)
-  fill <- function(a) {
-    out <- matrix(NA_real_, length(tg), length(qc), dimnames = list(tg, qc))
-    if (is.null(a)) return(out)
-    r <- intersect(tg, rownames(a))
-    cc <- intersect(qc, colnames(a))
-    if (length(r) && length(cc)) out[r, cc] <- unclass(a[r, cc, drop = FALSE])
-    out
-  }
-  conc_of <- function(m) {
-    l <- lst_proc[[util$mat_id_of_blank_subtracted(m)]]
-    out <- fill(NULL)
-    for (x in l) if (!is.null(x$concn)) {
-      a <- fill(x$concn[["conc"]])
-      out[!is.na(a)] <- a[!is.na(a)]
-    }
-    out
-  }
-  rsd <- function(m) apply(m, 1, function(x) {
-    x <- x[!is.na(x)]
-    if (length(x) < 2 || mean(x) == 0) NA_real_ else round(100 * stats::sd(x) / mean(x), 1)
-  })
-  sets <- c(list(Global = qc), if (has_multiple_batches) split(qc, qc_b))
-  purrr::map_dfr(intersect(c("raw", "closest_norm", "loess_norm", "mvis_norm"), names(norm)), function(m) {
-    steps <- list(`Raw peak area` = fill(norm[["raw"]]), Normalized = fill(norm[[m]]),
-                  `After blank filter` = fill(core_filtered[[m]]), `Blank-subtracted` = fill(core_blk[[m]]),
-                  Concentration = conc_of(m))
-    purrr::map_dfr(names(sets), function(b) {
-      purrr::map_dfr(unique(qc_cl[sets[[b]]]), function(cl) {
-        cols <- sets[[b]][qc_cl[sets[[b]]] == cl]
-        if (length(cols) < 2) return(NULL)
-        tibble::tibble(method = m, batch = b, QC = cl, feature_id = tg, n = length(cols),
-                       !!!lapply(steps, function(s) unname(rsd(s[, cols, drop = FALSE]))))
-      })
-    })
-  })
-}
-
 #' Mark the expected processing has been completed
 #'
 #' @param lst_proc The calibrated data (`NULL` without calibration), for the feature history
 mark_completed_and_save_to_report <- function(lst_proc = NULL) {
   cat("Processing steps are completed.\n")
-  # The QC RSD% after each step (app 3.13); never stops the processing
-  to_report[["qc rsd steps"]] <- tryCatch(qc_rsd_steps(lst_proc), error = function(e) {
-    cat("The QC RSD% per step (3.13) could not be computed:", conditionMessage(e), "\n")
-    NULL
-  })
   # What happened to each feature and sample (exported with the tables, shown in the reports)
   to_report[["events"]] <- history$event_table(events, to_report[["before normalization"]])
   to_report[["feature history"]] <- history$feature_history(to_report, lst_proc)
@@ -1114,10 +1016,6 @@ quantify_conc <- function(se, mat_id) {
   # LOD signal LLOQ/4, below the average signal of the LLOQ level LLOQ/2, above it but below the
   # LLOQ the LLOQ (see `proc$apply_llox_rules()`); rows are kept intact
   se <- proc$apply_llox_rules(se, conc_mat_id = "conc")
-  # Curves kept although not valid can lack an LLOQ (no replacements then): no negative values
-  neg <- se[["conc"]] < 0 & SumExp::row_df(se)$kept_calcurve
-  neg[is.na(neg)] <- FALSE
-  se[["conc"]][neg] <- 0
   se[["conc_flag"]] <- proc$llox_flags(se[["conc0"]], se[["conc"]], SumExp::row_df(se)$lloq)
   se
 }
@@ -1196,15 +1094,11 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   # Exclude chemicals without a valid calibration range; return early if none qualify.
   # `range_issue` tells why a range is not valid. A failed curve is never fitted: no concentrations
   # (their calibration points can be exported, see export option `--export_failed`).
-  # `kept_calcurve` (curves kept although not valid, an earlier processing option) is always FALSE;
-  # the app and the reports still read it from data processed by older versions
   has_proper_range <- proc$has_proper_calibration_range(qt_se)
   rd <- SumExp::row_df(qt_se)
   rd$range_issue[has_proper_range] <- NA_character_
   rd$range_issue[!has_proper_range & is.na(rd$range_issue)] <- "No valid calibration range"
-  SumExp::row_df(qt_se) <- rd
-  kept_calcurve <- rep(FALSE, length(has_proper_range))
-  SumExp::row_df(qt_se) <- cbind(SumExp::row_df(qt_se), has_proper_range, kept_calcurve)
+  SumExp::row_df(qt_se) <- cbind(rd, has_proper_range)
   if (sum(has_proper_range) == 0) { # No chemicals with a valid range
     return(list(done = FALSE, data = qt_se))
   }
@@ -1251,7 +1145,8 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   # Upper limit of quantification (ULOQ): the top of the linear range of each curve, located by
   # back-calculating the levels of linear curves, or by SCALiR with log calibration; quadratic
   # curves (without log calibration) have none. The ULOQ is always the actual top of the linear
-  # range, whatever the options; the minimum number of levels plays no part in it. With
+  # range, looked for from the highest calibration level down whatever the options ("Optimize",
+  # which ends the curve lower, included); the minimum number of levels plays no part in it. With
   # --enforce_linear_range the curve is cut at the ULOQ and refitted (`lr$top`, then
   # `max_c_conc`); the levels above it are out of range. Otherwise the curve keeps its range.
   # Either way, the concentrations between the ULOQ and the top of the curve are above the linear
@@ -1272,16 +1167,20 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   for (ii in seq_along(calcurve_models)) {
     m <- calcurve_models[[ii]]
     if (!is.list(m) || !is.finite(max_c[ii])) next
+    # The ULOQ is looked for among all levels from the start of the curve (LLOQ) up, not only
+    # those of the curve ("Optimize" ends the curve above the highest sample)
+    sig_all <- calcurve_se[[mat_id_to_calib]][ii, ]
+    sig_all[is.na(c_concs) | c_concs < min_c[ii]] <- NA
     lr <- if (in_log) {
       proc$linear_range_of_log_curve(
-        c_concs, calcurve_se[[mat_id_to_calib]][ii, ], cc_mat[ii, ], m, min_n = CAL_MIN_LEVELS,
+        c_concs, sig_all, cc_mat[ii, ], m, min_n = CAL_MIN_LEVELS,
         refit = \(s) proc$fit_and_test_calcurve_model(c_concs, s, log_log = TRUE),
         cut = enforce
       )
     } else if (startsWith(m$best_model_name, "linear")) {
       proc$trim_to_linear_range(
-        c_concs, cc_mat[ii, ], m, max_dev = params$linear_range_tol / 100,
-        min_n = CAL_MIN_LEVELS, weight_method = params$weight, cut = enforce
+        c_concs, sig_all, m, max_dev = params$linear_range_tol / 100,
+        min_n = CAL_MIN_LEVELS, weight_method = params$weight, cut = enforce, signal_fit = cc_mat[ii, ]
       )
     }
     if (is.null(lr)) next
@@ -1336,6 +1235,11 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
   SumExp::row_df(calcurve_se)$linear_range_note <- linear_range_note
   SumExp::row_df(concn_se) <- SumExp::row_df(concn_se) |>
     dplyr::mutate(calcurve_model = calcurve_models)
+  # Quadratic curves that bend down: the concentration of their peak, which every signal at or
+  # above the peak gets (capped; `proc$quadratic_cap()`): Inf with no cap, NA for other curves
+  conc_cap <- vapply(calcurve_models, proc$quadratic_cap, numeric(1), USE.NAMES = FALSE)
+  SumExp::row_df(concn_se)$conc_cap <- conc_cap
+  SumExp::row_df(calcurve_se)$conc_cap <- conc_cap
 
   # Minimum R2 (--r2_filter, --min_r2): a curve fitted with a lower R2 is not valid, i.e. no
   # concentrations and not exported
@@ -1375,14 +1279,11 @@ quantify_using_calcurve <- function(qt_se, mat_id_to_calib, params) {
 
   # Flag chemicals where no study sample exceeded the LLOQ; their concentrations are not exported
   # (the export option `--export_failed` adds their calibration points only)
-  non_qc_conc <- util$exclude_ctrl_smpl_cat(concn_se, "QC")[["conc"]]
-  any_above_lloq <- non_qc_conc > SumExp::row_df(concn_se)[, "lloq"]
-  has_ex <- rowSums(any_above_lloq) > 0
-  has_ex[is.na(has_ex)] <- FALSE
-  exported_kept <- rep(FALSE, length(has_ex))
+  # Quantified: a measured concentration (not replaced by the LOD/LLOQ rules) at or above the LLOQ,
+  # in a study sample (`msdial$measured_conc()`, as the "Quantified" count of the export)
+  has_ex <- rowSums(!is.na(msdial$measured_conc(concn_se))) > 0
   has_ex[r2_failed] <- FALSE   # Below the minimum R2: no concentrations
   SumExp::row_df(concn_se)[["to_export"]] <- has_ex
-  SumExp::row_df(concn_se)[["exported_kept"]] <- exported_kept
   # The concentrations and flags of all chemicals, also those not exported in this batch (`conc_all`,
   # `conc_flag_all`): the "Full" sheet of the export shows them for a batch where a chemical
   # exported in another batch is not (its values there are n.d. / n.q.)
@@ -1470,10 +1371,10 @@ compact_global_calibration <- function(cal, mat_id_to_calib) {
     feature_name = rd$feature_name,
     has_proper_range = rd$has_proper_range,
     range_issue = rd$range_issue,          # Why the range is not valid (NA: valid)
-    kept_calcurve = rd$kept_calcurve,      # Kept despite `range_issue` (--keep_all_calcurves)
     no_quant_samples = rd$no_quant_samples,   # No sample or QC at or above the LLOQ: full range
     lod = rd$lod, lloq = rd$lloq, max_c_conc = rd$max_c_conc,
     uloq = rd$uloq,   # NA: no ULOQ (quadratic curve without log calibration)
+    conc_cap = rd$conc_cap,   # Peak of a quadratic curve that bends down (capped values; see proc$quadratic_cap())
     linear_range_note = rd$linear_range_note,   # Levels above the ULOQ (NA: none)
     model = vapply(model_info, `[[`, "", "model"),
     r2 = vapply(model_info, `[[`, 0, "r2"),
@@ -1584,13 +1485,11 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
       src_calcurve <- dplyr::if_else(has_proper_range, "Batch", NA_character_)
       SumExp::row_df(cal_batch$calcurve)[["src_calcurve"]] <- src_calcurve
       SumExp::row_df(cal_batch$concn)[["src_calcurve"]] <- src_calcurve
-      # If any chemical has no proper range in the batch calibration (or only a curve kept by
-      # `--keep_all_calcurves`), try to use the global calibration
-      kept_b <- SumExp::row_df(cal_batch$calcurve)[, "kept_calcurve"]
-      if (cal_global$done && sum(!has_proper_range | kept_b) > 0) {
+      # If any chemical has no proper range in the batch calibration, try to use the global calibration
+      if (cal_global$done && any(!has_proper_range)) {
         rd_global <- SumExp::row_df(batch_in_global$calcurve)
         # Only global calibration has proper range, replace with global calibration
-        in_only_global <- (!has_proper_range | kept_b) & rd_global$has_proper_range & !rd_global$kept_calcurve
+        in_only_global <- !has_proper_range & rd_global$has_proper_range
         if (sum(in_only_global) > 0) {
           batch_in_only_global <- lapply(batch_in_global, \(x) x[in_only_global, ])
           # Why the batch's own curve is not used (kept with the global curve info below)
@@ -1680,7 +1579,7 @@ local({
     if (is.na(cpb$calibration[k])) {
       log_event("Calibration", "batch", b, "Not calibrated", cpb$note[k], "removed", mat_id = m, batch_id = b)
     } else if (cpb$calibration[k] == "Global") {
-      log_event("Calibration", "batch", b, "Global curves used", cpb$note[k], "fallback", mat_id = m, batch_id = b)
+      log_event("Calibration", "batch", b, "Whole batch on global curves", cpb$note[k], "fallback", mat_id = m, batch_id = b)
     }
     res <- lst_proc[[cpb$mat_id[k]]][[b]]
     if (is.null(res$concn)) next
@@ -1690,17 +1589,13 @@ local({
     # Chemicals of a batch calibrated with its own curves that use the global one
     if (cpb$calibration[k] == "Batch + Global") {
       g <- rd$src_calcurve %in% "Global"
-      log_event("Calibration", "feature", id[g], "Global curve used",
+      log_event("Calibration", "feature", id[g], "Global curve used (compound)",
                 paste0("Not valid in the batch: ", dplyr::coalesce(rd$range_issue[g], "no valid range")),
                 "fallback", mat_id = m, batch_id = b)
     }
     no_range <- !flag(rd$has_proper_range)
     log_event("Calibration", "feature", id[no_range], "Not quantified",
               dplyr::coalesce(rd$range_issue[no_range], "No valid calibration range"), "removed",
-              mat_id = m, batch_id = b)
-    kept <- flag(rd$kept_calcurve)
-    log_event("Calibration", "feature", id[kept], "Curve kept although not valid",
-              dplyr::coalesce(rd$range_issue[kept], "No valid calibration range"), "fallback",
               mat_id = m, batch_id = b)
     full <- flag(rd$no_quant_samples) & !no_range
     log_event("Calibration", "feature", id[full], "Full calibration range used",
@@ -1712,9 +1607,6 @@ local({
     log_event("Calibration", "feature", id[not_exp], "Not exported",
               dplyr::coalesce(rd$range_issue[not_exp], "No study sample above the LLOQ"), "removed",
               mat_id = m, batch_id = b)
-    exp_kept <- !no_range & flag(rd$exported_kept)
-    log_event("Calibration", "feature", id[exp_kept], "Exported although no study sample above the LLOQ",
-              "Keep all calibration curves", "fallback", mat_id = m, batch_id = b)
   }
 })
 # Values below the LOD / LLOQ: replaced, or without a value ("n.d." / "n.q.") without --impute_llox

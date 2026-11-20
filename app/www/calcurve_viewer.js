@@ -128,7 +128,6 @@
   // that colour after the name; nothing for a valid curve of its own
   var STATE = {
     lightcoral: ["not valid", "#c23636"],
-    "#FFD9A0": ["kept although not valid", "#B26A00"],
     lightblue: ["global curve used", "#0072B2"],
     "#D9D9D9": ["removed before calibration", "#667085"]
   };
@@ -547,6 +546,9 @@
       show: function (i) {
         if (i >= 0 && i < data.compounds.length) {
           state.i = i;
+          // A compound shown (chosen, or new data: another batch or normalization): first the curve
+          // it was quantified with, when the data gives it; the Curve menu and key G change it after
+          if (data.compounds[i].view) state.viewPref = data.compounds[i].view;
           if (sel && sel.value !== String(i)) {
             // A compound outside the search: clear the search
             if (!Array.prototype.some.call(sel.options, function (o) { return o.value === String(i); })) { search.value = ""; fill(""); }
@@ -577,7 +579,7 @@
       },
       setLog: function (on) { state.log = !!on; draw(); },
       // New data (e.g. another batch or normalization method): the compound, mode and axes stay;
-      // the curve is the data's `default_view` when it has one (the app: the chosen batch's)
+      // the curve is the one the compound was quantified with, else the data's `default_view`
       setData: function (d) {
         data = d;
         if (d.default_view) state.viewPref = d.default_view;

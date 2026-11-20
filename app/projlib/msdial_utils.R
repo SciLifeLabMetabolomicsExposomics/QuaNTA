@@ -220,36 +220,6 @@ save_src_mat_id_for_conc <- function(sumexp, value) {  # `src_mat_id_for_conc<-`
   sumexp
 }
 
-# #' Get or set the calibration curve model for a given matrix
-# #'
-# #' @param sumexp A [`SumExp::SumExp`] object
-# #' @param mat_id The name of a matrix
-# #' @param value The calibration curve model to be stored
-# #' @returns
-# #' [calcurve_model()]: The calibration curve model for the given matrix
-# #' [calcurve_model<-()]: The updated [`SumExp::SumExp`] object
-# #' @export
-# calcurve_model <- function(sumexp, mat_id) {
-#   stopifnot(inherits(sumexp, "SumExp"))
-#   stopifnot(is.character(mat_id), length(mat_id) == 1)
-#   SumExp::row_df(sumexp)[[paste0(".calcurve_model_", mat_id)]]
-# }
-# #' @rdname calcurve_model
-# #' @export
-# `calcurve_model<-` <- function(sumexp, mat_id, value) {
-#   stopifnot(inherits(sumexp, "SumExp"))
-#   stopifnot(is.character(mat_id), length(mat_id) == 1)
-#   nm <- paste0(".calcurve_model_", mat_id)
-#   stopifnot(is.list(value))
-#   i_match <- match(names(value), rownames(sumexp))
-#   if (any(is.na(i_match))) {
-#     stop("Some feature IDs in 'value' are not found in 'sumexp'.")
-#   }
-#   SumExp::row_df(sumexp)[[nm]] <- NA # Allow missing row names in 'value'
-#   SumExp::row_df(sumexp)[[nm]][i_match] <- value
-#   sumexp
-# }
-
 ##  MATRIX ID  ---------------------------------------------
 
 #' Get the matrix ID of the blank-subtracted matrix
@@ -313,7 +283,7 @@ extract_with_na <- function(mat, i = TRUE, j = TRUE) {
 #' The categories of the notes on the calibration curves, in the order they are shown
 #' @export
 calib_note_categories <- c(
-  notvalid = "No valid curve", kept = "Kept although not valid", global = "Global curve used",
+  notvalid = "No valid curve", global = "Global curve used",
   uloq = "Linear range (ULOQ)", detection = "Detection in samples", removed = "Removed before calibration"
 )
 
@@ -323,7 +293,7 @@ calib_note_categories <- c(
 #' ([calib_notes_text()]).
 #'
 #' @param row_df The `row_df` of calibrated data (`has_proper_range`, and from processing with
-#'   recent versions `src_calcurve`, `range_issue`, `kept_calcurve`, `linear_range_note` and
+#'   recent versions `src_calcurve`, `range_issue`, `linear_range_note` and
 #'   `no_quant_samples`)
 #' @param batch_view Whether the rows are those of a batch (`src_calcurve` "Global" then means that
 #'   the batch's own curve was replaced by the global one)
@@ -337,7 +307,6 @@ calib_notes <- function(row_df, batch_view = TRUE, detection = NULL) {
   issue <- chr("range_issue")
   src <- chr("src_calcurve")
   valid <- row_df$has_proper_range %in% TRUE
-  is_kept <- valid & row_df$kept_calcurve %in% TRUE   # (`kept` would be the column of the result)
   reason <- dplyr::coalesce(issue, "no valid calibration range")
   full_range <- if (is.null(row_df$no_quant_samples)) rep(FALSE, n) else row_df$no_quant_samples %in% TRUE
   det <- if (is.null(detection)) rep(NA_character_, n) else dplyr::na_if(as.character(detection), "")
@@ -348,9 +317,8 @@ calib_notes <- function(row_df, batch_view = TRUE, detection = NULL) {
   )
   tibble::tibble(
     notvalid = ifelse(valid, NA_character_, paste0("Not valid: ", reason)),
-    kept = ifelse(is_kept, paste0("Kept although not valid: ", reason), NA_character_),
     global = dplyr::case_when(
-      !batch_view | !valid | is_kept | !src %in% "Global" ~ NA_character_,
+      !batch_view | !valid | !src %in% "Global" ~ NA_character_,
       !is.na(issue) ~ paste0("Batch curve not valid (", issue, "): the global curve is used"),
       TRUE ~ "The global curve is used"
     ),

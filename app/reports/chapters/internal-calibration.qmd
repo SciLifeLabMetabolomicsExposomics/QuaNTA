@@ -16,7 +16,7 @@ global_view <- function(fid) {
   if (is.na(i)) return(NULL)
   L <- gcal$limits[i, ]
   list(src = if (isTRUE(L$has_proper_range)) "Global" else "None",
-       notes = util$calib_notes(L, batch_view = FALSE), kept = isTRUE(L$kept_calcurve),
+       notes = util$calib_notes(L, batch_view = FALSE),
        lod = sig(L$lod), lloq = sig(L$lloq), uloq = sig(L$uloq %||% L$max_c_conc),
        model = model_label(L$model), r2 = if (is.na(L$r2)) NULL else round(L$r2, 3))
 }
@@ -26,7 +26,7 @@ batch_view <- function(x, fid) {
   m <- rd$calcurve_model[[1]]
   has_m <- is.list(m) && !is.null(m$best_model_name)
   list(src = if (is.na(rd$src_calcurve)) "None" else rd$src_calcurve,
-       notes = util$calib_notes(rd), kept = isTRUE(rd$kept_calcurve),
+       notes = util$calib_notes(rd),
        lod = sig(rd$lod), lloq = sig(rd$lloq), uloq = sig(rd$uloq %||% rd$max_c_conc),
        model = if (has_m) model_label(m$best_model_name) else NULL,
        r2 = if (has_m) round(m$R2s[[m$best_model_name]], 3) else NULL)
@@ -82,7 +82,7 @@ lim_tbl <- purrr::map_dfr(cal_data, function(cd) {
     if (is.null(v) || startsWith(cd$note, "Removed")) return(NULL)
     # One batch only: its curve is the global curve
     tibble(Compound = cd$name, Curve = nm, `Curve used` = util$calibration_label(v$src, length(batch_ids)),
-           Status = if (v$src == "None") "Not valid" else if (isTRUE(v$kept)) "Kept (not valid)" else
+           Status = if (v$src == "None") "Not valid" else
              if (nm != "Global" && v$src == "Global") "Global curve used" else "Valid",
            LOD = v$lod %||% NA, LLOQ = v$lloq %||% NA, ULOQ = v$uloq %||% NA,
            Model = v$model %||% NA, `R²` = v$r2 %||% NA,
@@ -93,12 +93,12 @@ lim_tbl <- purrr::map_dfr(cal_data, function(cd) {
   left_join(is_of, by = "feature_id") |> select(-feature_id) |>
   mutate(Curve = factor(Curve, levels = view_names), `Curve used` = factor(`Curve used`),
          Status = factor(Status))
-# Red: no valid calibration curve for the compound (in that curve); orange: kept although not valid
+# Red: no valid calibration curve for the compound (in that curve)
 dt(lim_tbl, escape = setdiff(names(lim_tbl), "Notes"),   # The note icons are HTML
    caption = htmltools::HTML(show$calib_notes_legend_html(setdiff(names(util$calib_note_categories), "removed")))) |>
   DT::formatRound("R²", digits = 3) |>   # Always 3 decimals (also 0.950)
   DT::formatStyle("Status", target = "row",
-                  backgroundColor = DT::styleEqual(c("Not valid", "Kept (not valid)"), c(FAILED_BG, KEPT_BG)))
+                  backgroundColor = DT::styleEqual("Not valid", FAILED_BG))
 ```
 
 ### 4.1.1 Calibration models
@@ -160,7 +160,6 @@ htmltools::tagList(
     ".q-bdot-ok{background:#12B76A;color:#fff}",
     ".q-bdot-global{background:#E0F0FA;color:#0072B2;border:1px solid #0072B2}",
     ".q-bdot-failed{background:#FDECEA;color:#B42318;border:1px solid #B42318}",
-    ".q-bdot-kept{background:#E69F00;color:#1A1A1A}",
     ".q-bdot-removed,.q-bdot-none{background:#D9D9D9;color:#555}"))),
   dt(bs_tbl[, c("Chemical Name", "Calibration per batch")], escape = "Chemical Name")
 )
@@ -175,7 +174,7 @@ show$calib_samples_per_batch(raw, unit) |>
   kableExtra::kable_styling(full_width = FALSE, position = "left")
 ```
 
-## 4.4 Removal of chemicals with no measurement samples
+## 4.4 Quantified compounds per batch
 
 The number of chemicals per batch with a valid calibration curve and concentrations in the samples
 (as in the app): chemicals without any study sample at or above the LLOQ are not quantified or
@@ -183,7 +182,7 @@ exported.
 
 ```{r}
 tibble(Batch = batch_label(batch_ids),
-       `Number of chemicals` = vapply(batch_ids, function(b) {
+       Compounds = vapply(batch_ids, function(b) {
          se <- lst[[b]]$concn
          se <- se[SumExp::row_df(se)$has_proper_range %in% TRUE, ]
          sum(rowSums(!is.na(se[["conc"]])) > 0)
@@ -241,14 +240,14 @@ show$calib_viewer_html("calcurve-viewer", cv_data, script = file.path(app_root, 
 ## 4.6 Concentration
 
 The concentrations of each compound in all samples of all batches, per class: a box per class and
-the samples as points. `r if (LLOX_IMPUTED) "Points of values replaced by the LOD/LLOQ rules are coloured as in the exported tables (red: not detected, LLOQ/4; yellow: detected but not quantified, LLOQ/2; blue: set to the LLOQ)." else paste0("Values below the LOD (n.d.) and the LLOQ (n.q.) have no value and are not shown (", sum(conc_long$conc_flag %in% 'n.d.' & is.na(conc_long$conc)), " n.d. and ", sum(conc_long$conc_flag %in% 'n.q.' & is.na(conc_long$conc)), " n.q. values of samples and QCs); blue points were set to the LLOQ.")`
+the samples as points. `r if (LLOX_IMPUTED) "Points of values replaced by the LOD/LLOQ rules are coloured as in the exported tables (red: not detected, LLOQ/4; yellow: detected but not quantified, LLOQ/2; blue: set to the LLOQ; beige-grey: capped at the peak of a quadratic curve, the real value is higher)." else paste0("Values below the LOD (n.d.) and the LLOQ (n.q.) have no value and are not shown (", sum(conc_long$conc_flag %in% 'n.d.' & is.na(conc_long$conc)), " n.d. and ", sum(conc_long$conc_flag %in% 'n.q.' & is.na(conc_long$conc)), " n.q. values of samples and QCs); blue points were set to the LLOQ, beige-grey ones capped at the peak of a quadratic curve (the real value is higher).")`
 Hover over a point for the sample; switch between linear and log axis.
 
 ```{r}
 #| results: asis
 # One entry per compound with concentrations; samples by index in the shared sample table
 conc_q <- conc_long |> filter(!is.na(conc)) |>
-  mutate(kind = as.integer(show$imputed_kind(conc, lloq)) - 1L)
+  mutate(kind = as.integer(show$imputed_kind(conc, lloq, conc_cap)) - 1L)
 conc_data <- conc_q |> group_by(feature_name) |> group_split() |> lapply(function(d) {
   c(list(name = d$feature_name[1]), npts(s = unname(s_idx[d$sample_name]), y = sig(d$conc), k = d$kind))
 })

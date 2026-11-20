@@ -152,8 +152,6 @@ feature_history <- function(tr, lst_proc = NULL) {
         issue <- dplyr::coalesce(rd$range_issue, "no valid range")
         col[i] <- dplyr::case_when(
           !(!is.na(rd$has_proper_range) & rd$has_proper_range) ~ paste0("Not quantified: ", issue),
-          !is.na(rd$kept_calcurve) & rd$kept_calcurve ~ paste0(util$calibration_label(dplyr::coalesce(rd$src_calcurve, "Batch"), length(cal)),
-                                                               " curve kept although not valid: ", issue),
           rd$src_calcurve %in% "Global" & !is.na(rd$range_issue) ~ paste0("Global curve (", rd$range_issue, " in the batch)"),
           rd$src_calcurve %in% "Global" ~ "Global curve",
           length(cal) == 1 ~ "Global curve",   # One batch only: its curve is the global curve
@@ -162,9 +160,6 @@ feature_history <- function(tr, lst_proc = NULL) {
         to_exp <- !is.na(rd$to_export) & rd$to_export
         col[i][!to_exp & !startsWith(col[i], "Not quantified")] <-
           paste0(col[i][!to_exp & !startsWith(col[i], "Not quantified")], "; not exported (no study sample above the LLOQ)")
-        # Exported only because of "Keep all calibration curves"
-        kept_exp <- if (is.null(rd$exported_kept)) rep(FALSE, nrow(rd)) else rd$exported_kept %in% TRUE
-        col[i][kept_exp] <- paste0(col[i][kept_exp], "; exported although no study sample above the LLOQ (Keep all calibration curves)")
         exported[i] <- exported[i] | to_exp
       }
       tbl[[paste("Calibration, batch", b)]] <- ifelse(type == "Targeted" & !removed, col, "")

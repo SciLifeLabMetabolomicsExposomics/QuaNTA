@@ -202,8 +202,7 @@ runProcessUI <- function(uiId) {
                                   "calibration levels (from the LLOQ), as far as there are levels. With \"Enforce ULOQ\",",
                                   "the curve is not extended above the ULOQ: it takes levels below the LLOQ instead",
                                   "(those above the LOD), as far as there are. It never makes a curve invalid and never",
-                                  "moves the ULOQ. Curves kept by \"Keep all calibration curves\" are extended the same way.",
-                                  "Without it: 3 levels.")),
+                                  "moves the ULOQ. Without it: 3 levels.")),
           value = FALSE,
           width = "100%"
         ),
@@ -352,8 +351,8 @@ runProcessUI <- function(uiId) {
       inputId = ns("r2_filter"),
       label = label_tip("Minimum R²",
                         paste("A compound whose calibration curve has a lower R² is considered failed:",
-                              "no concentrations, not exported (kept and marked with 'Keep all",
-                              "calibration curves'). The reports and tables show the reason. Greyed out when the data has no targeted (Quant) features.")),
+                              "no concentrations, not exported. The reports and tables show the reason. Greyed out",
+                              "when the data has no targeted (Quant) features.")),
       value = FALSE,
       width = "100%"
     ),

@@ -56,7 +56,7 @@ tut_table(d[, -6]) |>
 - **Zero values** are samples where the IS was not found.
 :::
 
-## 3.2 Raw RSD% of the selected IS
+## 3.2 Raw RSD%
 ```{r}
 prep <- show$is_rsd_by_group(is_se)
 ```
@@ -124,7 +124,7 @@ tut_table(tibble::tibble(`Internal standard` = is_rd$feature_name, `RT [min]` = 
 
 
 
-## 3.5 Distribution of the selected IS
+## 3.5 Distribution of intensities of the internal standards
 The raw peak areas of the selected IS by sample group (left) and along the injection order (right).
 Outlier samples are drawn as crosses.
 ```{r}
@@ -145,7 +145,7 @@ show$plotly_is_distribution(y = unname(is_se[["raw"]][i_sel, ]), smp = smp, name
   new batch) is instrument drift, which the normalization corrects.
 :::
 
-## 3.6 Volumetric internal standard
+## 3.6 Volumetric internal standards
 The volumetric IS (`vIS`) is added to the final extract just before injection; its peak area shows
 how constant the injected volume was. The bars are its raw peak area in each sample along the
 injection order; the table gives its RSD% within groups of samples.

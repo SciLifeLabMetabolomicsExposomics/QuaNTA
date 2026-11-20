@@ -144,4 +144,17 @@
     jQuery(document).on("init.dt draw.dt", function () { setTimeout(scan, 0); });
   }
   document.addEventListener("DOMContentLoaded", scan);
+
+  // ---- 3. A plotly figure already drawn gets new data and layout (`plotly_react()` in app.R):
+  // the figure is updated in place instead of being drawn again ----
+  if (window.jQuery) {
+    jQuery(document).on("shiny:connected", function () {
+      Shiny.addCustomMessageHandler("plotly_react", function (m) {
+        var el = document.getElementById(m.id);
+        if (!el || !window.Plotly || !el.data) return;   // Not drawn yet: its own render draws it
+        var fig = JSON.parse(m.fig);
+        Plotly.react(el, fig.data, fig.layout, fig.config);
+      });
+    });
+  }
 })();

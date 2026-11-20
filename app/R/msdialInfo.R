@@ -94,15 +94,23 @@ msdialInfoDownloadUI <- function(uiId, label = "Download parameters and processi
 #'   `report_dir`). `data_info$loaded_processing` is set when an uploaded parameter file contains
 #'   a `processing:` section; `data_info$previous_dataset` is the name of the dataset saved in it
 #'   (`""` if none).
-#' @param on_params_loaded `NULL`, or a function called when a parameters file has been loaded
-#'   (e.g. to remove the earlier results, which no longer match the settings)
+#' @param remove_results `NULL`, or a function called when a parameters file is loaded or a new
+#'   data file is uploaded, to remove the earlier results (they no longer match)
 #' @param export_params A reactive returning the export options as a list (the `export:` section
 #'   of the file; their defaults until the user changes them). `data_info$loaded_export` is set
 #'   when a loaded parameters file has an `export:` section.
 #' @export
 msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(list()),
-                             on_params_loaded = NULL, export_params = shiny::reactive(NULL)) {
+                             remove_results = NULL, export_params = shiny::reactive(NULL)) {
   shiny::moduleServer(serverId, function(input, output, session) {
+    # A running step (reading, processing, export, report) would write its old results after they
+    # were removed, so loading parameters or a new data file waits until it has finished
+    refuse_if_busy <- function(what) {
+      if (!session_busy(session)()) return(FALSE)
+      shiny::showNotification(paste0("Wait until the running step has finished before ", what, "."),
+                              type = "warning")
+      TRUE
+    }
     init <- lapply(rlang::set_names(.user_param_ids), function(x) "")
     init$intermediate_dir <- ws$intermediate
     init$table_dir <- ws$tables
@@ -197,6 +205,7 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       n_uploads <<- n_uploads + 1
       this_upload <- n_uploads
       up <- input$input_file_upload
+      if (refuse_if_busy("uploading a new data file")) return()
       # Only the accepted types (the file inside a .gz / .zip is checked when it is unpacked);
       # another file keeps the earlier data
       problem <- upload_type_problem(up$name)
@@ -216,11 +225,10 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
         }
         as_is <- !fmt$needs_rewrite
       }
-      # A new file makes all earlier results stale (data, exported tables, reports)
+      # A new file makes all earlier results stale (data, exported tables, reports, and their
+      # tables and figures)
       unlink(list.files(ws$input, full.names = TRUE), recursive = TRUE)
-      unlink(list.files(ws$intermediate, full.names = TRUE))
-      unlink(list.files(ws$tables, full.names = TRUE), recursive = TRUE)
-      unlink(list.files(ws$report, full.names = TRUE), recursive = TRUE)
+      if (!is.null(remove_results)) remove_results()
       pending_sheet(NULL)
 
       if (!as_is) {
@@ -264,6 +272,7 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
         }
       )
       shiny::req(p)
+      if (refuse_if_busy("loading a parameters file")) return()
       if (!has_results()) return(apply_params(p))
       pending_params(p)
       shiny::showModal(shiny::modalDialog(
@@ -283,10 +292,11 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
       p <- pending_params()
       pending_params(NULL)
       shiny::req(p)
+      if (refuse_if_busy("loading a parameters file")) return()
       apply_params(p)
     })
     apply_params <- function(p) {
-      if (!is.null(on_params_loaded)) on_params_loaded()
+      if (!is.null(remove_results)) remove_results()
       prev <- p[["dataset"]]
       data_info$previous_dataset <- if (length(prev) == 1 && !is.na(prev) && nzchar(prev)) as.character(prev) else ""
       for (id in .text_param_ids) {

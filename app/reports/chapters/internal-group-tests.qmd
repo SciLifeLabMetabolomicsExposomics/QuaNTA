@@ -47,7 +47,7 @@ cmp <- bind_rows(cmp_t, cmp_nt) |>
 ```{r}
 #| results: asis
 cat(sprintf('<div class="callout-q">%s vs %s: %d of %d targeted compounds and %d of %d non-targeted features differ (q &lt; 0.05).</div>',
-            grp[2], grp[1], sum(cmp_t$Feature %in% cmp$Feature[cmp$q < 0.05 & cmp$Type == cmp_t$Type[1]]), nrow(cmp_t),
+            htmltools::htmlEscape(grp[2]), htmltools::htmlEscape(grp[1]), sum(cmp_t$Feature %in% cmp$Feature[cmp$q < 0.05 & cmp$Type == cmp_t$Type[1]]), nrow(cmp_t),
             sum(cmp$q < 0.05 & cmp$Type == "Non-targeted (intensity)", na.rm = TRUE), nrow(cmp_nt)))
 ```
 

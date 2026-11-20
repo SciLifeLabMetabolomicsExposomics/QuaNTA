@@ -14,10 +14,17 @@
 }
 `%|na|%` <- function(x, y) if (is.na(x)) y else x
 
-.local_path <- function(url, base) {
+#' Whether a file is inside a folder (after resolving `..` and links). Names from the data file
+#' end up in the page, so a tag pointing elsewhere on the server is never embedded.
+.inside <- function(p, root) {
+  if (is.null(root) || !file.exists(p) || dir.exists(p)) return(FALSE)
+  startsWith(normalizePath(p, winslash = "/"), paste0(normalizePath(root, winslash = "/"), "/"))
+}
+
+.local_path <- function(url, base, root) {
   if (grepl("^([a-zA-Z][a-zA-Z0-9+.-]*:|//|#)", url)) return(NA_character_)   # http:, data:, ...
   p <- file.path(base, utils::URLdecode(sub("[?#].*$", "", url)))
-  if (file.exists(p) && !dir.exists(p)) p else NA_character_
+  if (.inside(p, root)) p else NA_character_
 }
 
 .data_uri <- function(bytes, path) {
@@ -25,7 +32,7 @@
 }
 
 #' The bytes of a file; of a style sheet with the files it refers to embedded
-.file_bytes <- function(path) {
+.file_bytes <- function(path, root) {
   bytes <- readBin(path, "raw", file.size(path))
   ext <- tolower(tools::file_ext(path))
   if (!ext %in% c("css", "js", "mjs")) return(bytes)
@@ -44,10 +51,10 @@
   from <- 1L
   parts <- list()
   for (i in seq_along(urls)) {
-    p <- .local_path(urls[i], dirname(path))
+    p <- .local_path(urls[i], dirname(path), root)
     if (is.na(p)) next
     parts[[length(parts) + 1L]] <- bytes[seq_len(st[i] - from) + from - 1L]
-    parts[[length(parts) + 1L]] <- charToRaw(.data_uri(.file_bytes(p), p))
+    parts[[length(parts) + 1L]] <- charToRaw(.data_uri(.file_bytes(p, root), p))
     from <- st[i] + ln[i]
   }
   parts[[length(parts) + 1L]] <- bytes[seq.int(from, length.out = length(bytes) - from + 1L)]
@@ -56,9 +63,13 @@
 
 #' Write the local resources of an HTML file into it
 #'
+#' Only files inside the folder of the page are embedded, and as `data-quanta-inline` scripts only
+#' files inside `inline_dir`.
+#'
 #' @param html_file Path to the HTML file, overwritten
+#' @param inline_dir `NULL`, or the folder of the `data-quanta-inline` scripts
 #' @returns The paths of the embedded files, invisibly
-embed_html_resources <- function(html_file) {
+embed_html_resources <- function(html_file, inline_dir = NULL) {
   base <- dirname(html_file)
   page <- readBin(html_file, "raw", file.size(html_file))
   txt <- rawToChar(page)
@@ -75,7 +86,7 @@ embed_html_resources <- function(html_file) {
     tag <- rawToChar(page[st:(st + ln - 1L)])
     # An inline script that the report kept out of Pandoc (see report-internal.qmd): its content
     inl <- regmatches(tag, regexec("\\bdata-quanta-inline=\"([^\"]+)\"", tag))[[1]]
-    if (length(inl) == 2 && file.exists(inl[2])) {
+    if (length(inl) == 2 && .inside(inl[2], inline_dir)) {
       writeBin(page[seq.int(from, length.out = st - from)], con)
       writeBin(c(charToRaw(sub("\\s*\\bdata-quanta-inline=\"[^\"]+\"", "", tag)), readBin(inl[2], "raw", file.size(inl[2]))), con)
       from <- st + ln
@@ -85,9 +96,9 @@ embed_html_resources <- function(html_file) {
     m <- regexec("\\b(src|href)=(\"|')([^\"']+)\\2", tag, perl = TRUE, useBytes = TRUE)
     hit <- regmatches(tag, m)[[1]]
     if (length(hit) == 0) next
-    p <- .local_path(hit[4], base)
+    p <- .local_path(hit[4], base, base)
     if (is.na(p)) next
-    new_tag <- paste0(substr(tag, 1L, m[[1]][4] - 1L), .data_uri(.file_bytes(p), p),
+    new_tag <- paste0(substr(tag, 1L, m[[1]][4] - 1L), .data_uri(.file_bytes(p, base), p),
                       substr(tag, m[[1]][4] + nchar(hit[4], "bytes"), nchar(tag, "bytes")))
     writeBin(page[seq.int(from, length.out = st - from)], con)
     writeBin(charToRaw(new_tag), con)

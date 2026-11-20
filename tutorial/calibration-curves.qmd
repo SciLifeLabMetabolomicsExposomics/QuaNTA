@@ -62,13 +62,14 @@ In both modes:
 - **Shading**: dark grey below the LOD, light grey below the LLOQ, and olive above the ULOQ (dashed
   line), the top of the linear range. **Labels** at the top name each limit in its colour: *LOD*
   (blue) and *LLOQ* (purple), with a dotted line, or *LOD = LLOQ* (orange) when they are the same
-  level, and *ULOQ* (olive). The ULOQ is always the actual top of the linear range, whatever the
-  options: levels of the curve above it are in the olive area (unless *Enforce ULOQ* cut them off).
+  level, and *ULOQ* (olive). The ULOQ is always the actual top of the linear range, looked for among
+  all calibration levels whatever the options (also above a curve shortened by *Optimize*): levels
+  of the curve above it are in the olive area (unless *Enforce ULOQ* cut them off).
 - **Above the plot**, the parameters of the curve (model, R², LOD, LLOQ, ULOQ, highest calibration
   concentration, the curve used) and notes, e.g. why a curve is not valid.
 - **The title** names the compound, followed by the state of its curve in the colour of its row in
-  table 4.1: *(not valid)* in red, *(kept although not valid)* in orange, *(global curve used)* in
-  blue, *(removed before calibration)* in grey; nothing for a valid curve.
+  table 4.1: *(not valid)* in red, *(global curve used)* in blue, *(removed before calibration)* in
+  grey; nothing for a valid curve.
 - **Curve** (with several batches): the global curve, fitted on the calibration points of all
   batches, then the curve of every batch; the chosen batch's curve is shown first. The global curve
   is there for every compound, also when it is not used or not valid (its note says why). The key
@@ -85,6 +86,10 @@ In both modes:
   open circles) or reported as *n.q.* / *n.d.*.
 - **Samples in the olive area** are above the ULOQ: within the curve but above its linear range, or
   extrapolated above its highest level. Treat these values with care, or dilute and re-measure.
+- **Samples in beige-grey** (quadratic curves only) are *capped*: a quadratic curve that bends down
+  has a peak, and every signal at or above it gets the concentration of the peak. The real
+  concentration is higher; dilute and re-measure. The exported tables give the peak as
+  "Capped upper conc" in the Slope column.
 - **A curve far from its calibration points**, or points bending away at the top, suggests that the
   linear range is shorter than the calibration range; see the notes in table 4.1 and the option
   *Enforce linear range*.

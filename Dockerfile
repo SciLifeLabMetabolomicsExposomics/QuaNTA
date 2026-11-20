@@ -96,8 +96,12 @@ RUN set -e; \
     "$HOME/.TinyTeX/bin/${tt_bin}/tlmgr" option repository ctan
 ENV PATH="/home/shiny/bin:${PATH}"
 COPY --chown=shiny:shiny docker/latex-smoketest.qmd /tmp/latex-smoketest/latex-smoketest.qmd
+# Up to 3 tries: a CTAN mirror that is out of sync fails now and then
 RUN cd /tmp/latex-smoketest && \
-    quarto render latex-smoketest.qmd --to pdf && \
+    for i in 1 2 3; do \
+      quarto render latex-smoketest.qmd --to pdf && break; \
+      [ "$i" -lt 3 ] && echo "Smoke test failed, retrying ($i/3)" && sleep 30; \
+    done && \
     test -s latex-smoketest.pdf && \
     rm -rf /tmp/latex-smoketest
 

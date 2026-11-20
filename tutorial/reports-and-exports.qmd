@@ -106,18 +106,21 @@ tut_table(utils::head(body[!is.na(body$Chemical), ], 25), height = "380px")
 
 **How to read it**
 
-- **Sheets**: *Full* has one row per compound over all batches (average and median of the measured
-  values, the curve used per batch); then one sheet per batch with its limits, statistics, model
-  and **Notes**, the full text of the note icons of table 4.1.
+- **Sheets**: *Full* has one row per compound over all batches (minimum, maximum, average and
+  median of the measured values of all batches together, the curve used per batch, and the notes
+  of the batches, batches with the same note together); then one sheet per batch with its limits,
+  statistics, model and **Notes**, the full text of the note icons of table 4.1.
 - **Statistics** (minimum, maximum, average, median) use the measured values of the study samples
   only: values replaced by the LOD/LLOQ rules are left out.
-- **Coloured cells** in the sample columns are values that were replaced or are above the ULOQ;
-  the last sheet, *Legend*, explains the colours:
+- **Coloured cells** in the sample columns are values that were replaced, are above the ULOQ, or
+  are capped at the peak of a quadratic curve (the peak is given as "Capped upper conc" in the
+  Slope column, "No cap" for quadratic curves without one); the last sheet, *Legend*, explains the
+  colours:
 
 ```{r}
 #| label: table-legend
 leg <- openxlsx::read.xlsx(conc_file, sheet = "Legend", colNames = TRUE)
-fills <- c("#FAAFAF", "#FCEACF", "#D3EBF2", "#E0E0E0", "#9E9E9E")   # The fills of the exported cells
+fills <- c("#FAAFAF", "#FCEACF", "#D3EBF2", "#E0E0E0", "#9E9E9E", "#D9CFBF")   # The fills of the exported cells
 leg <- leg[!is.na(leg$Meaning) & nzchar(leg$Meaning), "Meaning", drop = FALSE][seq_along(fills), , drop = FALSE]
 leg$Colour <- ""
 DT::datatable(leg[, c("Colour", "Meaning")], rownames = FALSE, selection = "none",

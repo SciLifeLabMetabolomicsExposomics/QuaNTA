@@ -70,7 +70,7 @@ tut_table(tibble::tibble(`Standard type` = v) |> dplyr::count(`Standard type`, n
 ```
 
 
-## 2.4 Features by m/z and retention time
+## 2.4 The distribution of analytes across m/z and retention time
 Every feature at its retention time and m/z. After processing, the targeted compounds are coloured
 by their **outcome**: *Quantified* (green), *Valid curve, not found in samples* (orange), *No valid
 calibration* (red), or *Removed* by the blank filter or the QC RSD% filter (crosses). The internal
