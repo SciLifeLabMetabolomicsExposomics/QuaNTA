@@ -36,9 +36,9 @@ parameters_file <- NULL   # e.g. "quanta_parameters_20261026.yml"
 
 processing <- list(
   # Reading
-  per_batch           = TRUE,    # Blank subtraction and calibration per batch (Batch ID)
+  per_batch           = FALSE,   # Blank subtraction and calibration per batch (Batch ID)
   # Quality control
-  vis_prenorm         = FALSE,   # Pre-normalize all peak areas by the volumetric IS (vIS)
+  vis_prenorm         = FALSE,   # Pre-normalize all peak areas but the IS by the volumetric IS (vIS)
   rm_outlier          = TRUE,    # Remove outlier samples (> 20% of the IS beyond 3 SD, log scale, or zero)
   rm_outlier_scope    = "all",   # "all" injections, or "no_calib": calibration samples always kept
   blank_filter        = TRUE,    # Blank filtering (after normalization, before blank subtraction)
@@ -51,7 +51,7 @@ processing <- list(
   rsd_max_nontargeted = 30,      # Maximum QC RSD% of non-targeted features (1-80)
   # Calibration
   optimize_cal_points = FALSE,   # Leave out calibration points above the highest sample
-  set_minimum_number  = FALSE,   # With optimize_cal_points: extend the curves to more levels than 3 ...
+  set_minimum_number  = TRUE,   # With optimize_cal_points: extend the curves to more levels than 3 ...
   min_cal_points      = 3,       # ... namely this many (>= 3; a wish, used only with optimize_cal_points
                                  #     and set_minimum_number; see the app's help of the option)
   average_cal_reps    = FALSE,   # Average calibration replicates per batch (one point per level and batch)

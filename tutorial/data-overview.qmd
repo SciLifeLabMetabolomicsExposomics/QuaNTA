@@ -35,7 +35,7 @@ tut_table(d)
   (`Sample`). A QC counted as a study sample, or a blank missing, means a wrong `File type` in the
   file.
 - **QC classes** are the QC materials; at least two replicates of a class are needed for the RSD%
-  in 3.8 and for choosing the best normalization.
+  in 3.8.
 :::
 
 ## 2.2 Calibration levels
@@ -79,12 +79,15 @@ switched on in the legend.
 
 ```{r}
 #| label: figure-2-4
-blk <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
+# The app's default method, LOESS ("best normalization" is not used for now)
+# blk <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
+blk <- util$mat_id_of_blank_subtracted("loess_norm")
 calib_rows <- dplyr::bind_rows(lapply(Filter(\(x) !is.null(x$concn), tut$proc[[blk]]), function(x) {
   tibble::as_tibble(SumExp::row_df(x$concn), rownames = "feature_id") |> dplyr::select(feature_id, to_export, has_proper_range)
 }))
 rem <- tr[["removed features"]]
-removed <- rem[rem$mat_id == tr[["best normalization"]] & rem$targeted, ]
+# removed <- rem[rem$mat_id == tr[["best normalization"]] & rem$targeted, ]
+removed <- rem[rem$mat_id == "loess_norm" & rem$targeted, ]
 show$plotly_mz_rt_map(show$mz_rt_outcome(rd, calib_rows, removed), height = 520)
 ```
 

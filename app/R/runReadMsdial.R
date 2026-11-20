@@ -21,7 +21,7 @@ runReadMsdialUI <- function(uiId) {
       label = label_tip("Process data per batch",
                         paste("Blank subtraction and calibration per batch (Batch ID). A batch without",
                               "enough calibration replicates uses the global curve of all batches.")),
-      value = TRUE,
+      value = FALSE,
     ),
     shiny::actionButton(ns("run_button"), "Read data file", icon = shiny::icon("file-import"))
   )
@@ -38,6 +38,7 @@ runReadMsdialUI_2 <- function(uiId) {
   ns <- shiny::NS(uiId)
   shiny::tagList(
 
+    run_progress_ui(ns("progress_bar")),   # How far the reading has come (R/runScript.R)
     shiny::verbatimTextOutput(ns("script_output"), placeholder = TRUE),
 
   )

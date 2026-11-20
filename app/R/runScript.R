@@ -25,6 +25,19 @@ runScriptUI <- function(uiId, label, download=FALSE) {
   )
 }
 
+#' The progress bar of a script, above its log: hidden until the first run, then updated by the
+#' module (`quanta_runbar` messages, www/quanta_ui.js)
+#'
+#' @param id The ID of the bar: `ns("progress_bar")` of the module
+#' @export
+run_progress_ui <- function(id) {
+  shiny::div(
+    id = id, class = "q-runbar", style = "display: none;",
+    shiny::div(class = "q-runbar-fill", style = "width: 0%;"),
+    shiny::span(class = "q-runbar-text")
+  )
+}
+
 # Shared implementation --------------------------------------------------------------------
 
 #' Whether a step of the session is running (reading, processing, export or a report), as one
@@ -46,11 +59,18 @@ session_busy <- function(session) {
     proc <- shiny::reactiveVal(NULL)
     done_at <- shiny::reactiveVal(NULL)   # Set every time a run has finished
     started_at <- shiny::reactiveVal(NULL)   # To report the elapsed time
+    # The progress bar above the log: how far the script has come (its "@@progress <0-100>" lines,
+    # taken out of the log) and its state (NULL: no bar; "running", "done" or "failed")
+    progress <- shiny::reactiveVal(0)
+    run_state <- shiny::reactiveVal(NULL)
     # Log time in front of each non-empty line (in the time zone of the user's browser)
     stamp <- function(lines) ifelse(nzchar(trimws(lines)), paste0(format_client_time(session, "[%H:%M:%S]  "), lines), "")
 
     # "Clear log" (a reactive from the app, e.g. a button); a running job keeps logging
-    if (!is.null(clear)) shiny::observeEvent(clear(), output_txt(""), ignoreInit = TRUE)
+    if (!is.null(clear)) shiny::observeEvent(clear(), {
+      output_txt("")
+      if (!busy()) run_state(NULL)
+    }, ignoreInit = TRUE)
 
     # The run starts on the button, or on `trigger()` (e.g. after a confirmation popup)
     shiny::observeEvent(if (is.null(trigger)) input[["run_button"]] else trigger(), {
@@ -75,7 +95,8 @@ session_busy <- function(session) {
         # 3. Child process with its own environment
         env <- c(unlist(as.list(Sys.getenv())),
                  QUANTA_PARAMS_FILE = params_file,
-                 R_BOX_PATH = find_box_root())
+                 R_BOX_PATH = find_box_root(),
+                 QUANTA_PROGRESS = "1")   # The scripts print their progress for the bar
         env <- env[!duplicated(names(env), fromLast = TRUE)]
         p <- processx::process$new(
           command = "Rscript",
@@ -88,6 +109,8 @@ session_busy <- function(session) {
         )
         proc(p)
         busy(TRUE)
+        progress(0)
+        run_state("running")
         started_at(Sys.time())
         output_txt(paste0(stamp(paste(what, "is running ...")), "\n"))
       }, error = function(e) {
@@ -112,8 +135,15 @@ session_busy <- function(session) {
       shiny::isolate({
         # New lines with the time they were received
         lines <- c(out, err)
+        # The progress lines: to the bar, not to the log
+        is_prog <- grepl("^@@progress\\s+[0-9]+", lines)
+        if (any(is_prog)) {
+          progress(min(100, as.numeric(sub("^@@progress\\s+([0-9]+).*$", "\\1", utils::tail(lines[is_prog], 1)))))
+          lines <- lines[!is_prog]
+        }
         if (!alive) {
           status <- p$get_exit_status()
+          if (identical(status, 0L)) { progress(100); run_state("done") } else run_state("failed")
           lines <- c(lines,
                      if (identical(status, 0L)) "Finished." else
                        paste0("Script ended with exit status ", status, ". See the messages above."),
@@ -133,6 +163,14 @@ session_busy <- function(session) {
     })
 
     output[["script_output"]] <- shiny::renderText(output_txt())
+    # The bar (above the log in the UI of reading and processing: `run_progress_ui()`), drawn once
+    # and updated in the browser (www/quanta_ui.js), so that it slides instead of being redrawn
+    shiny::observe({
+      session$sendCustomMessage("quanta_runbar", list(
+        id = session$ns("progress_bar"), percent = progress(),
+        state = if (is.null(run_state())) "" else run_state()
+      ))
+    })
 
     done_at
   })
@@ -285,15 +323,4 @@ runScriptServer2 <- function(serverId, script_path, what, param_ids = NULL, data
     )
   })
   done_at
-}
-
-#' A Shiny app to run a script and display the output, for testing purposes
-runScriptApp <- function() {
-  ui <- shiny::fluidPage(runScriptUI("script1", "Run script 1"))
-  server <- function(input, output, session) {
-    ws <- create_session_workspace(session)
-    data_info <- msdialInfoServer("data_info", ws = ws)
-    runScriptServer("script1", "scripts/read-msdial.R", "Read MS-Dial", data_info = data_info, ws = ws)
-  }
-  shiny::shinyApp(ui = ui, server = server)
 }

@@ -33,9 +33,9 @@ runProcessUI <- function(uiId) {
     shiny::checkboxInput(
       inputId = ns("vis_prenorm"),
       label = label_tip("Pre-normalize by the volumetric IS",
-                        paste("Before all other steps, every peak area (also of the IS) is divided by the",
+                        paste("Before all other steps, every peak area (not of the IS) is divided by the",
                               "volumetric IS area of its sample and multiplied by the average vIS area of",
-                              "all injections. With several vIS, one after the other; the vIS themselves",
+                              "all injections. With several vIS, one after the other; the IS and the vIS",
                               "are not changed. Greyed out when the data has no volumetric IS.")),
       value = FALSE,
       width = "100%"
@@ -203,7 +203,7 @@ runProcessUI <- function(uiId) {
                                   "the curve is not extended above the ULOQ: it takes levels below the LLOQ instead",
                                   "(those above the LOD), as far as there are. It never makes a curve invalid and never",
                                   "moves the ULOQ. Without it: 3 levels.")),
-          value = FALSE,
+          value = TRUE,
           width = "100%"
         ),
         shiny::conditionalPanel(
@@ -389,8 +389,9 @@ runProcessUI_2 <- function(uiId) {
     # Option for keeping all calibration points (even though outside range)
 
   
+    run_progress_ui(ns("progress_bar")),   # How far the processing has come (R/runScript.R)
     shiny::verbatimTextOutput(ns("script_output"), placeholder = TRUE)
-    
+
   )
 }
 
@@ -412,6 +413,7 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
     # - fewer than 2 Cal0 replicates (in every batch and all together): no "mean + SD"
     # - fewer than 2 replicates per calibration level (same): no RSD% 20% threshold
     # - no volumetric IS: no pre-normalization by it
+    # - no blank samples: no blank filter, no blank subtraction
     radio_option <- function(id, value, enabled) {
       session$sendCustomMessage("toggleRadioOption", list(inputId = session$ns(id), value = value, enabled = enabled))
     }
@@ -468,6 +470,14 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
       # Pre-normalization by the volumetric IS
       if (!vis_ok && isTRUE(input$vis_prenorm)) shiny::updateCheckboxInput(session, "vis_prenorm", value = FALSE)
       shinyjs::toggleState("vis_prenorm", condition = vis_ok)
+      # Blank filter and blank subtraction: not without blank samples
+      blank_ok <- is.null(caps) || isTRUE(caps$has_blank)
+      for (id in c("blank_filter", "blank_subtract")) {
+        if (!blank_ok && isTRUE(input[[id]])) shiny::updateCheckboxInput(session, id, value = FALSE)
+      }
+      for (id in c("blank_filter", "blank_filter_factor", "blank_filter_stat", "blank_subtract")) {
+        shinyjs::toggleState(id, condition = blank_ok)
+      }
     })
 
     # Visible notes under the options greyed out by another option or by the data (not when the
@@ -695,12 +705,8 @@ runProcessServer <- function(serverId, data_info, ws, clear = NULL, data_caps = 
         shiny::updateNumericInput(session, "min_cal_points", value = 3)
       }
     })
-    # The minimum is a sub-option of "Optimize": unticked with it
-    shiny::observeEvent(input$optimize_cal_points, {
-      if (!isTRUE(input$optimize_cal_points) && isTRUE(input$set_minimum_number)) {
-        shiny::updateCheckboxInput(session, "set_minimum_number", value = FALSE)
-      }
-    }, ignoreInit = TRUE)
+    # The minimum is a sub-option of "Optimize" (ticked by default, used only with "Optimize"; it
+    # stays as it is when "Optimize" is unticked, so that it shows again when "Optimize" is ticked)
   })
   runScriptServer(
     serverId,

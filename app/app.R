@@ -356,6 +356,17 @@ ui <-
             if (!keyArea || !document.body.contains(keyArea) || $(keyArea).is(':hidden')) return;
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
             if (e.ctrlKey || e.altKey || e.metaKey) return;
+            // The batch of page 4 (dropdown or arrows clicked, outlined): left / right the batch (4.1
+            // and 4.5); up / down stay with table 4.1
+            if (keyArea.id === 'calib_batch_area') {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+              var cb = document.getElementById('calib_batch');
+              if (!cb) return;
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              quantaStepSelect(cb, e.key === 'ArrowRight' ? 1 : -1);
+              return;
+            }
             // Figure 4.7 (clicked, outlined): left / right its mode; up / down stay with table 4.1
             if (keyArea.id === 'qc_section') {
               if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -536,7 +547,7 @@ ui <-
                       p("Two independent views: choose the colouring and the values of each, e.g. raw and",
                         "normalized, or the same data in two colourings. Failed IS and outlier samples are",
                         "left out."),
-                      uiOutput("best_norm_note_3"),
+                      # uiOutput("best_norm_note_3"),   # "Best normalization": not for now
                       # For both panels; calibration samples have much higher values than the samples
                       checkboxInput("isbar_show_calibrants", "Show calibration samples", value = FALSE),
                       # Two panels side by side; below each other in a narrow window
@@ -660,7 +671,7 @@ ui <-
                     # normalization method and the batch (www/quanta.css: .q-sticky-head)
                     div(
                       class = "q-sticky-head",
-                      uiOutput("best_norm_note_4"),
+                      # uiOutput("best_norm_note_4"),   # "Best normalization": not for now
                       # The method (key N: the next one) and the batch on one row
                       div(
                         class = "q-head-row",
@@ -672,7 +683,10 @@ ui <-
                           inline = TRUE
                         ),
                         # Batch shown in the tables and figures of this panel (choices set in the server)
-                        batch_stepper("calib_batch", key = "B")
+                        # A click on it (outlined then) gives it the keys ← / →: the batch (header
+                        # script, "Arrow keys of 3.11"); a click elsewhere gives them back to 4.5
+                        div(id = "calib_batch_area", class = "q-key-area", style = "display: inline-block;",
+                            batch_stepper("calib_batch", key = "B"))
                       )
                     ),
                     div(
@@ -777,10 +791,15 @@ ui <-
           // body. The tables 3.1 and 4.1 are server-side: the browser has only the rows shown, so
           // a row's index there is its place in the current search / sort, not in the data; their
           // hidden first column holds the row number in the data (`.row`)
-          window.quantaSelectedRow = function (id) {
+          // The DataTable of an output (`id`), or null when not drawn yet
+          function dtOf(id) {
             var t = $('#' + id + ' .dataTables_scrollBody table.dataTable')[0] || $('#' + id + ' table.dataTable')[0];
-            if (!t || !$.fn.dataTable.isDataTable(t)) return null;
-            var d = $(t).DataTable().row('tr.selected').data();
+            return t && $.fn.dataTable.isDataTable(t) ? $(t).DataTable() : null;
+          }
+          window.quantaSelectedRow = function (id) {
+            var t = dtOf(id);
+            if (!t) return null;
+            var d = t.row('tr.selected').data();
             if (!d) return null;
             var n = parseInt(d[0], 10);
             return isNaN(n) ? null : n - 1;
@@ -884,12 +903,26 @@ ui <-
           $(document).on('change', '#blank_feature, #blank_view, #blank_show_calibrants', drawBlank);
           // A table with all batches (hidden first column): only the rows of the batch chosen
           window.quantaFilterBatch = function (id) {
-            var t = $('#' + id + ' .dataTables_scrollBody table.dataTable')[0] || $('#' + id + ' table.dataTable')[0];
-            if (!t || !$.fn.dataTable.isDataTable(t)) return;
+            var t = dtOf(id);
+            if (!t) return;
             var b = qcBatch().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
-            $(t).DataTable().column(0).search('^' + b + '$', true, false).draw();
+            t.column(0).search('^' + b + '$', true, false).draw();
           };
           window.quantaFilterBatch39 = function () { quantaFilterBatch('tb_3_2_3'); };
+          // Page 4: the search box of table 4.1 also filters table 4.2 (which has none), after
+          // each drawing of 4.1 (typing, new batch or method) and when 4.2 is drawn
+          window.quantaSync42 = function () {
+            var t42 = dtOf('tb_4_batches');
+            if (!t42) return;
+            var v = $('#tb_4_2 .dataTables_filter input').val() || '';
+            if (t42.search() !== v) t42.search(v).draw();
+          };
+          $(document).on('draw.dt', '#tb_4_2 table', function () { quantaSync42(); });
+          // A chemical clicked in table 4.2: selected in table 4.1 (by the server)
+          $(document).on('click', '#tb_4_batches tbody tr', function () {
+            var t42 = dtOf('tb_4_batches'), d = t42 ? t42.row(this).data() : null;
+            if (d) Shiny.setInputValue('tb42_click', d[0], { priority: 'event' });
+          });
           $(document).on('change', '#qc_batch', function () {
             isSync(false);
             drawRsdCmp();
@@ -1042,11 +1075,15 @@ server <- function(input, output, session) {
     ids[order(match(ids, NORM_METHOD_LABELS))]
   })
   # Method with the lowest median QC RSD% (`loess_norm` for data processed by older versions)
+  # "Best normalization" is not used for now (wonky normalizations from collapsing IS): LOESS is the
+  # default method everywhere; the best method is still computed by process.R
   best_norm_r <- shiny::reactive({
-    best <- to_report_r()[["best normalization"]]
-    if (is.null(best)) "loess_norm" else best
+    # best <- to_report_r()[["best normalization"]]
+    # if (is.null(best)) "loess_norm" else best
+    "loess_norm"
   })
   # Which normalization was best, in QuaNTA blue (pages 3 and 4; one output per place)
+  # (not shown for now: see `best_norm_r`)
   best_norm_note <- shiny::reactive({
     tr <- shiny::req(to_report_r())
     rsd <- tr[["median RSD% per normalization"]]
@@ -1061,8 +1098,8 @@ server <- function(input, output, session) {
     }
     shiny::div(class = "q-best-norm", txt)
   })
-  output$best_norm_note_3 <- shiny::renderUI(best_norm_note())
-  output$best_norm_note_4 <- shiny::renderUI(best_norm_note())
+  # output$best_norm_note_3 <- shiny::renderUI(best_norm_note())
+  # output$best_norm_note_4 <- shiny::renderUI(best_norm_note())
   # The final method used for the report and the exported tables: "auto" resolves to the best
   # Nothing is pre-selected: the user must choose (the report / export buttons stay disabled)
   final_norm_chosen_r <- shiny::reactive({
@@ -1076,7 +1113,8 @@ server <- function(input, output, session) {
   })
 
   # ---- 3. Child processes; each returns a reactive that changes when a run has finished ----
-  clear_log <- shiny::reactive(input$clear_log)   # "Clear log" empties both logs
+  # "Clear log" empties both logs, as does removing all results (a new data or parameters file)
+  clear_log <- shiny::reactive(list(input$clear_log, results_reset()))
   read_done <- runReadMsdialServer("read_msdial", data_info = data_info, ws = ws, clear = clear_log)
   # `data_caps_r()` is defined below (reactives are evaluated lazily)
   proc_done <- runProcessServer("proc", data_info = data_info, ws = ws, clear = clear_log,
@@ -1236,8 +1274,10 @@ server <- function(input, output, session) {
       paste("is the method with the lowest median RSD% across the replicates of each calibration",
             "level (there are no replicate QC samples).")
     }
-    choices <- c("auto", ids)
-    names(choices) <- c(paste0("Best: ", label_of(best)), vapply(ids, label_of, character(1)))
+    # "Best" is not offered for now (see `best_norm_r`)
+    # choices <- c("auto", ids)
+    # names(choices) <- c(paste0("Best: ", label_of(best)), vapply(ids, label_of, character(1)))
+    choices <- stats::setNames(ids, vapply(ids, label_of, character(1)))
     # Nothing pre-selected (forces a decision); keep an earlier choice when re-processed
     selected <- shiny::isolate(input$final_norm_method)
     if (is.null(selected) || !selected %in% choices) selected <- character(0)
@@ -1247,9 +1287,10 @@ server <- function(input, output, session) {
       shiny::selectInput(
         inputId = "final_norm_method",
         label = label_tip("Normalization method of the reports",
-                          paste("\"Best\"", basis_txt, "RSD% is computed on the targeted features (all",
-                                "non-internal-standard features in non-target mode) before blank subtraction.",
-                                if (!"mvis_norm" %in% ids) "Multivariate (PCA) normalization could not be computed for this data; see the processing messages.")),
+                          paste("The normalization method used in the reports.",
+                                # "\"Best\"", basis_txt, "RSD% is computed on the targeted features (all",
+                                # "non-internal-standard features in non-target mode) before blank subtraction.",
+                                if (!"mvis_norm" %in% ids)"Multivariate (PCA) normalization could not be computed for this data; see the processing messages.")),
         choices = c("Choose a method" = "", choices),
         selected = if (length(selected) == 0) "" else selected,
         selectize = FALSE,
@@ -1400,7 +1441,8 @@ server <- function(input, output, session) {
       sec("Normalization methods (one set of tables each)",
           shiny::checkboxGroupInput(
             "export_norm_methods", NULL, inline = TRUE,
-            choices = stats::setNames(ids, ifelse(ids == best, paste0(labs[ids], " (best)"), labs[ids])),
+            # choices = stats::setNames(ids, ifelse(ids == best, paste0(labs[ids], " (best)"), labs[ids])),
+            choices = stats::setNames(ids, labs[ids]),   # No "(best)" for now (see `best_norm_r`)
             selected = sel, width = "100%"
           )),
       sec("Column order",
@@ -1593,6 +1635,7 @@ server <- function(input, output, session) {
       has_targeted = any(util$is_targeted_feature(se)),
       has_calib = length(batches) > 0 && !is.null(conc),   # Calibration samples with concentrations
       has_vis = any(util$std_type(se) %in% "vIS"),
+      has_blank = any(util$ctrl_smpl_cat(se) %in% "Blank"),
       cal0_ok = any(per_batch["cal0", ]) || all_b[["cal0"]],
       cal0_fail_batches = batches[!per_batch["cal0", ]],
       reps_ok = any(per_batch["reps", ]) || all_b[["reps"]],
@@ -2156,7 +2199,8 @@ server <- function(input, output, session) {
     choices <- stats::setNames(versions, dplyr::coalesce(unname(history$version_labels[versions]), versions))
     tagList(
       selectInput("history_version", "Data version", choices = choices,
-                  selected = intersect(tr[["best normalization"]], versions)[1], width = "100%"),
+                  # selected = intersect(tr[["best normalization"]], versions)[1], width = "100%"),
+                  selected = intersect(best_norm_r(), versions)[1], width = "100%"),   # LOESS for now
       helpText("Where the features ended: from their type (left) to their status (right). Hover over",
                "a band for the number of features."),
       plotly::plotlyOutput("history_flow", height = "340px"),
@@ -2891,6 +2935,14 @@ server <- function(input, output, session) {
     shiny::req(page4_ready())
     dt_replace("tb_4_batches", tb42_df())
   }, ignoreInit = TRUE)
+  # A chemical clicked in table 4.2 (`input$tb42_click`: its name): selected in table 4.1, which
+  # the figures follow
+  shiny::observeEvent(input$tb42_click, {
+    shiny::req(page4_ready())
+    df <- tb41_data()$df
+    i <- match(input$tb42_click, df[["Chemical Name"]])
+    if (!is.na(i)) DT::selectRows(DT::dataTableProxy("tb_4_2"), i)
+  })
   output$tb_4_batches <- DT::renderDataTable({
     to_report_r(); need_calibration()
     shiny::req(page4_ready())
@@ -2911,8 +2963,9 @@ server <- function(input, output, session) {
       selection = "none",
       options = list(
         paging = FALSE, scrollY = "300px", scrollCollapse = TRUE, scrollX = TRUE,
-        searching = TRUE, info = FALSE, dom = "ft", ordering = FALSE,
-        language = list(search = "Search chemical:"),
+        # No search box of its own: the search of table 4.1 filters it too (`quantaSync42()`)
+        searching = TRUE, info = FALSE, dom = "t", ordering = FALSE,
+        initComplete = JS("function() { setTimeout(window.quantaSync42 || function () {}, 0); }"),
         columnDefs = list(list(targets = i_rem, visible = FALSE, searchable = FALSE),
                           list(targets = 1L, searchable = FALSE)),
         rowCallback = JS(sprintf(

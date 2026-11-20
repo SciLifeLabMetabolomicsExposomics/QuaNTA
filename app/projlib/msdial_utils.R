@@ -276,6 +276,14 @@ extract_with_na <- function(mat, i = TRUE, j = TRUE) {
   mat_out
 }
 
+#' How far a script has come (0-100), for the progress bar of the app (R/runScript.R): a line that
+#' the app takes out of the log; printed only when the app runs the script (QUANTA_PROGRESS=1)
+#' @param p The percentage
+#' @export
+progress <- function(p) {
+  if (identical(Sys.getenv("QUANTA_PROGRESS"), "1")) { cat("@@progress", round(p), "\n"); flush(stdout()) }
+}
+
 ##  COMPUTE  -----------------------------------------------
 
 ##  CALIBRATION NOTES  -------------------------------------
@@ -284,7 +292,8 @@ extract_with_na <- function(mat, i = TRUE, j = TRUE) {
 #' @export
 calib_note_categories <- c(
   notvalid = "No valid curve", global = "Global curve used",
-  uloq = "Linear range (ULOQ)", detection = "Detection in samples", removed = "Removed before calibration"
+  uloq = "Linear range (ULOQ)", detection = "Detection in samples",
+  rtrange = "Outside the IS RT range", removed = "Removed before calibration"
 )
 
 #' Notes on the calibration curves by category, one row per chemical
@@ -323,7 +332,10 @@ calib_notes <- function(row_df, batch_view = TRUE, detection = NULL) {
       TRUE ~ "The global curve is used"
     ),
     uloq = ifelse(valid, chr("linear_range_note"), NA_character_),
-    detection = ifelse(valid, det, NA_character_)
+    detection = ifelse(valid, det, NA_character_),
+    # More than `proc$LOESS_MAX_EXTRAPOLATION` min outside the RT range of the IS (`is_rt_note` of
+    # process.R; data processed by older versions: none)
+    rtrange = chr("is_rt_note")
   )
 }
 

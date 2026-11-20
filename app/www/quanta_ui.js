@@ -60,6 +60,32 @@
     if (sel) window.quantaStepSelect(sel, b.classList.contains("q-bstep-next") ? 1 : -1);
   });
 
+  // ---- Progress bar above the reading and processing logs (`run_progress_ui()`, R/runScript.R):
+  // updated in place (no redraw), so that the fill slides and the stripes keep moving ----
+  function runbar(m) {
+    var bar = document.getElementById(m.id);
+    if (!bar) return;
+    if (!m.state) { bar.style.display = "none"; return; }
+    var fill = bar.querySelector(".q-runbar-fill"), text = bar.querySelector(".q-runbar-text");
+    var p = Math.max(0, Math.min(100, Number(m.percent) || 0));
+    // A new run (lower than shown): back to the start at once, not sliding backwards
+    var now = parseFloat(fill.style.width) || 0;
+    if (p < now) {
+      fill.style.transition = "none";
+      fill.style.width = p + "%";
+      void fill.offsetWidth;   // Apply before the transition is back
+      fill.style.transition = "";
+    } else {
+      fill.style.width = p + "%";
+    }
+    bar.classList.remove("q-runbar-running", "q-runbar-done", "q-runbar-failed");
+    bar.classList.add("q-runbar-" + m.state);
+    text.textContent = m.state === "done" ? "Finished" : m.state === "failed" ? "Stopped" : p + "%";
+    bar.title = m.state === "done" ? "Finished" : m.state === "failed" ? "Stopped with an error" : "Running: " + p + "%";
+    bar.style.display = "";
+  }
+  if (window.Shiny && Shiny.addCustomMessageHandler) Shiny.addCustomMessageHandler("quanta_runbar", runbar);
+
   // ---- Key N on page 4: the next normalization method (radio buttons `norm_method`, in turn) ----
   document.addEventListener("keydown", function (e) {
     if (e.key !== "n" && e.key !== "N") return;

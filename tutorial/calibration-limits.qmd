@@ -7,7 +7,8 @@ title: "Calibration limits (4.1–4.4)"
 source("_prepare.R")
 box::use(show = projlib/show, util = projlib/msdial_utils)
 tr <- tut$to_report
-best <- tr[["best normalization"]]
+# best <- tr[["best normalization"]]
+best <- "loess_norm"   # The app's default method ("best normalization" is not used for now)
 mat_id <- util$mat_id_of_blank_subtracted(best)
 lst <- tut$proc[[mat_id]]
 b1 <- names(lst)[1]
@@ -15,8 +16,8 @@ batch <- lst[[b1]]
 ```
 
 Page 4 of the app, **Calibration and quantification**, turns the signals of the targeted compounds
-into concentrations. At the top you choose the **normalization method** (the best one,
-`r tut$method_labels[[best]]`, is preselected) and the **batch**; the tables and figures follow. The
+into concentrations. At the top you choose the **normalization method** (`r tut$method_labels[[best]]`
+is preselected) and the **batch**; the tables and figures follow. The
 examples below show batch `r b1`. With several batches, the batch choice also has **Global**: the
 global curve of every compound (fitted on the calibration points of all batches) in table 4.1 and
 figure 4.5, for comparison only; the concentrations are calculated per batch, so figures 4.6 and 4.7
@@ -37,42 +38,17 @@ How a calibration curve is made, in short:
 
 ```{r}
 #| label: table-4-2
-rd <- SumExp::row_df(batch$calcurve)
-concn <- batch$concn
-rd_q <- SumExp::row_df(concn)
-study <- util$extract_ctrl_smpl_cat(concn, "")
-sig <- study[[util$src_mat_id_for_conc(concn)]]
-detected <- rowSums(util$is_detected(sig, rd_q$lod_signal), na.rm = TRUE) > 0
-detection <- dplyr::case_when(
-  !(rd_q$has_proper_range %in% TRUE) ~ "",
-  !detected ~ "Not detected in any study sample",
-  !(rd_q$to_export %in% TRUE) ~ "Detected but not quantified (no study sample ≥ LLOQ; not exported)",
-  TRUE ~ ""
-)
-notes <- show$calib_notes_html(util$calib_notes(rd, batch_view = TRUE, detection = detection))
-t42 <- tibble::tibble(
-  Chemical = rd$feature_name,
-  LOD = rd$lod, LLOQ = rd$lloq,
-  `Highest cal. conc.` = ifelse(rd$has_proper_range %in% TRUE, rd$max_c_conc, NA),
-  ULOQ = ifelse(rd$has_proper_range %in% TRUE, signif(rd$uloq, 4), NA),
-  Notes = notes,
-  state = dplyr::case_when(!(rd$has_proper_range %in% TRUE) ~ "bad",
-                           rd$src_calcurve %in% "Global" ~ "global", TRUE ~ "")
-)
-# Removed before calibration (blank filter / QC RSD% filter): at the end, as in the app
-rem <- tr[["removed features"]]
-rem <- rem[rem$mat_id == best & rem$targeted, ]
-if (nrow(rem) > 0) {
-  t42 <- dplyr::bind_rows(t42, tibble::tibble(
-    Chemical = rem$feature_name,
-    Notes = show$calib_notes_html(tibble::tibble(removed = paste0(
-      "Removed: ", ifelse(rem$reason == "QC RSD%", "QC RSD% above the limit", "blank filter")))),
-    state = "removed"))
-}
-DT::datatable(t42, rownames = FALSE, selection = "none", escape = setdiff(names(t42), "Notes"),
+# The rows of the app's table 4.1 (the same function), then the row colours from its helper columns
+rd_all <- SumExp::row_df(tut$raw)
+names_tbl <- tibble::tibble(feature_id = rownames(rd_all), feature_name = rd_all$feature_name)
+n_batches <- length(unique(as.character(SumExp::col_df(tut$raw)$batch_id)))
+t41 <- show$page4_table41(batch, b1, tr, best, names_tbl, n_batches)
+t41$state <- dplyr::case_when(t41$is_removed ~ "removed", t41$is_bad ~ "bad", t41$is_global ~ "global", TRUE ~ "")
+t41 <- t41[setdiff(names(t41), c("is_global", "is_bad", "is_removed"))]
+DT::datatable(t41, rownames = FALSE, selection = "none", escape = setdiff(names(t41), "Notes"),
               caption = htmltools::HTML(show$calib_notes_legend_html()),
               options = list(dom = "ft", paging = FALSE, scrollX = TRUE, scrollY = "420px", scrollCollapse = TRUE,
-                             columnDefs = list(list(targets = ncol(t42) - 1, visible = FALSE)))) |>
+                             columnDefs = list(list(targets = ncol(t41) - 1, visible = FALSE)))) |>
   DT::formatStyle("state", target = "row",
                   backgroundColor = DT::styleEqual(c("bad", "global", "removed"),
                                                    c("lightcoral", "lightblue", "#D9D9D9")))
@@ -105,6 +81,7 @@ meaning <- c(
   global = "The batch's own curve is not valid, or the batch has too few replicates: the global curve is used.",
   uloq = "Linear range: levels above the ULOQ, which were cut off or are above the linear range.",
   detection = "Detection in the samples: not detected in any study sample, or detected but below the LLOQ (not exported).",
+  rtrange = "Elutes more than 1 min outside the retention time range of the internal standards: no internal standard nearby, so the RT-based normalizations (LOESS, Closest RT) are extrapolated.",
   removed = "Removed before calibration by the blank filter or the QC RSD% filter. The row is grey."
 )
 # The app's icon of each category (without the hidden text the tables carry for searching)

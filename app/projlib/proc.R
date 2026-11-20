@@ -172,17 +172,25 @@ get_data_of_closest_istd_in_class <- function(se, istd_se, mat_id) {
 
 #' Get the LOESS fit model
 #'
+#' Per sample, a robust (`family = "symmetric"`: an IS that disagrees with the others gets less
+#' weight) straight-line (`degree = 1`) LOESS of log(IS / its mean) along RT, fitted on the internal
+#' standards only. It can predict outside the RT range of the IS (`surface = "direct"`): the trend
+#' goes on in a straight line; how far is limited by [loess_rt()].
+#'
+#' Earlier versions added copies of the first and last IS at the ends of the RT range of all
+#' features (so that every feature got a value); those copies counted the edge IS twice and pulled
+#' the curve towards them, e.g. when an edge IS collapsed in some injections.
+#'
 #' @param istd_se A [`SumExp::SumExp`] object of internal standard features
 #' @param excl_cat A character vector of the categories to exclude
-#' @param overall_rt_range A numeric vector of the overall retention time range, to which the
-#'   model is expanded
 #' @param span A numeric value for the span of the LOESS fit
 #' @param mat_id The name of a matrix in `istd_se`
 #'
-#' @returns A list of the LOESS fit models
+#' @returns A list of the LOESS fit models, one per sample; attribute `is_rt_range`: the RT range
+#'   of the internal standards
 #' @md
 #' @export
-get_loess_fit <- function(istd_se, excl_cat, overall_rt_range, span, mat_id) {
+get_loess_fit <- function(istd_se, excl_cat, span, mat_id) {
   # Log-transform the data
   istd_log <- log(istd_se[[mat_id]])
   rt_istd <- util$retention_time(istd_se)
@@ -196,28 +204,57 @@ get_loess_fit <- function(istd_se, excl_cat, overall_rt_range, span, mat_id) {
   # Subtract the mean from the data
   fr_m_log <- istd_log - istd_m
 
-  # Expand to smallest RT
-  istd_smallest_rt <- fr_m_log[which.min(rt_istd), ]
-  # Expand to largest RT
-  istd_largest_rt <- fr_m_log[which.max(rt_istd), ]
-  # Add the expanded range
-  fr_m_log <- rbind(
-    istd_smallest_rt,
-    istd_largest_rt,
-    fr_m_log
-  )
-  # LOESS fit of the internal standard features along RT
+  # # Earlier versions: copies of the first and last IS at the ends of the RT range of all features
+  # istd_smallest_rt <- fr_m_log[which.min(rt_istd), ]
+  # istd_largest_rt <- fr_m_log[which.max(rt_istd), ]
+  # fr_m_log <- rbind(istd_smallest_rt, istd_largest_rt, fr_m_log)
+  # LOESS fit of the internal standard features along RT (robust, straight line; see above)
   loess_fit <- purrr::map(seq_len(ncol(fr_m_log)), function(ii) {
-    # Fit a loess curve
     y <- fr_m_log[, ii]
     y[is.finite(y) == FALSE] <- NA
-    stopifnot(identical(
-      names(y), c("istd_smallest_rt", "istd_largest_rt", rownames(istd_se))
-    ))
-    suppressWarnings(stats::loess(y ~ c(overall_rt_range, rt_istd), span = span))
+    stopifnot(identical(names(y), rownames(istd_se)))
+    suppressWarnings(stats::loess(y ~ rt_istd, span = span, degree = 1, family = "symmetric",
+                                  surface = "direct"))
+    # suppressWarnings(stats::loess(y ~ c(overall_rt_range, rt_istd), span = span))   # Earlier
   })
   names(loess_fit) <- colnames(fr_m_log)
+  attr(loess_fit, "is_rt_range") <- range(rt_istd, na.rm = TRUE)
   loess_fit
+}
+
+#' Maximum extrapolation of the LOESS normalization beyond the RT range of the internal standards
+#' (minutes): further out, the trend at that distance is used (held flat)
+#' @export
+LOESS_MAX_EXTRAPOLATION <- 1
+
+#' The RT at which the LOESS fit is read for features at `rt`: their own RT within the RT range of
+#' the IS and up to [LOESS_MAX_EXTRAPOLATION] minutes beyond it; further out, that limit
+#'
+#' @param rt Retention times of the features
+#' @param is_rt_range The RT range of the internal standards (attribute `is_rt_range` of
+#'   [get_loess_fit()])
+#' @export
+loess_rt <- function(rt, is_rt_range) {
+  pmin(pmax(rt, is_rt_range[1] - LOESS_MAX_EXTRAPOLATION), is_rt_range[2] + LOESS_MAX_EXTRAPOLATION)
+}
+
+#' A note per feature eluting more than [LOESS_MAX_EXTRAPOLATION] minutes outside the RT range of
+#' the internal standards (`NA`: within)
+#'
+#' @inheritParams loess_rt
+#' @export
+is_rt_range_note <- function(rt, is_rt_range) {
+  d_before <- is_rt_range[1] - rt
+  d_after <- rt - is_rt_range[2]
+  dplyr::case_when(
+    d_before > LOESS_MAX_EXTRAPOLATION ~ sprintf(
+      "Elutes %.1f min before the first IS (%.2f min): no IS nearby; RT-based normalization (LOESS, Closest RT) is extrapolated",
+      d_before, is_rt_range[1]),
+    d_after > LOESS_MAX_EXTRAPOLATION ~ sprintf(
+      "Elutes %.1f min after the last IS (%.2f min): no IS nearby; RT-based normalization (LOESS, Closest RT) is extrapolated",
+      d_after, is_rt_range[2]),
+    TRUE ~ NA_character_
+  )
 }
 
 #' Multivariate (PCA) internal standard normalization

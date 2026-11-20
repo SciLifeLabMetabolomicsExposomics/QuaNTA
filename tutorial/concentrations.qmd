@@ -7,7 +7,8 @@ title: "Concentrations (4.6 and 4.7)"
 source("_prepare.R")
 box::use(show = projlib/show, util = projlib/msdial_utils)
 tr <- tut$to_report
-mat_id <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
+# mat_id <- util$mat_id_of_blank_subtracted(tr[["best normalization"]])
+mat_id <- util$mat_id_of_blank_subtracted("loess_norm")   # The app's default ("best" not used for now)
 lst <- tut$proc[[mat_id]]
 batch <- lst[[1]]
 rd <- SumExp::row_df(batch$concn)

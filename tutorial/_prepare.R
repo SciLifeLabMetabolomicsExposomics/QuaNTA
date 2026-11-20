@@ -23,18 +23,22 @@ if (!file.exists(proc_file)) {
   yaml::write_yaml(list(project_title = "QuaNTA tutorial", user = "", university = "", free_text = "",
                         concentration_unit = "ng/mL", input_file = normalizePath(txt, winslash = "/"),
                         intermediate_dir = dirs[["intermediate"]], table_dir = dirs[["tables"]],
-                        report_dir = dirs[["report"]], dataset = basename(txt)), params)
+                        report_dir = dirs[["report"]], dataset = basename(txt),
+                        # Per batch (not the default): the pages show the per-batch results
+                        processing = list(per_batch = TRUE)), params)
   Sys.setenv(QUANTA_PARAMS_FILE = params, R_BOX_PATH = app_dir, APP_ROOT = app_dir)
   for (s in c("read-msdial.R", "process.R")) {
     status <- system2("Rscript", shQuote(file.path(app_dir, "scripts", s)), stdout = FALSE, stderr = FALSE)
     if (!identical(as.integer(status), 0L)) stop("Preparing the tutorial data failed in ", s)
   }
 }
-# The exported tables, with the best normalization method (as the app's default)
+# The exported tables, with LOESS normalization (as the app's default; "best normalization" is not
+# used for now)
 table_dir <- file.path(data_dir, "tables")
 if (length(list.files(table_dir, "\\.xlsx$")) == 0) {
   Sys.setenv(QUANTA_PARAMS_FILE = file.path(data_dir, "params.yml"), R_BOX_PATH = app_dir, APP_ROOT = app_dir)
-  status <- system2("Rscript", c(shQuote(file.path(app_dir, "scripts", "export_data.R")), "--norm_method=auto"),
+  # status <- system2("Rscript", c(shQuote(file.path(app_dir, "scripts", "export_data.R")), "--norm_method=auto"),
+  status <- system2("Rscript", c(shQuote(file.path(app_dir, "scripts", "export_data.R")), "--norm_method=loess_norm"),
                     stdout = FALSE, stderr = FALSE)
   if (!identical(as.integer(status), 0L)) stop("Preparing the tutorial data failed in export_data.R")
 }

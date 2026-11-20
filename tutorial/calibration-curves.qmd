@@ -7,9 +7,10 @@ title: "Calibration curves per chemical (4.5)"
 source("_prepare.R")
 box::use(show = projlib/show, util = projlib/msdial_utils)
 tr <- tut$to_report
-# The normalization with the lowest QC RSD% (the app's default choice) and its first batch, as the
-# app shows them at the start
-best <- tr[["best normalization"]]
+# The app's default normalization (LOESS; "best normalization" is not used for now) and its first
+# batch, as the app shows them at the start
+# best <- tr[["best normalization"]]
+best <- "loess_norm"
 mat_id <- util$mat_id_of_blank_subtracted(best)
 lst <- tut$proc[[mat_id]]
 b <- names(lst)[1]

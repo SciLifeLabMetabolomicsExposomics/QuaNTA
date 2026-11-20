@@ -6,7 +6,8 @@ title: "Reports and exported tables (page 5)"
 #| label: setup
 source("_prepare.R")
 tr <- tut$to_report
-best <- tr[["best normalization"]]
+# best <- tr[["best normalization"]]
+best <- "loess_norm"   # The app's default method ("best normalization" is not used for now)
 conc_file <- grep("\\.conc\\.xlsx$", tut$table_files, value = TRUE)[1]
 ```
 
@@ -16,15 +17,20 @@ reports use one normalization method; the tables can be exported for several.
 
 ## Normalization method of the reports
 
+<!-- "Best normalization" is not used for now:
 Choose the method first; the report buttons stay greyed out until you do. **Best** is the method with the
 lowest median RSD% among the QC replicates (here `r tut$method_labels[[best]]`), and each option shows
-its median RSD%:
+its median RSD%: -->
+Choose the method first; the report buttons stay greyed out until you do. Each option shows its
+median RSD% among the QC replicates:
 
 ```{r}
 #| label: table-final-norm
 rsd <- tr[["median RSD% per normalization"]]
-tut_table(tibble::tibble(Option = c(paste("Best:", tut$method_labels[[best]]), unname(tut$method_labels[names(rsd)])),
-                         `Median RSD%` = round(c(rsd[[best]], unname(rsd)), 1)), height = "240px")
+# tut_table(tibble::tibble(Option = c(paste("Best:", tut$method_labels[[best]]), unname(tut$method_labels[names(rsd)])),
+#                          `Median RSD%` = round(c(rsd[[best]], unname(rsd)), 1)), height = "240px")
+tut_table(tibble::tibble(Option = unname(tut$method_labels[names(rsd)]), `Median RSD%` = round(unname(rsd), 1)),
+          height = "240px")
 ```
 
 Choose another method when, for example, 3.8 shows that it works clearly better for the compounds
@@ -62,7 +68,7 @@ ticked normalization method (and each of their sheets as a `.csv` file), ready t
 
 The options of the box choose the columns of the tables:
 
-- **Normalization methods**: one set of files per ticked method (the best one is ticked at first).
+- **Normalization methods**: one set of files per ticked method (`r tut$method_labels[[best]]` is ticked at first).
 - **Group per injection type** (ticked at first): the QCs together, the blanks together, the
   calibration points together and each study sample group together. Drag the groups (shown as
   columns) into the order you want: the leftmost is the first group of the table. At first: QCs,

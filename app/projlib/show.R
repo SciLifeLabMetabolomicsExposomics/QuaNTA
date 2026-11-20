@@ -365,6 +365,12 @@ calib_model_label <- function(name) {
 .calib_point_types <- c("Within limits", "Above the ULOQ", "LOD = LLOQ", "Out-of-range", "Cal0", "LOD")
 .calib_conc_kinds <- function() c(names(imputed_colors), "n.d. (no value)", "n.q. (no value)")
 
+#' The R² of the chosen model of each curve (`calcurve_model` of a `row_df`; `NA`: no model)
+#' @noRd
+.model_r2 <- function(models) {
+  vapply(models, \(m) if (is.list(m) && !is.null(m$best_model_name)) unname(m$R2s[[m$best_model_name]]) else NA_real_, 0)
+}
+
 #' The compounds of a view: limits, model and notes, one row per compound (see [calib_view()])
 #'
 #' @param rd A `row_df` of calibrated data (`calcurve_model`, limits, `src_calcurve`, ...)
@@ -384,7 +390,7 @@ calib_model_label <- function(name) {
     cap = col("conc_cap", NA_real_),   # Peak of a quadratic curve that bends down (capped values)
     valid = valid, src = src,
     model = ifelse(has_m, calib_model_label(vapply(models, \(m) if (is.list(m)) m$best_model_name %||% NA_character_ else NA_character_, "")), NA),
-    r2 = vapply(models, \(m) if (is.list(m) && !is.null(m$best_model_name)) unname(m$R2s[[m$best_model_name]]) else NA_real_, 0),
+    r2 = .model_r2(models),
     coef = I(lapply(models, \(m) if (is.list(m) && !is.null(m$inv_model)) unname(stats::coef(m$inv_model)) else NULL)),
     why = sub("^Not valid: ", "", calib_issue_text(rd, batch_view = batch_view)),
     nq = calib_range_note(rd),
@@ -851,9 +857,12 @@ is_distribution_data <- function(se, outlier = NULL, failed = NULL, rsd = NULL) 
 #' @param n_batches The number of batches of the data file
 #' @param qc `NULL`, or the result of `conc_figs_data(lst, NULL, ...)` of the same method (the QCs
 #'   of all batches, the same for every batch)
-#' @returns A list of `json` (figures) and `tb41` (a data frame, see [page4_table41()])
+#' @param with_tb42 Whether to add table 4.2 (the same for every batch of a method: process.R adds
+#'   it to the first batch only, which the app reads)
+#' @returns A list of `json` (figures), `tb41` (a data frame, see [page4_table41()]), `ids` and
+#'   `tb42` (`NULL` without `with_tb42`)
 #' @export
-page4_data <- function(lst, b, tr, m, class_colors, names_tbl, n_batches, qc = NULL) {
+page4_data <- function(lst, b, tr, m, class_colors, names_tbl, n_batches, qc = NULL, with_tb42 = TRUE) {
   is_global <- identical(b, "Global")   # The comparison view of the global curves (several batches)
   x <- if (is_global) lst[[1]] else lst[[b]]
   cv <- calib_views_of_batch(lst, b, tr, m)
@@ -886,7 +895,7 @@ page4_data <- function(lst, b, tr, m, class_colors, names_tbl, n_batches, qc = N
   } else page4_table41(x, b, tr, m, names_tbl, n_batches)
   # `ids`: the compounds of the rows of table 4.1 (and of the viewer), in their order
   list(json = calib_viewer_json(data), tb41 = tb41, ids = cv$compounds$id,
-       tb42 = page4_batch_status(lst, tr, m))
+       tb42 = if (with_tb42) page4_batch_status(lst, tr, m))
 }
 
 #' The rows of the compounds removed before calibration, at the end of table 4.1
@@ -895,7 +904,7 @@ page4_data <- function(lst, b, tr, m, class_colors, names_tbl, n_batches, qc = N
   rem <- page4_removed(tr, m)
   if (nrow(rem) == 0) return(NULL)
   tibble::tibble(
-    "Chemical Name" = rem$feature_name, "LOD" = "", "LLOQ" = "", "Highest cal. conc." = "", "ULOQ" = "",
+    "Chemical Name" = rem$feature_name, "LOD" = "", "LLOQ" = "", "Highest cal. conc." = "", "ULOQ" = "", "R²" = "",
     Notes = calib_notes_html(tibble::tibble(removed = rem$note)),
     is_global = FALSE, is_bad = FALSE, is_removed = TRUE
   )
@@ -920,6 +929,7 @@ page4_table_global <- function(gcal, tr, m) {
     "LLOQ" = ifelse(is.na(L$lloq), "No valid pts.", as.character(L$lloq)),
     "Highest cal. conc." = ifelse(valid, num(L$max_c_conc), ""),
     "ULOQ" = ifelse(valid, num(L$uloq), ""),
+    "R²" = ifelse(valid & !is.na(L$r2), sprintf("%.3f", L$r2), ""),
     Notes = calib_notes_html(util$calib_notes(L, batch_view = FALSE)),
     is_global = FALSE, is_bad = !valid, is_removed = FALSE
   )
@@ -997,6 +1007,8 @@ page4_table41 <- function(x, b, tr, m, names_tbl, n_batches) {
     dplyr::select(min_c_conc, max_c_conc, lod, lloq, dplyr::any_of("uloq"), has_proper_range, src_calcurve) |>
     tibble::as_tibble(rownames = "feature_id") |>
     dplyr::mutate(batch = b)
+  # R² of the curve used (as in the chip of 4.5)
+  limit_df$r2 <- if (is.null(rd$calcurve_model)) NA_real_ else .model_r2(rd$calcurve_model)
   # Detected (signal at or above the LOD signal) / quantified (exported: a value at or above the
   # LLOQ) in any study sample of the batch
   concn <- x$concn
@@ -1026,13 +1038,14 @@ page4_table41 <- function(x, b, tr, m, names_tbl, n_batches) {
       is_global = src_calcurve == "Global",
       max_c = ifelse(is.na(max_c), "", as.character(max_c)),
       # Empty for a quadratic curve without log calibration (no ULOQ)
-      uloq = if ("uloq" %in% names(limit_df)) ifelse(is.na(uloq) | !has_proper_range, "", as.character(signif(uloq, 4))) else ""
+      uloq = if ("uloq" %in% names(limit_df)) ifelse(is.na(uloq) | !has_proper_range, "", as.character(signif(uloq, 4))) else "",
+      r2 = ifelse(has_proper_range %in% TRUE & !is.na(r2), sprintf("%.3f", r2), "")
     ) |>
     dplyr::left_join(names_tbl, by = "feature_id") |>
     dplyr::mutate(is_removed = FALSE) |>
     # No batch and calibration columns: the batch is chosen above, the note icons tell the curve
     dplyr::select("Chemical Name" = feature_name,
-                  "LOD" = lod, "LLOQ" = min_c, "Highest cal. conc." = max_c, "ULOQ" = uloq,
+                  "LOD" = lod, "LLOQ" = min_c, "Highest cal. conc." = max_c, "ULOQ" = uloq, "R²" = r2,
                   Notes, is_global, is_bad, is_removed)
   # Targeted compounds removed before calibration (blank filter / QC RSD% filter): at the end
   as.data.frame(dplyr::bind_rows(show_df, .page4_removed_rows(tr, m)), check.names = FALSE)
@@ -1781,6 +1794,8 @@ calib_issue_text <- function(row_df, batch_view = TRUE) {
   global = '<circle cx="12" cy="12" r="11" fill="#0072B2"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="12" cy="12" r="6.5"/><ellipse cx="12" cy="12" rx="2.8" ry="6.5"/><path d="M5.5 12h13"/></g>',
   uloq = '<rect x="3.5" y="3.5" width="17" height="17" rx="2" transform="rotate(45 12 12)" fill="#999933"/><g stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 7.5h8"/><path d="M12 17v-6.5M9 13.3l3-3 3 3"/></g>',
   detection = '<circle cx="12" cy="12" r="11" fill="#7A7A7A"/><g stroke="#fff" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M5 12c2-3.5 4.4-5 7-5s5 1.5 7 5c-2 3.5-4.4 5-7 5s-5-1.5-7-5z"/><circle cx="12" cy="12" r="2"/><path d="M6 18L18 6"/></g>',
+  # A clock face (retention time) with an arrow out of it
+  rtrange = '<circle cx="12" cy="12" r="11" fill="#E69F00"/><g stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="12" r="5.5"/><path d="M10.5 9v3l2 1.5"/><path d="M17 8.5l3.5 3.5-3.5 3.5"/></g>',
   removed = '<rect x="1.5" y="1.5" width="21" height="21" rx="4" fill="#CC79A7"/><path d="M6 6.5h12l-4.5 5.5v5l-3 1.5v-6.5z" fill="#fff"/>'
 )
 

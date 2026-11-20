@@ -536,9 +536,19 @@
       var traces = state.mode === "inspect" ? inspectTraces(x) : finalTraces(x);
       var xs = [];
       traces.forEach(function (t) { xs = xs.concat(t.x.filter(finite)); });
-      var marks = limitMarks(e.lod, e.lloq, e.valid ? e.uloq : null, log);
-      layout.shapes = lloxShapes(e.lod, e.lloq, xs, log).concat(e.valid ? uloqShapes(e.uloq, xs) : [], marks.shapes, band.shapes);
-      layout.annotations = marks.annotations.concat(band.annotations, state.mode === "inspect" && log ? cal0ZeroMark(x) : []);
+      // A ULOQ above the highest point shown would stretch the axis (shapes and annotations count
+      // in the autorange): not drawn then, but a label at the right edge says it is beyond the plot
+      var uloq = e.valid ? e.uloq : null, uloqBeyond = [];
+      var xsMax = Math.max.apply(null, xs.filter(function (v) { return finite(v) && (!log || v > 0); }));
+      if (finite(uloq) && isFinite(xsMax) && uloq > xsMax) {
+        uloqBeyond = [{ x: 1, y: 0.99, xref: "paper", yref: "paper", xanchor: "right", yanchor: "top",
+                        showarrow: false, text: "<b>ULOQ " + num(uloq) + (data.unit ? " " + esc(data.unit) : "") + " &#9656; beyond the plot</b>",
+                        font: { color: LIMIT.uloq, size: 12 }, bgcolor: "rgba(255,255,255,0.75)", borderpad: 1 }];
+        uloq = null;
+      }
+      var marks = limitMarks(e.lod, e.lloq, uloq, log);
+      layout.shapes = lloxShapes(e.lod, e.lloq, xs, log).concat(finite(uloq) ? uloqShapes(uloq, xs) : [], marks.shapes, band.shapes);
+      layout.annotations = marks.annotations.concat(uloqBeyond, band.annotations, state.mode === "inspect" && log ? cal0ZeroMark(x) : []);
       Plotly.react(plot, traces, layout, config);
     }
 

@@ -289,7 +289,9 @@ method_label <- method_label[names(method_label) %in% names(tr[["normalized"]])]
 norm_desc <- c(
   closest_norm = "Each feature is divided by the internal standard closest in retention time.",
   loess_norm = paste("Each sample is normalized by a LOESS fit [@cleveland1988] of the internal standards",
-                     "over the retention time, so that signal changes that depend on the retention time are corrected."),
+                     "over the retention time, so that signal changes that depend on the retention time are corrected.",
+                     "The fit is robust (an internal standard that disagrees with the others gets less weight) and locally",
+                     "linear; beyond the retention time range of the internal standards it is extended by at most 1 min."),
   mvis_norm = paste("The variation shared by all internal standards (their first principal component) is",
                     "removed from every feature [@surowiec2017].")
 )
@@ -1033,8 +1035,12 @@ pca_group_text <- paste(
 ```{r}
 #| results: asis
 med <- tr[["median RSD% per normalization"]]
-cat(sprintf('<div class="callout-q">Lowest median RSD%% among the %s replicates: <b>%s</b> (%s). This report uses <b>%s</b>.</div>',
-            tr[["median RSD% basis"]], method_label[tr[["best normalization"]]],
+# "Best normalization" is not shown for now (wonky normalizations from collapsing IS)
+# cat(sprintf('<div class="callout-q">Lowest median RSD%% among the %s replicates: <b>%s</b> (%s). This report uses <b>%s</b>.</div>',
+#             tr[["median RSD% basis"]], method_label[tr[["best normalization"]]],
+#             paste0(method_label[names(med)], " ", round(med, 1), "%", collapse = ", "), method_label[MAT]))
+cat(sprintf('<div class="callout-q">Median RSD%% among the %s replicates: %s. This report uses <b>%s</b>.</div>',
+            tr[["median RSD% basis"]],
             paste0(method_label[names(med)], " ", round(med, 1), "%", collapse = ", "), method_label[MAT]))
 ```
 

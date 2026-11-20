@@ -10,27 +10,34 @@ library(ggplot2)
 raw <- tut$raw
 tr <- tut$to_report
 norm_se <- tr[["normalized"]]
-best <- tr[["best normalization"]]
+# best <- tr[["best normalization"]]
+best <- "loess_norm"   # The app's default method ("best normalization" is not used for now)
 names_tbl <- SumExp::row_df(raw) |> tibble::rownames_to_column("feature_id") |> dplyr::select(feature_id, feature_name)
 ```
 
 QuaNTA normalizes the peak areas with the internal standards in three ways and keeps all of them:
 
 - **Closest RT**: each feature divided by the internal standard closest in retention time;
-- **LOESS**: a smooth trend of the internal standards along the injection order, removed from
-  every feature;
+- **LOESS**: per injection, a smooth trend of the internal standards along the retention time,
+  removed from every feature (beyond the retention time range of the internal standards, the
+  trend is extended by at most 1 min);
 - **Multivariate (PCA)**: the main pattern shared by all internal standards, removed from every
   feature.
 
+<!-- "Best normalization" is not used for now:
 The method with the **lowest median RSD% among the QC replicates** is chosen as the default (here
-`r tut$method_labels[[best]]`); you can choose another one on pages 4 and 5. After normalization, the
-blanks are compared with the samples (blank filter) and subtracted.
+`r tut$method_labels[[best]]`); you can choose another one on pages 4 and 5. -->
+`r tut$method_labels[[best]]` is the default method; you can choose another one on pages 4 and 5. The
+table shows the median RSD% among the QC replicates of each method. After normalization, the blanks
+are compared with the samples (blank filter) and subtracted.
 
 ```{r}
 #| label: table-median-rsd
 rsd <- tr[["median RSD% per normalization"]]
-tut_table(tibble::tibble(Method = unname(tut$method_labels[names(rsd)]), `Median QC RSD%` = round(unname(rsd), 2),
-                         Chosen = ifelse(names(rsd) == best, "✓", "")), height = "220px")
+# tut_table(tibble::tibble(Method = unname(tut$method_labels[names(rsd)]), `Median QC RSD%` = round(unname(rsd), 2),
+#                          Chosen = ifelse(names(rsd) == best, "✓", "")), height = "220px")
+tut_table(tibble::tibble(Method = unname(tut$method_labels[names(rsd)]), `Median QC RSD%` = round(unname(rsd), 2)),
+          height = "220px")
 ```
 
 ## 3.8 Comparison of normalization methods
@@ -73,8 +80,8 @@ chosen above table 3.1 (*Global*: all batches pooled; here *Global*).
 
 - **Lines going down** from Raw mean that normalization made the QC replicates more alike, as it
   should.
-- **The colours** show which method works best for most compounds; the overall choice is the
-  median in the table above.
+- **The colours** show which method works best for most compounds; the table above gives the
+  median per method.
 - **Lines going up** are compounds that the internal standards do not represent well (e.g. a
   very different retention time or chemistry).
 

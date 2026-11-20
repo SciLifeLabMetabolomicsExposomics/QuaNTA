@@ -69,7 +69,7 @@ option_list <- rlang::list2(
     c("--vis_prenorm"),
     type = "logical", default = FALSE,
     help = paste(
-      "Pre-normalize all peak areas (also of the IS) by the volumetric internal standard(s): area / vIS",
+      "Pre-normalize all peak areas (not of the IS) by the volumetric internal standard(s): area / vIS",
       "area of the sample * average vIS area of all injections; several vIS one after the other",
       "[default: %default]"
     )
@@ -272,10 +272,21 @@ FILE <- rlang::list2(
 )
 # Those of an earlier run go first: a run that stops would otherwise leave them next to new results
 unlink(c(FILE$app, unlist(lapply(c("norm", "blk"), \(k) Sys.glob(sub("\\.rds$", "*.rds", msdial$full_matrix_file(user_inputs, k, "")))))))
+progress <- util$progress   # How far the processing has come, for the progress bar of the app
 cat("\nProcessing steps are started.\n")
+progress(1)
 # Read the parsed data by `read-msdial.R`. If not available, warn the user
 # This 'proc_sumexp' is the main data object that will undergo processing.
 proc_sumexp <- msdial$read_parsed_msdial_data(user_inputs)
+progress(5)
+# Data without blank samples: no blank filtering and no blank subtraction (the app greys them out)
+blank_settings_off <- !any(util$ctrl_smpl_cat(proc_sumexp) == "Blank") &&
+  (isTRUE(params$blank_filter) || isTRUE(params$blank_subtract))
+if (!any(util$ctrl_smpl_cat(proc_sumexp) == "Blank")) {
+  if (blank_settings_off) cat("No blank samples in the data: blank filtering and blank subtraction are not done.\n")
+  params$blank_filter <- FALSE
+  params$blank_subtract <- FALSE
+}
 
 # no calibration points model
 IS_NON_TARGET_MODE <- SumExp::metadata(proc_sumexp)$is_non_target_mode
@@ -356,15 +367,19 @@ if (isTRUE(params$log_calibration) && params$weight != "1") {
             paste0("Weighting `1` used instead of `", params$weight, "` (the only one in log scale)"), "fallback")
 }
 # "Linear models only" is not logged: log-scale curves are always straight lines
+if (blank_settings_off) {
+  log_event("Settings", "run", "Blank filter and subtraction", "Setting not used",
+            "No blank samples in the data", "fallback")
+}
 
 
 #  -----  NORMALIZATION USING INTERNAL STANDARDS  ------------------------------
 
 #  -----  PRE-NORMALIZATION BY THE VOLUMETRIC INTERNAL STANDARD(S)  -------------
-# `--vis_prenorm`: every peak area (also of the IS) is divided by the vIS area of its sample and
+# `--vis_prenorm`: every peak area (not of the IS) is divided by the vIS area of its sample and
 # multiplied by the average vIS area of all injections; with several vIS, one after the other.
-# The vIS themselves are not changed (by themselves nor by another vIS). A sample without a vIS
-# value (0 or missing) is not corrected by that vIS.
+# The IS and the vIS themselves are not changed (by any vIS). A sample without a vIS value (0 or
+# missing) is not corrected by that vIS.
 if (isTRUE(params$vis_prenorm)) {
   vis_rows <- which(util$std_type(proc_sumexp) %in% "vIS")
   if (length(vis_rows) == 0) {
@@ -372,7 +387,8 @@ if (isTRUE(params$vis_prenorm)) {
   } else {
     raw0 <- proc_sumexp[["raw"]]
     out <- raw0
-    not_vis <- !seq_len(nrow(raw0)) %in% vis_rows
+    # Neither the vIS nor the IS are corrected
+    not_vis <- !seq_len(nrow(raw0)) %in% vis_rows & !util$is_internal_std(proc_sumexp)
     # The samples left uncorrected by each vIS (named by the vIS), for the internal report and the app
     not_corrected <- list()
     for (v in vis_rows) {
@@ -541,19 +557,35 @@ flush_later <- function(bucket) for (a in later[[bucket]]) do.call(log_event, a)
 
 ##  LOESS AND MULTIVARIATE FITS  ---------------------------
 
-overall_rt_range <- range(util$retention_time(proc_sumexp)) # Fit for RT of all features
+progress(12)
 excl_cat <- c("Blank", "CalCurve")
 to_report[["excluded categories in normalization"]] <- excl_cat
 
 loess_fit <- proc$get_loess_fit(
   istd_se = internal_std_se,
   excl_cat = excl_cat,
-  overall_rt_range = overall_rt_range,
   span = 1,
   mat_id = "raw"
 )
 to_report[["LOESS fit"]] <- loess_fit
 rt <- util$retention_time(proc_sumexp)
+# The RT at which the LOESS fit is read: beyond the RT range of the IS at most
+# `proc$LOESS_MAX_EXTRAPOLATION` min. Features further out are noted (table 4.1, exports, history):
+# no IS represents them, so the RT-based normalizations are extrapolated
+is_rt_range <- attr(loess_fit, "is_rt_range")
+loess_rt_used <- proc$loess_rt(rt, is_rt_range)
+SumExp::row_df(proc_sumexp)[["is_rt_note"]] <- proc$is_rt_range_note(rt, is_rt_range)
+local({
+  far <- !is.na(SumExp::row_df(proc_sumexp)[["is_rt_note"]]) & !util$is_internal_std(proc_sumexp)
+  to_report[["outside IS RT range"]] <<- rownames(proc_sumexp)[far]
+  if (any(far)) {
+    cat(sum(far), " feature(s) elute more than ", proc$LOESS_MAX_EXTRAPOLATION, " min outside the RT range of the IS (",
+        round(is_rt_range[1], 2), "-", round(is_rt_range[2], 2), " min): LOESS normalization extrapolated at most ",
+        proc$LOESS_MAX_EXTRAPOLATION, " min, then held flat.\n", sep = "")
+    log_event("Normalization", "feature", rownames(proc_sumexp)[far], "Outside the IS RT range",
+              SumExp::row_df(proc_sumexp)[["is_rt_note"]][far], "note")
+  }
+})
 
 # Optional: if it fails (e.g. too few internal standards), the other methods are still used
 norm_mat_ids <- c("loess_norm", "closest_norm")
@@ -626,7 +658,9 @@ to_report[["batches without blank"]] <- batches_without_blank
 SumExp::col_df(shell)[["blank_source"]] <- ifelse(
   batch_ids %in% batches_without_blank, "Average of all batches", "Batch"
 )
-if (!isTRUE(params$blank_subtract)) {
+if (!any(util$ctrl_smpl_cat(shell) == "Blank")) {
+  SumExp::col_df(shell)[["blank_source"]] <- "No blanks"
+} else if (!isTRUE(params$blank_subtract)) {
   SumExp::col_df(shell)[["blank_source"]] <- "Not subtracted (option off)"
   log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "Option off: nothing subtracted", "fallback")
 }
@@ -682,6 +716,7 @@ qc_rsd_rows <- list()   # QC RSD% of the targeted compounds per QC group (and ba
 core_filtered <- list() # The same after the blank filter (without the IS)
 i_core <- which(is_core[!is_is_row])   # The rows of `shell` kept in memory
 for (mat_id in to_blk_subt) {
+  progress(20 + 30 * (match(mat_id, to_blk_subt) - 1) / length(to_blk_subt))   # 20-50 %
   blk_mat_id <- util$mat_id_of_blank_subtracted(mat_id)
 
   ## Normalization
@@ -704,7 +739,9 @@ for (mat_id in to_blk_subt) {
       labelled::set_variable_labels("Closest RT normalized"),
     loess_norm = sapply(   # Normalize the data by LOESS fit along RT, in log scale
       colnames(proc_sumexp), function(sample_id) {
-        norm_factor <- predict(loess_fit[[sample_id]], newdata = rt)
+        # Beyond the RT range of the IS: at most `LOESS_MAX_EXTRAPOLATION` min extrapolated
+        # norm_factor <- predict(loess_fit[[sample_id]], newdata = rt)   # Earlier versions
+        norm_factor <- predict(loess_fit[[sample_id]], newdata = loess_rt_used)
         exp(log(proc_sumexp[["raw"]][, sample_id]) - norm_factor)
       }
     ) |>
@@ -831,17 +868,19 @@ if (all(is.na(median_rsd[norm_mat_ids]))) {
 }
 if (all(is.na(median_rsd[norm_mat_ids]))) rsd_basis <- NA_character_
 best_norm <- proc$select_best_normalization(median_rsd, candidates = norm_mat_ids)
-if (!identical(rsd_basis, "QC")) {
-  log_event("Best normalization", "run", "Best normalization", "Chosen without QC replicates",
-            if (is.na(rsd_basis)) paste0("No replicates for an RSD%: ", best_norm, " by default")
-            else "No QC replicates: the replicates of the calibration levels are used", "fallback")
-}
+# "Best normalization" is not shown for now (wonky normalizations from collapsing IS); still computed
+# if (!identical(rsd_basis, "QC")) {
+#   log_event("Best normalization", "run", "Best normalization", "Chosen without QC replicates",
+#             if (is.na(rsd_basis)) paste0("No replicates for an RSD%: ", best_norm, " by default")
+#             else "No QC replicates: the replicates of the calibration levels are used", "fallback")
+# }
 to_report[["median RSD% per normalization"]] <- median_rsd
 to_report[["median RSD% basis"]] <- rsd_basis
 to_report[["best normalization"]] <- best_norm
 cat("Median RSD% of ", rsd_basis, " replicates per method: ",
     paste0(names(median_rsd), " = ", round(median_rsd, 2), collapse = ", "), "\n",
-    "Best normalization method: ", best_norm, "\n", sep = "")
+    # "Best normalization method: ", best_norm, "\n",   # Not shown for now
+    sep = "")
 rm(rsd_input, nt_rsd_se)
 
 # The compounds after the blank filter, without the internal standards
@@ -859,22 +898,27 @@ flush_later("blank")
 
 #  -----  BLANK SUBTRACTION  ---------------------------------------------------
 
-if (has_multiple_batches) {
-  cat(
-    "Processing blank subtraction per batch.",
-    "Found batch_ids:", paste(unique(batch_ids), collapse = ", "), "\n"
-  )
-} else {
-  cat("Processing blank subtraction for a single batch.\n")
-}
-if (length(batches_without_blank) > 0) {
-  cat("Batches without blank samples (the average of all blank samples is subtracted):",
-      paste(batches_without_blank, collapse = ", "), "\n")
-}
-log_event("Blank subtraction", "batch", batches_without_blank, "Blank of all batches subtracted",
-          "No blank samples in the batch", "fallback", batch_id = batches_without_blank)
+progress(52)
 if (!any(util$ctrl_smpl_cat(proc_sumexp) == "Blank")) {
-  log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "No blank samples left (all removed as outliers)", "fallback")
+  # No blanks in the data (blank subtraction switched off above), or all removed as outliers
+  if (!blank_settings_off && isTRUE(params$blank_subtract)) {
+    log_event("Blank subtraction", "run", "Blank subtraction", "Not done", "No blank samples left (all removed as outliers)", "fallback")
+  }
+} else if (isTRUE(params$blank_subtract)) {
+  if (has_multiple_batches) {
+    cat(
+      "Processing blank subtraction per batch.",
+      "Found batch_ids:", paste(unique(batch_ids), collapse = ", "), "\n"
+    )
+  } else {
+    cat("Processing blank subtraction for a single batch.\n")
+  }
+  if (length(batches_without_blank) > 0) {
+    cat("Batches without blank samples (the average of all blank samples is subtracted):",
+        paste(batches_without_blank, collapse = ", "), "\n")
+  }
+  log_event("Blank subtraction", "batch", batches_without_blank, "Blank of all batches subtracted",
+            "No blank samples in the batch", "fallback", batch_id = batches_without_blank)
 }
 # The blank samples themselves (normalized, not blank subtracted), quantified after calibration
 # for the exported concentration tables
@@ -890,7 +934,7 @@ proc_sumexp <- proc$add_blank_subtracted_sumexp(
   out_mat_ids = mat_ids_after_blk_subt,
   subtract = isTRUE(params$blank_subtract)
 )
-cat("Blank subtraction is done.\n")
+if (isTRUE(params$blank_subtract)) cat("Blank subtraction is done.\n")
 
 # The QC RSD% filter of the versions above, on the compounds in memory
 flush_later("rsd")
@@ -1376,6 +1420,7 @@ compact_global_calibration <- function(cal, mat_id_to_calib) {
     uloq = rd$uloq,   # NA: no ULOQ (quadratic curve without log calibration)
     conc_cap = rd$conc_cap,   # Peak of a quadratic curve that bends down (capped values; see proc$quadratic_cap())
     linear_range_note = rd$linear_range_note,   # Levels above the ULOQ (NA: none)
+    is_rt_note = rd$is_rt_note,   # Far outside the RT range of the IS (NA: not)
     model = vapply(model_info, `[[`, "", "model"),
     r2 = vapply(model_info, `[[`, 0, "r2"),
     coef = lapply(model_info, `[[`, "coef")   # Intercept, conc (, conc^2); log-log: of ln(signal) on ln(conc)
@@ -1418,11 +1463,16 @@ if (AVERAGE_CAL) {
 }
 
 # Per normalization method, then per batch
+# Progress 55-85 %: one step per method for the global calibration and one per method and batch
+cal_steps <- length(mat_ids_after_blk_subt) * (1 + dplyr::n_distinct(SumExp::col_df(proc_sumexp)[["batch_id"]]))
+cal_step <- 0
+cal_progress <- function() { cal_step <<- cal_step + 1; progress(55 + 30 * cal_step / cal_steps) }
+progress(55)
 for (mat_id_to_calib in mat_ids_after_blk_subt) {
   lst_proc[[mat_id_to_calib]] <- list() # Initialize to collect the output per normalization method
   # Label for the normalized data.
   norm_lab <- labelled::get_label_attribute(proc_sumexp[[mat_id_to_calib]])
-  
+
   # Global calibration for failed batches.
   cal_global <- try_quantify_using_calcurve(cal_input_se, mat_id_to_calib, params, "all samples")
   
@@ -1442,11 +1492,12 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
       call. = FALSE, immediate = TRUE
     )
   }
-  
+  cal_progress()
+
   uniq_batch_ids <- unique(as.character(SumExp::col_df(proc_sumexp)[["batch_id"]]))
   for (batch_id in uniq_batch_ids) {
     # cat(glue::glue("  Processing batch `{batch_id}`."), "\n")
-    
+
     # Batch-wise calibration, if the batch has enough calibration curve replicates
     batch_se <- per_batch_proc_se_lst[[batch_id]]
     if (AVERAGE_CAL) batch_se <- proc$average_calcurve_replicates(batch_se)
@@ -1563,6 +1614,7 @@ for (mat_id_to_calib in mat_ids_after_blk_subt) {
     calibration_per_batch[[length(calibration_per_batch) + 1L]] <- tibble::tibble(
       mat_id = mat_id_to_calib, batch_id = batch_id, calibration = batch_cal, note = note
     )
+    cal_progress()
   }
 }
 to_report[["calibration per batch"]] <- dplyr::bind_rows(calibration_per_batch)
@@ -1621,8 +1673,10 @@ if (isFALSE(params$impute_llox)) {
   cat("Concentrations below the LOD / LLOQ have no value (reported as n.d. / n.q.).\n")
 }
 # Save the processed data
+progress(86)
 saveRDS(lst_proc, file = FILE$proc)
 cat("The `SumExp` object after processing saved to:", FILE$proc, "\n")
+progress(90)
 
 # Page 4 of the app prepared for every normalization method and batch (`show$page4_data()`: the
 # data of figures 4.5-4.7 and the rows of tables 4.1 and 4.2), one file each, so that switching the method
@@ -1638,17 +1692,22 @@ local(tryCatch({
   n_batches <- length(unique(as.character(SumExp::col_df(info)$batch_id)))
   n_files <- 0L
   for (m in c("raw", "closest_norm", "loess_norm", "mvis_norm")) {
+    progress(90 + 2 * (match(m, c("raw", "closest_norm", "loess_norm", "mvis_norm")) - 1))   # 90-96 %
     lst <- lst_proc[[util$mat_id_of_blank_subtracted(m)]]
     if (is.null(lst)) next
     qc <- show$conc_figs_data(lst, NULL, class_colors, show$qc_chart_limit(to_report[["qc rsd filter"]]))
-    for (b in show$page4_batches(lst, to_report, m)) {   # "Global" first with several batches
-      d <- tryCatch(show$page4_data(lst, b, to_report, m, class_colors, names_tbl, n_batches, qc = qc),
+    bs <- show$page4_batches(lst, to_report, m)   # "Global" first with several batches
+    for (b in bs) {
+      # Table 4.2 is the same for every batch: only in the file of the first one (read by the app)
+      d <- tryCatch(show$page4_data(lst, b, to_report, m, class_colors, names_tbl, n_batches, qc = qc,
+                                    with_tb42 = identical(b, bs[1])),
                     error = function(e) NULL)
       if (is.null(d)) next
       saveRDS(d, show$page4_file(user_inputs, m, b))
       n_files <- n_files + 1L
     }
   }
+  progress(98)
   cat("Page 4 of the app prepared for ", n_files, " normalization method / batch combination(s) in ",
       round(as.numeric(difftime(Sys.time(), t0, units = "secs"))), " s.\n", sep = "")
 }, error = function(e) {

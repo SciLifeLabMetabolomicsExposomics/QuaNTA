@@ -219,14 +219,15 @@ settings_table <- function(tr, mat_id) {
   outlier_txt <- if (!isTRUE(p$rm_outlier)) "No (outliers flagged only)" else if (identical(p$rm_outlier_scope, "no_calib"))
     "Yes (calibration samples always kept)" else "Yes (all injections)"
   tibble::tibble(
-    Setting = c("Normalization (this file / report)", "Best normalization (lowest median RSD%)",
+    # "Best normalization" is not shown for now (wonky normalizations from collapsing IS)
+    Setting = c("Normalization (this file / report)", # "Best normalization (lowest median RSD%)",
                 "Per-batch processing", "Outlier removal", "Blank filtering", "Blank filtering factor",
                 "Blank subtraction", "QC RSD% filter", "Weighting", "LOD/LLOQ method", "RSD% ≤ 20% for LLOQ",
                 "Log-scale calibration", "Optimize calibration curves (to the highest sample)", "Linear models only",
                 "Linear range (ULOQ): max. deviation of the top level; curves cut at the ULOQ",
                 "Minimum R² of the calibration curves", "Values below the LOD/LLOQ",
                 "Calibration replicates averaged per batch", "Pre-normalization by the volumetric IS"),
-    Value = c(val(lab(mat_id)), val(lab(tr[["best normalization"]])),
+    Value = c(val(lab(mat_id)), # val(lab(tr[["best normalization"]])),
               val(n_batches > 1), outlier_txt,
               val(p$blank_filter),
               paste0(val(p$blank_filter_factor), " (",

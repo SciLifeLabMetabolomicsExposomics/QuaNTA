@@ -116,7 +116,7 @@ norm_methods <- unique(vapply(trimws(strsplit(arg("norm_method", "auto"), ",", f
     cat("No best normalization method found in the processed data. Using `loess_norm`.\n")
     return("loess_norm")
   }
-  cat("Best normalization method (lowest median RSD% of replicates):", best, "\n")
+  # cat("Best normalization method (lowest median RSD% of replicates):", best, "\n")   # Not shown for now
   best
 }, character(1), USE.NAMES = FALSE))
 not_available <- setdiff(norm_methods, mat_ids_to_export)

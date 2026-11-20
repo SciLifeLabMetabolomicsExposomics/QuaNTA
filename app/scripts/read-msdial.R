@@ -15,7 +15,7 @@
 # The options are used to control the processing steps
 option_list <- rlang::list2(
   optparse::make_option(
-    c("--per_batch"), type = "logical", default = TRUE,
+    c("--per_batch"), type = "logical", default = FALSE,
     help = "Process data per batch? [default: %default]"
   ),
 )
@@ -87,9 +87,13 @@ is_non_target_mode <- FALSE
 # | 1st-4th  |    *empty*   |   Sample info    |      *empty*       |
 # | From 5th | Feature info | Measurement data |    Extra stats     |
 
+progress <- util$progress   # How far the reading has come, for the progress bar of the app
+progress(5)
 i_three_sections <- msdial$get_three_section_indices(FILE$i)
+progress(15)
 # Sample Info
 sample_info <- msdial$fetch_sample_info(FILE$i, i_three_sections[["2nd"]])
+progress(25)
 names_txt <- function(x) {
   paste0(paste0("\"", utils::head(x, 10), "\"", collapse = ", "), if (length(x) > 10) ", ..." else "")
 }
@@ -192,7 +196,9 @@ if (!any(util$is_targeted_feature(features$.std_type))) {
 }
 
 # Measured values of the features into a matrix
+progress(35)
 raw_mat <- msdial$fetch_numeric_matrix(FILE$i, i_three_sections[["2nd"]])
+progress(65)
 if (length(i_to_keep) < nrow(raw_mat)) raw_mat <- raw_mat[i_to_keep, , drop = FALSE]
 stopifnot(identical(colnames(raw_mat), labelled::remove_labels(sample_info$sample_name)))
 dimnames(raw_mat) <- list(rownames(features), rownames(sample_info))     # Syntactically valid names
@@ -339,7 +345,7 @@ for (i_batch in batch_ids) {
   sinfo_b <- sample_info[sample_info$batch_id == i_batch, ]
   # Blank samples are not required per batch: a batch without them is blank-subtracted with the
   # average of all blank samples (its calibration is not affected)
-  if (!any(sinfo_b$.ctrl_cat == "Blank")) {
+  if (!any(sinfo_b$.ctrl_cat == "Blank") && any(sample_info$.ctrl_cat == "Blank")) {
     cat("No `Blank` samples in batch ", i_batch,
         ". The average of all blank samples will be subtracted.\n", sep = "")
   }
@@ -354,9 +360,9 @@ for (i_batch in batch_ids) {
         ". It will be quantified using the global calibration curve.\n", sep = "")
   }
 }
-# Blank filtering and subtraction require blank samples in at least one batch
+# Without blank samples, there is no blank filtering and no blank subtraction
 if (!any(sample_info$.ctrl_cat == "Blank")) {
-  stop("`Blank` samples are required (in at least one batch).")
+  cat("No `Blank` samples in the data: no blank filtering and no blank subtraction.\n")
 }
 # Calibration requires calibration curve samples in at least one batch
 if (!any(sample_info$.ctrl_cat == "CalCurve")) {
@@ -391,6 +397,7 @@ if (is_non_target_mode) {
 }
 
 # Into "SumExp" class
+progress(75)
 sumexp <- SumExp::SumExp(
   raw = raw_mat,
   col_df = sample_info,
@@ -413,6 +420,7 @@ sumexp <- SumExp::SumExp(
 # SAVE -----
 
 # Save the "SumExp" object
+progress(85)
 saveRDS(sumexp, file = FILE$o)
 cat("`SumExp` object saved to:", FILE$o, "\n")
 # What the app and the reports use of the read data, without the peak areas (they stay in memory

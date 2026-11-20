@@ -15,9 +15,9 @@
 #' @export
 processing_options <- tibble::tribble(
   ~id,                   ~module,       ~type,      ~default,                        ~choices,                                             ~min, ~max, ~integer,
-  "per_batch",           "read_msdial", "checkbox", list(TRUE),                      list(NULL),                                           NA,   NA,   FALSE,
+  "per_batch",           "read_msdial", "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
   "optimize_cal_points", "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
-  "set_minimum_number",  "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
+  "set_minimum_number",  "proc",        "checkbox", list(TRUE),                    list(NULL),                                           NA,   NA,   FALSE,
   "min_cal_points",      "proc",        "numeric",  list(3),                         list(NULL),                                           3,    NA,   TRUE,
   "average_cal_reps",    "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,
   "r2_filter",           "proc",        "checkbox", list(FALSE),                     list(NULL),                                           NA,   NA,   FALSE,

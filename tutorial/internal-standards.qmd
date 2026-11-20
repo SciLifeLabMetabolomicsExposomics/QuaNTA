@@ -14,8 +14,10 @@ is_out <- tr[["is outlier sample"]]
 is_rd <- SumExp::row_df(is_se)
 # The IS shown in 3.2 and 3.5: the first one, as preselected in the app
 i_sel <- 1L
-# The best normalization method: used in the text of 3.7, above its chunk
-best <- tr[["best normalization"]]
+# The normalization method of 3.7 (bottom), the app's default: LOESS ("best normalization" is not
+# used for now)
+# best <- tr[["best normalization"]]
+best <- "loess_norm"
 ```
 
 The internal standards (IS) are the backbone of the quality control: they are added in the same
@@ -181,7 +183,7 @@ bars_se <- norm_se[util$is_internal_std(norm_se), keep]
 ```
 The peak areas of all (non-failed) internal standards per sample along the injection order,
 stacked, with a LOESS trend of their total. The app has two panels to compare: here the raw values
-(top) and after the best normalization, `r tut$method_labels[[best]]` (bottom).
+(top) and after `r tut$method_labels[[best]]` normalization (bottom).
 ```{r}
 #| label: figure-3-7
 show$plotly_is_bars(bars_se, "raw", colour_by = "group", title = "Internal standards — Raw", height = 480)

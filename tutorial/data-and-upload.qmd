@@ -139,7 +139,7 @@ greyed out.
 #| label: table-settings
 desc <- c(
   per_batch = "Blank subtraction and calibration per batch (Batch ID); otherwise all batches together.",
-  vis_prenorm = "Divide all peak areas by the volumetric IS of each sample before normalization.",
+  vis_prenorm = "Divide all peak areas (not of the IS) by the volumetric IS of each sample before normalization.",
   rm_outlier = "Remove samples in which more than 20% of the internal standards deviate by more than 3 SD (log scale); unticked, they are only listed (3.3) and marked in the exported tables.",
   rm_outlier_scope = "Which samples can be removed as outliers: all injections, or all but the calibration samples.",
   blank_filter = "Remove features whose maximum (or mean) in the study samples is not above factor × the blank mean.",
