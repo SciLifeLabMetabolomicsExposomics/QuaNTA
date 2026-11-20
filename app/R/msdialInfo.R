@@ -339,13 +339,3 @@ msdialInfoServer <- function(serverId, ws, processing_params = shiny::reactive(l
     data_info
   })
 }
-
-#' MS-DIAL User Information App for modular testing
-msdialInfoApp <- function() {
-  ui <- shiny::fluidPage(msdialInfoUI("data_info"))
-  server <- function(input, output, session) {
-    ws <- create_session_workspace(session)
-    msdialInfoServer("data_info", ws = ws)
-  }
-  shiny::shinyApp(ui, server)
-}
